@@ -71,16 +71,28 @@ class FrameTimeReadout(context: Context) {
     }
 
     /**
+     * The benchmark block, once run. Held here rather than redrawn from the
+     * renderer because the live figures refresh at ~4Hz and would otherwise
+     * wipe it a quarter of a second after it appeared — and this is the number
+     * the client is most likely to be asked to photograph.
+     */
+    private var benchmarkBlock: String = ""
+
+    /**
      * Refresh the text. Called on the UI thread at the renderer's publish rate
      * (~4Hz), never per frame — updating a `TextView` at 60Hz would put
      * measurable UI-thread work inside the frame we are trying to measure.
      */
+    /** The live figures, kept so the benchmark block can be composed onto them
+     *  without re-deriving them or parsing them back out of the TextView. */
+    private var liveBlock: String = PLACEHOLDER
+
     fun update(snapshot: FrameSnapshot, context: RenderContext) {
         // Every figure is an aggregate over the trailing second. Deliberately
         // no instantaneous frame time: the text refreshes at ~4Hz, so an
         // instantaneous reading would be one arbitrarily-chosen frame out of
         // fifteen — noise presented with the authority of a measurement.
-        view.text = String.format(
+        liveBlock = String.format(
             Locale.US,
             "%s%n" +
                 "%5.1fms mean %5.1fms p95%n" +
@@ -97,6 +109,51 @@ class FrameTimeReadout(context: Context) {
             if (context.compressionDarkening) "shade:on" else "shade:off",
             if (context.hapticsScaled) "haptics:scaled" else "haptics:fixed",
         )
+        render()
+    }
+
+    private fun render() {
+        view.text = liveBlock + benchmarkBlock
+    }
+
+    /**
+     * Show that the benchmark is running.
+     *
+     * Posted from the UI thread *before* the work is queued onto the GL thread,
+     * because the GL thread then blocks for several seconds and the screen
+     * stops updating. Without this the client taps a hidden key and the game
+     * appears to freeze for no reason.
+     */
+    fun showBenchmarkRunning() {
+        benchmarkBlock = String.format(Locale.US, "%n%n%s%n  measuring, hold still…", BENCH_LABEL)
+        render()
+    }
+
+    /**
+     * Show a completed benchmark.
+     *
+     * Every figure the derating ratio depends on is printed alongside it, so a
+     * photograph of this screen is self-contained: the ratio means nothing
+     * without knowing it is solver CPU only, on which workload, over how many
+     * frames, and against which host number.
+     */
+    fun showBenchmark(result: SolverBenchmark.Result) {
+        benchmarkBlock = String.format(
+            Locale.US,
+            "%n%n%s%n" +
+                "%5.2fms p50 %5.2fms p95%n" +
+                "%5.2fms mean%5.2fms max%n" +
+                "%5.2fx host %5.1f%% of frame%n" +
+                "%5d part  %5d frames%n" +
+                "  host p50 %.3fms (jvm)",
+            BENCH_LABEL,
+            result.p50Ms, result.p95Ms,
+            result.meanMs, result.maxMs,
+            result.deratingVsHost, result.budgetFraction * 100f,
+            result.particles, result.frames,
+            SolverBenchmark.HOST_P50_MS,
+        )
+        render()
     }
 
     /**
@@ -132,20 +189,33 @@ class FrameTimeReadout(context: Context) {
         /**
          * States what these numbers are before anyone reads them.
          *
-         * Stage 1's fragment shader is a palette lookup and one compression
-         * term, so these figures are a **floor** — the cost of geometry and
-         * overdraw with almost no per-pixel work. Stage 3's procedural gel,
-         * subsurface, grain and band glow are the unmeasured part, and they are
-         * the reason ADR 0006 protects the 60Hz budget in the first place.
+         * "stage1" is no longer accurate — the real solver is now underneath
+         * these figures, so they are a Milestone 1 measurement rather than a
+         * shell-only one — but **"not a verdict" is still exactly right and
+         * must stay**. The fragment shader is still a palette lookup and one
+         * compression term, so these figures remain a **floor**: the cost of
+         * geometry and overdraw with almost no per-pixel work. Stage 3's
+         * procedural gel, subsurface, grain and band glow are the unmeasured
+         * part, and they are the reason ADR 0006 protects the 60Hz budget in
+         * the first place.
          *
          * A good number here therefore says "nothing is structurally wrong
          * yet", not "we have headroom". Someone will photograph this readout
          * and paste it into a discussion without the surrounding context, so
          * the caveat travels with the numbers rather than living only in a
-         * handoff.
+         * handoff. Do not let a future edit of this string start implying more
+         * than the build measures.
          */
-        const val BASELINE_LABEL = "stage1 baseline - not a verdict"
+        const val BASELINE_LABEL = "milestone1 floor - not a verdict"
 
-        const val PLACEHOLDER = "stage1 baseline - measuring…"
+        const val PLACEHOLDER = "milestone1 floor - measuring…"
+
+        /**
+         * The benchmark block's own header, carrying its own caveat for the
+         * same reason: unlike the live figures above it, this one *is* a
+         * complete measurement of what it claims — but it claims only solver
+         * CPU, and a photograph of it must not read as a frame-rate verdict.
+         */
+        const val BENCH_LABEL = "solver bench - cpu only, no gpu"
     }
 }

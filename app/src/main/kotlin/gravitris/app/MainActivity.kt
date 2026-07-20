@@ -1,6 +1,7 @@
 package gravitris.app
 
 import android.app.Activity
+import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +14,7 @@ import android.window.OnBackInvokedDispatcher
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
 import gravitris.app.perf.FrameTimeReadout
+import gravitris.app.perf.SolverBenchmark
 import nl.brainbuilders.gravitris.R
 
 /**
@@ -46,6 +48,10 @@ class MainActivity : Activity() {
     private val renderContext = FrameTimeReadout.RenderContext()
 
     private var paused = false
+
+    /** Guards against a second benchmark being queued while one is running.
+     *  Touched only on the UI thread. */
+    private var benchmarkRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -220,8 +226,45 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Volume-up toggles the compression darkening term; volume-down is
-     * swallowed alongside it so the pair behaves consistently.
+     * Run the ADR 0009 reference workload and show the result.
+     *
+     * Hidden, one tap, and **debug builds only** — gated on `FLAG_DEBUGGABLE`
+     * rather than on a generated `BuildConfig`, which would mean turning on a
+     * build feature to learn something the manifest already states.
+     *
+     * The running state is posted from here, before the work is queued, because
+     * the GL thread then blocks for several seconds and the screen stops
+     * updating. A hidden key that silently freezes the game is indistinguishable
+     * from a crash, and the client is the one holding the phone.
+     *
+     * It runs on the GL thread rather than a background thread on purpose: that
+     * is the thread the real solver runs on, at the same priority, so the
+     * number is taken under the conditions it is meant to describe. It also
+     * means no frame is being drawn while it runs, so nothing competes with the
+     * measurement.
+     */
+    private fun runSolverBenchmark() {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (benchmarkRunning) return
+        benchmarkRunning = true
+
+        readout.showBenchmarkRunning()
+        gameView.queueEvent {
+            val result = SolverBenchmark.run()
+            readout.view.post {
+                readout.showBenchmark(result)
+                benchmarkRunning = false
+            }
+            // The benchmark froze the render thread for seconds. Those frames
+            // are not a property of the game, so they are discarded rather than
+            // left to poison the live figures the client is reading.
+            renderer.discardFrameHistory()
+        }
+    }
+
+    /**
+     * Volume-up toggles the compression darkening term; volume-down runs the
+     * hidden solver benchmark.
      *
      * A hardware key rather than a screen control, deliberately. The brief's
      * control scheme is drag-anywhere, so any on-screen toggle would carve a
@@ -242,7 +285,11 @@ class MainActivity : Activity() {
                 true
             }
 
-            KeyEvent.KEYCODE_VOLUME_DOWN -> true
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                runSolverBenchmark()
+                true
+            }
+
             else -> super.onKeyDown(keyCode, event)
         }
     }

@@ -128,6 +128,23 @@ class GameRenderer(
         stats.reset()
     }
 
+    /**
+     * Throw away the accumulated frame history and the pending simulated time.
+     *
+     * Called on the GL thread after the benchmark has blocked it for several
+     * seconds. Those frames are an artefact of the measurement, not a property
+     * of the game, and leaving them in would show the client a multi-second
+     * `max` and a burst of `jank` that describe nothing real. The accumulator is
+     * reset for the same reason the pause path resets it: without that, the
+     * first frame back would run the full catch-up budget and the piece would
+     * jump.
+     */
+    fun discardFrameHistory() {
+        lastFrameNanos = 0L
+        accumulatorNanos = 0L
+        stats.reset()
+    }
+
     fun setPaused(value: Boolean) {
         paused = value
         if (value) {
