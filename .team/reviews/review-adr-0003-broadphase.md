@@ -1,7 +1,11 @@
 # Review: docs/adr-0003-broadphase (PR #14)
 
-Verdict: approve
+Verdict: approve-with-comments
 Range: `origin/main` `4a3c996` .. `origin/docs/adr-0003-broadphase`
+
+**Update after QA cross-check:** one provenance detail in Amendment 3 is wrong
+and should be corrected before this lands as the record — see "Should fix". The
+decision and the physics are sound; the fix is a one-line label change.
 
 Documentation fix: ADR 0003 §1 claimed the broadphase is "rebuilt once per
 frame," false since commit `0571697` (per-substep), and three documents cited an
@@ -32,10 +36,8 @@ None.
     failed at `lattice 6: 39.2%`, lattice 4/5 clean. Exact match.
   - Per-substep 0.90% / 0.40% / 0.86% and the 15% budget match PR #10's measured
     header and `RIGID_PENETRATION_FRACTION = 0.15f`, which I confirmed green.
-  - QA's **43.7%** on an 8-body pile matches the original pin text; the ADR
-    correctly attributes it separately from Backend's 39.2% (6-body pile) and
-    calls them "same order" rather than conflating them. Honest handling of two
-    scenes.
+  - QA's **43.7%** is a real measurement — but see "Should fix" on its
+    provenance. The number is right; the ADR's "8-body pile" label for it is not.
   - The +2.1% cost (468 → 478 µs) and the 2.9× lattice-6 margin
     (`MAX_SPEED * h` = 0.0625, closing 0.125 against the 0.36-unit cell) are
     arithmetically consistent.
@@ -46,6 +48,24 @@ None.
   ADR: `BroadphaseMarginTest` hard-codes its drop speed at 30 = today's
   `MAX_SPEED`, so raising `MAX_SPEED` must raise the guard's drop speed too or it
   silently tests a slower-than-terminal drop.
+
+## Should fix
+
+- **Correct the provenance of the 43.7% figure.** Amendment 3 says "QA
+  independently measured the per-frame lattice-6 case at 43.7% **on an 8-body
+  pile**." QA re-checked against the actual scene (`BroadphaseMarginTest`, which
+  I confirmed uses `TestScenes.pile(config, bodies = 6)`): 43.7% is that **6-body**
+  scene, measured on `feat/core-sim`'s per-frame solver. So both figures in the
+  table are the *same 6-body scene* — 39.2% is main's reworked solver reverted to
+  per-frame (which I reproduced myself), 43.7% is feat/core-sim's original
+  per-frame solver. They differ by **solver baseline, not pile size**. The ADR's
+  "8-body pile" label is a reconstruction error (QA's notes hold a separate
+  ~44% 8-body exploratory run whose label got fused onto the 43.7% value). Fix:
+  attribute 43.7% to the 6-body guard scene, and frame the 39.2%/43.7% gap as two
+  solver generations rather than two pile sizes — that ties the ADR figure to the
+  standing guard's scene and keeps record and test in agreement. Number stays
+  43.7%; only the label is wrong. Not a blocker on the decision, but an ADR is the
+  authoritative record, so it should be right before it lands.
 
 ## Notes (non-blocking)
 
