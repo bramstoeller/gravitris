@@ -23,8 +23,13 @@ every decision is recorded here, so a restarted container knows where it stands.
 
 | 2026-07-20 | 3 | **requested** | milestone 1 "Squish Toy" APK built, 227 tests green, install doc written |
 
-**Currently waiting on:** Gate 3 — the client running the Squish Toy on their
-Fairphone and answering one question: does the block feel heavy?
+| 2026-07-20 | 3 | **APPROVED** | client ran it on their Fairphone: softness "ja, beter", contact "ziet er goed uit nu, blokjes raken elkaar". Told the team to carry on without further gates until release. |
+
+**Currently waiting on:** nothing. Building Stage 3 — the mechanic and the art.
+Next gate is 4, release.
+
+**Standing:** the client does not want to be asked to approve each step. Report
+outcomes, ask only for product decisions and device test results.
 
 **Note:** conversation with the client switched to **Dutch** at this point.
 Repository artifacts stay in English.

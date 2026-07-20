@@ -9,9 +9,9 @@ The Product Lead owns this file.
 | 2 | Physics core: particles, constraints, broadphase, contacts, fixed tick + 8 substeps, JVM stability & determinism tests | backend | `feat/core-sim` | done — PR #2 |
 | 3 | Renderer + input: GL ES 3.0 context, dynamic mesh upload, flat triangles, drag/tap/swipe, impact haptics | frontend | `feat/app-shell` | done — PR #3, includes CHK-1 bypass fix |
 | 4 | Visual language against the confirmed shader varying set | ux | `chore/ux-varyings` | todo |
-| 5 | **MILESTONE 1 — "Squish Toy"**: one piece falls, squashes, settles. Plus on-device benchmark to close the performance unknown | backend+frontend | `feat/squish-toy` | **awaiting gate 3** — APK built, with client |
-| 6 | The mechanic: piece sequence, lock detection, coverage bands, clear rule, stack drop and re-settle | backend | `feat/mechanic` | todo |
-| 7 | Procedural shading: gel/subsurface, grain, rim light, band glow. Profile the fragment shader | frontend | `feat/shading` | todo |
+| 5 | **MILESTONE 1 — "Squish Toy"**: one piece falls, squashes, settles. Plus on-device benchmark to close the performance unknown | backend+frontend | `feat/squish-toy` | **done** — gate 3 approved on device |
+| 6 | The mechanic: piece sequence, lock detection, coverage bands, clear rule, stack drop and re-settle | backend | `feat/mechanic` | queued — after the interlock fix |
+| 7 | Procedural shading: gel/subsurface, grain, rim light, band glow. Profile the fragment shader | frontend | `feat/shading` | in-progress |
 | 8 | Rules: losing condition + settle grace, difficulty ramp, scoring | backend | `feat/rules` | todo |
 | 9 | Feel: landing silhouette, screen shake, impact propagation, clear-release | frontend | `feat/feel` | todo |
 | 10 | Dev tuning panel — thresholds, compliance, grace window (needed *before* tuning) | frontend | `feat/tuning-panel` | todo |
