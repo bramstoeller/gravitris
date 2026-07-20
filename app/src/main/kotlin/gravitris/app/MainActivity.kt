@@ -73,7 +73,12 @@ class MainActivity : Activity() {
                 renderContext.triangles = renderer.trianglesDrawn()
                 renderContext.bodies = renderer.bodyCount()
                 renderContext.dynamicBytesPerFrame = renderer.dynamicBytesPerFrame()
-                renderContext.hapticsScaled = haptics.isScaled
+                renderContext.hapticsMode = haptics.mode
+                renderContext.impactsSeen = haptics.impactsSeen
+                renderContext.pulsesRequested = haptics.pulsesRequested
+                renderContext.lastImpactEnergy = haptics.lastEnergy
+                renderContext.masterVibrateOn = haptics.masterVibrateOn
+                renderContext.touchFeedbackOn = haptics.touchFeedbackOn
                 renderContext.compressionDarkening = renderer.compressionDarkening
                 readout.view.post { readout.update(snapshot, renderContext) }
             },

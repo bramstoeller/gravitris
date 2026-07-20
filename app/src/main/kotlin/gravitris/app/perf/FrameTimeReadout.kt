@@ -7,6 +7,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.TextView
+import gravitris.app.haptics.ImpactHaptics
 import java.util.Locale
 
 /**
@@ -99,15 +100,20 @@ class FrameTimeReadout(context: Context) {
                 "%5.1fms cpu  %5.1fms max%n" +
                 "%5.1f fps   %5d jank/s%n" +
                 "%5d tri   %5d bodies%n" +
-                "%5.1f KB/f  %s  %s",
+                "%5.1f KB/f  %s%n" +
+                "%s%n" +
+                "  imp:%d puls:%d e:%.2f%n" +
+                "  sys vib:%s touch-fb:%s",
             BASELINE_LABEL,
             snapshot.meanMs, snapshot.p95Ms,
             snapshot.meanCpuMs, snapshot.maxMs,
             snapshot.fps, snapshot.jankPerSecond,
             context.triangles, context.bodies,
             context.dynamicBytesPerFrame / 1024f,
-            if (context.compressionDarkening) "shade:on" else "shade:off",
-            if (context.hapticsScaled) "haptics:scaled" else "haptics:fixed",
+            if (context.compressionDarkening) "shade:on" else "shade:OFF",
+            context.hapticsMode.readout,
+            context.impactsSeen, context.pulsesRequested, context.lastImpactEnergy,
+            settingLabel(context.masterVibrateOn), settingLabel(context.touchFeedbackOn),
         )
         render()
     }
@@ -161,21 +167,68 @@ class FrameTimeReadout(context: Context) {
      * interpreted rather than merely reported. A frame time means nothing
      * without knowing how much geometry produced it.
      *
-     * `haptics:scaled` vs `haptics:fixed` is here for a specific reason: if
-     * the client reports that every impact feels the same, we need to know
-     * whether that is our energy curve or a device without amplitude control
-     * before spending a day retuning the curve.
+     * The haptics line is here for a specific reason: if the client reports
+     * that every impact feels the same, we need to know whether that is our
+     * energy curve or a device without amplitude control before spending a day
+     * retuning the curve.
+     *
+     * It gets a whole line to itself, and states the *reason* for any fallback,
+     * because the two-state version did not survive contact with the client.
+     * Milestone 1 came back reading `haptics:fixed` and that single word was
+     * compatible with at least four different causes, so it told us only that
+     * something was wrong — not what. [ImpactHaptics.Mode] carries the reason
+     * and this line prints it verbatim.
      */
     class RenderContext {
         var triangles = 0
         var bodies = 0
         var dynamicBytesPerFrame = 0
-        var hapticsScaled = false
 
-        /** Whether the compression darkening term is active. Shown because a
-         *  frame time is not comparable across the two, and the whole point of
-         *  the toggle is comparing them. */
+        /** Why the haptic channel is doing what it is doing. */
+        var hapticsMode: ImpactHaptics.Mode = ImpactHaptics.Mode.PENDING
+
+        /**
+         * Impacts received from the core, pulses actually requested from the
+         * platform, and the energy of the most recent one.
+         *
+         * The client felt no vibration at all while the readout said a fixed
+         * pulse was running. `imp:0` means nothing is crossing the `:core-sim`
+         * contract; `imp:N puls:0` means everything is under the energy floor;
+         * `imp:N puls:M` with nothing felt means we asked and the platform did
+         * not deliver. Without these three numbers those are one symptom.
+         */
+        var impactsSeen = 0
+        var pulsesRequested = 0
+        var lastImpactEnergy = 0f
+
+        /**
+         * The user's own vibration settings, because `vibrate()` gives no
+         * indication when the platform silently drops a pulse we asked for.
+         * `null` when the setting could not be read.
+         */
+        var masterVibrateOn: Boolean? = null
+        var touchFeedbackOn: Boolean? = null
+
+        /**
+         * Whether the compression darkening term is active. Shown because a
+         * frame time is not comparable across the two, and the whole point of
+         * the toggle is comparing them.
+         *
+         * The off state is shouted (`shade:OFF`) rather than stated. It
+         * defaults to *on* and only a deliberate key press turns it off, yet
+         * both Milestone 1 screenshots came back with it off — so the client
+         * spent the demo unable to see the deformation the demo existed to
+         * show, and the only clue was three lower-case characters in a corner.
+         */
         var compressionDarkening = false
+    }
+
+    /** `?` is a genuinely different answer from `on` or `off` and is shown as
+     *  such rather than being collapsed into a default. */
+    private fun settingLabel(value: Boolean?): String = when (value) {
+        true -> "on"
+        false -> "OFF"
+        null -> "?"
     }
 
     private companion object {
