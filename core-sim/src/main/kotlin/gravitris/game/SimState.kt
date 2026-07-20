@@ -155,9 +155,13 @@ interface SimState {
      * **Damped, not instantaneous.** A band's raw fill spikes for a few frames
      * during the bounce of a heavy landing, and an undamped value would flash
      * the well amber on every hard drop — teaching the player a rule that is
-     * not the rule. The clear rule reads the undamped value; the two converge
-     * well inside the lock debounce, so they agree whenever a clear is
-     * actually decided.
+     * not the rule. The clear rule reads this same damped value: the damping is
+     * deliberately its quiescence gate, so a spike glows briefly here but
+     * cannot trigger a clear. **This does not make "glow crossed threshold" a
+     * clear**, though — a clear also requires a piece to lock and a body to
+     * actually sit in the band, and the threshold is runtime-tunable and
+     * invisible to the shader. Drive clear visuals off [bandClearProgress],
+     * never off this crossing a value.
      */
     val bandFill: FloatArray
     val bandBottomY: Float

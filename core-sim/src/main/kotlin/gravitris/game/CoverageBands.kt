@@ -51,38 +51,49 @@ internal class CoverageBands(
 ) {
 
     /**
-     * Per-band fill as measured this tick, 0..1. **What the clear rule reads.**
+     * Per-band fill as measured this tick, 0..1: the raw, undamped occupancy.
      *
-     * Deliberately not the published value. See [fill].
+     * **Not read by the clear rule and not published.** It exists for one job:
+     * [snap] copies it onto [fill] to drop the damping instantly when a clear
+     * removes material (see `Simulation.removeClearedMaterial`). Nothing reads
+     * it on the hot path. The clear rule reads the *damped* [fill] — see there
+     * for why the damping is the quiescence gate rather than a separate energy
+     * test.
      */
     val fillRaw = FloatArray(bandCount)
 
     /**
-     * Per-band fill, damped. **What the renderer reads**, through
-     * `SimState.bandFill`.
+     * Per-band fill, damped. **Read by both the renderer** (through
+     * `SimState.bandFill`) **and the clear rule** (`Simulation.beginClear`).
      *
-     * ### Why the eye and the rule read different arrays
+     * ### Why the published value is damped
      *
-     * `docs/ux/band-glow.md` flags this as an open question and it has a real
-     * artefact behind it: a band's fill spikes for a few frames during the
-     * bounce of a heavy landing and falls back. The glow curve accelerates
-     * hard between 70% and 90% — that asymmetry *is* how the rule teaches
-     * itself without a tutorial — so an undamped value would flash the well
-     * amber on every heavy landing and teach the player something false.
+     * `docs/ux/band-glow.md` flags this and it has a real artefact behind it:
+     * a band's fill spikes for a few frames during the bounce of a heavy
+     * landing and falls back. The glow curve accelerates hard between 70% and
+     * 90% — that asymmetry *is* how the rule teaches itself without a tutorial
+     * — so an undamped value would flash the well amber on every heavy landing
+     * and teach the player something false.
      *
-     * Damping it in the renderer instead was rejected, and the Frontend
-     * Engineer and I agreed on that explicitly: it would make the *displayed*
-     * coverage disagree with the coverage the clear rule actually fires on,
-     * which is a worse bug than the flicker.
+     * ### Why the clear rule reads the same damped array
      *
-     * So the damping lives here, once, and the rule keeps reading [fillRaw].
-     * The two agree at the only moment that matters: a piece must be still for
-     * `lockDebounceTicks` before it locks, which is several times the rise
-     * time constant below, so by the time a clear is evaluated this array has
-     * converged onto [fillRaw]. The residual disagreement is that the glow
-     * lags a clear by a frame or two — unobservable, because the moment a
-     * clear fires the ignition flash is driven by `bandClearProgress` instead,
-     * not by this.
+     * The damping is not only for the eye: it *is* the clear rule's quiescence
+     * gate. ADR 0005 requires that a clear not fire on a transient bounce
+     * spike; reading this array gives that for free, because a one- or
+     * two-frame spike is attenuated to nothing here before the rule ever sees
+     * it. The earlier design read [fillRaw] and gated separately on stack-wide
+     * kinetic energy — that gate was measured to make clears *unreachable* in a
+     * real game and was removed. The full argument lives in
+     * `Simulation.beginClear`.
+     *
+     * Damping in the renderer instead was rejected, and the Frontend Engineer
+     * and I agreed on that explicitly: it would make the *displayed* coverage
+     * disagree with the coverage the clear rule fires on, a worse bug than the
+     * flicker. One damped array, read by both, keeps them in agreement by
+     * construction. The two nonetheless agree tightly at a lock: a piece must
+     * be still for `lockDebounceTicks` before it locks, several times the rise
+     * time constant below, so by the time a clear is evaluated this value has
+     * converged onto [fillRaw].
      */
     val fill = FloatArray(bandCount)
 

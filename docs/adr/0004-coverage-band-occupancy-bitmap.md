@@ -146,15 +146,20 @@ fill 1.0 and a band mid-dissolve are indistinguishable — so the two signals ar
 separate and stay separate. Keying a flash off fill would re-trigger it, because
 fill never latches.
 
-**4. `SimState.bandFill` is damped; the clear rule fires on an undamped value
-that is not published.** Asymmetric first-order, rise 0.25/tick, fall 0.5/tick.
-The damping is correct and intentional: raw fill spikes during the bounce of a
-heavy landing, and an undamped glow would flash the well amber on every hard
-drop, teaching the player a rule that is not the rule. **The consequence is a
-trap and belongs in every consumer's head: never treat the glow as evidence of
-the decision.** Do not assert "glow crossed threshold ⇒ clear fired" against
-`bandFill`; read `bandClearProgress` leaving `-1`. Asserted against fill, such a
-test is off by a frame or two and reads as a race.
+**4. `SimState.bandFill` is damped, and the clear rule reads this same damped
+value.** Asymmetric first-order, rise 0.25/tick, fall 0.5/tick. The damping is
+correct and intentional: raw fill spikes during the bounce of a heavy landing,
+and an undamped glow would flash the well amber on every hard drop, teaching the
+player a rule that is not the rule. The damping doubles as the clear rule's
+quiescence gate — a spike is attenuated here before the rule sees it — which is
+why the rule reads the published value rather than a private undamped one (the
+earlier private-undamped design paired with a stack-energy gate that measured
+*unreachable*; see `Simulation.beginClear`). **A trap survives that change and
+belongs in every consumer's head: fill crossing the threshold is not a clear.**
+A clear also requires a piece to lock and a body to sit in the band, and the
+threshold is runtime-tunable and invisible to the shader — so a band can glow
+at full for many frames with no clear. Do not assert "glow crossed threshold ⇒
+clear fired" against `bandFill`; read `bandClearProgress` leaving `-1`.
 
 **5. Fill *snaps* on the tick material is removed, rather than damping down.**
 The damping exists to swallow a transient the player should not see rewarded.
