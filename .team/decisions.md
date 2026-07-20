@@ -4,3 +4,13 @@ One line per ADR. The full record lives in `/work/docs/adr/`.
 
 | ADR | Decision | Rationale |
 | --- | -------- | --------- |
+| [0001](../docs/adr/0001-xpbd-substepped-soft-body-solver.md) | XPBD soft-body solver, 8 substeps, SoA layout | Measured: cost linear and independent of stiffness, so "spongy" is affordable. SoA adopted for zero allocation, not for cache — the cache win is only 1–3% at our scale |
+| [0002](../docs/adr/0002-pure-kotlin-solver-no-ndk.md) | Solver stays pure Kotlin/JVM, no NDK | Budget doesn't need native speed; gives bit-identical cross-device determinism and no ABI splits. APK ~2–4MB, target holds |
+| [0003](../docs/adr/0003-contacts-and-stack-stability.md) | Particle contacts on a uniform grid, Coulomb friction, 8-substep floor | Measured: below 8 substeps a settled pile jitters. Substeps are a correctness floor, not a quality dial |
+| [0004](../docs/adr/0004-coverage-band-occupancy-bitmap.md) | Coverage bands via a coarse occupancy bitmap | Measures span (finds holes) not summed area. Costs 0.05% of a frame — free. Threshold runtime-tunable |
+| [0005](../docs/adr/0005-losing-condition-overflow-with-settle-grace.md) | Loss = spawn region blocked, after a settle grace window | Fair (no death by transient bulge), legible (reuses band glow), rewards the stack settling back down |
+| [0006](../docs/adr/0006-fixed-timestep-determinism-and-refresh-rate.md) | Fixed 60Hz tick, deterministic sim, render interpolated, request 60Hz | Determinism enables JVM replay tests; 120Hz rejected on fragment-shader cost, and left reversible |
+| [0007](../docs/adr/0007-rendering-deformable-meshes-gles3.md) | One dynamic VBO, static IBOs, fixed varying set for shading | 1–2 draw calls; ~36KB/frame upload is not a bottleneck. `vCompression` makes "heavy" a shading input |
+| [0008](../docs/adr/0008-module-boundaries.md) | Two modules: framework-free `:core-sim` + `:app` | The no-Android rule is what makes deterministic JVM testing possible. Two, not five — nothing needs finer seams |
+| [0009](../docs/adr/0009-reference-device-and-quality-scaling.md) | Fairphone 6 is the reference device; quality tiers chosen once at startup | The 2020 floor is unverifiable — stop claiming it. Scale rendering at runtime, never substeps or particles |
+| [0010](../docs/adr/0010-android-platform-baseline.md) | API 29–36, edge-to-edge, predictive back, universal signed APK | Play deferred; no native libs so no ABI matrix. Edge-to-edge must be designed in, not retrofitted |
