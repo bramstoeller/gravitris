@@ -94,15 +94,25 @@ zero allocation; treat any result change as a fixture-regeneration event.
 
 ## Housekeeping — a stale CI fix propagated (for DevOps)
 
-CI on this PR first failed before `make test` even ran: the `Secret scan
-(CHK-7)` gitleaks step aborts on `pull_request` events without a `GITHUB_TOKEN`.
-This base (`feat/core-sim`) predates the devops fix that newer branches already
-carry (`feat/gel-shading` has it, with the same comment). I propagated the exact
-one-line fix — `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` on that step — so CI
-could actually run my tests. It strengthens the scan (it was aborting, i.e. not
-scanning) rather than weakening it, and adds no secret. DevOps owns the workflow;
-this just unblocked verification. When `feat/core-sim` picks up the CI fix from
-trunk the two converge.
+This base (`feat/core-sim`) predates two devops CI fixes that newer branches
+already carry, and both had to be propagated here just to get CI to *run* my
+tests. Neither is my code; both are verbatim copies of fixes already blessed on
+other branches, and neither weakens anything:
+
+1. **gitleaks token** — the `Secret scan (CHK-7)` step aborts on `pull_request`
+   events without a `GITHUB_TOKEN`, before `make test` runs. Added
+   `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` to that step (as on
+   `feat/gel-shading`). It strengthens the scan — it was aborting, i.e. not
+   scanning — and adds no secret.
+2. **ANDROID_SDK_ROOT** — `make test` then failed on `:app:lintReportDebug`
+   because the runner exports `ANDROID_SDK_ROOT` to its own preinstalled SDK
+   while the workflow only sets `ANDROID_HOME`, so AGP saw two SDK paths and
+   refused. Pointed both at the pinned SDK on the three SDK-consuming steps (as
+   on `feat/mechanic`, same comment).
+
+DevOps owns the workflow; these just unblocked verification of this branch. The
+real resolution is `feat/core-sim` picking up the CI foundation from trunk
+(backlog item 1), after which these converge.
 
 ## Open question for the Product Lead
 
