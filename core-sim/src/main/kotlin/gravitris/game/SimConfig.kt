@@ -75,30 +75,6 @@ data class SimConfig(
     /** Particles per piece edge: 4 | 5 | 6. A piece is a `lattice`x`lattice` grid. */
     val lattice: Int = 5,
 
-    /**
-     * The piece's **material** extent in world units — outer edge to outer
-     * edge, including the particle radius on each side. **This is the gameplay
-     * constant** (ADR 0011), and the lattice is an implementation detail
-     * underneath it:
-     *
-     * ```
-     * spacing = pieceExtent / lattice
-     * particleRadius = spacing / 2
-     * ```
-     *
-     * Defining geometry this way makes changing [lattice] preserve piece size
-     * exactly. The previous derivation went the other way — a fixed
-     * centre-to-centre width with the radius added on top — which made the
-     * material extent vary 11% across lattices (2.40 / 2.25 / 2.16 for 4 / 5 /
-     * 6), so a *performance* setting silently changed how many pieces fit per
-     * row, which is to say it changed the game.
-     *
-     * **LOAD-BEARING.** [clearThreshold], pieces-per-row and the landing
-     * silhouette are all calibrated against this value; changing it
-     * invalidates that tuning.
-     */
-    val pieceExtent: Float = 2.40f,
-
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
     val wellWidth: Float = 10f,
     val wellHeight: Float = 20f,
@@ -207,8 +183,8 @@ data class SimConfig(
      */
     val maxCatchupTicks: Int = 8,
 ) {
-    /** Distance between adjacent lattice particles at rest (ADR 0011). */
-    val spacing: Float get() = pieceExtent / lattice
+    /** Distance between adjacent lattice particles at rest. */
+    val spacing: Float get() = PIECE_WIDTH / (lattice - 1)
 
     /**
      * Contact radius: half the lattice spacing, so adjacent particles within a
@@ -218,11 +194,27 @@ data class SimConfig(
     val particleRadius: Float get() = 0.5f * spacing
 
     /**
-     * Centre-to-centre span of a piece's lattice — [pieceExtent] less one
-     * radius at each side. This is where a piece's *particles* are, not where
-     * its *material* ends; use [pieceExtent] for anything the player can see.
+     * Centre-to-centre span of a piece's lattice. **The geometry constant** —
+     * this is [PIECE_WIDTH], the same at every quality tier, so a piece's
+     * particles occupy the same footprint whether the tier renders 4, 5 or 6 of
+     * them per edge (ADR 0009). Pieces-per-row is calibrated against it.
      */
     val pieceWidth: Float get() = spacing * (lattice - 1)
+
+    /**
+     * The piece's **material** extent — outer edge to outer edge, i.e.
+     * [pieceWidth] plus a [particleRadius] on each side. Use this for anything
+     * the player can see (the silhouette, ADR 0011); use [pieceWidth] for where
+     * the particles are.
+     *
+     * Note this varies slightly across tiers (2.40 / 2.25 / 2.16 for lattice
+     * 4 / 5 / 6) because the constant is the particle *footprint*, not the
+     * rendered surface. Lattice 5 is the shipping tier and the one the client
+     * approved the feel of. Whether the constant should instead be the extent —
+     * making rendered size tier-invariant at the cost of the approved lattice-5
+     * feel — is an open architecture question, see handoff 0019.
+     */
+    val pieceExtent: Float get() = pieceWidth + 2f * particleRadius
 
     init {
         require(substeps >= 1) { "substeps must be >= 1, was $substeps (ADR 0003 floor is 8)" }
@@ -238,7 +230,6 @@ data class SimConfig(
         require(bandColumns >= 1) { "bandColumns must be >= 1, was $bandColumns" }
         require(bandRows >= 1) { "bandRows must be >= 1, was $bandRows" }
         require(clearThreshold in 0f..1f) { "clearThreshold must be in 0..1, was $clearThreshold" }
-        require(pieceExtent > 0f) { "pieceExtent must be > 0, was $pieceExtent" }
         require(lockKineticEnergy >= 0f) { "lockKineticEnergy must be >= 0, was $lockKineticEnergy" }
         require(lockDebounceTicks >= 1) { "lockDebounceTicks must be >= 1, was $lockDebounceTicks" }
         require(lockTimeoutTicks >= lockDebounceTicks) {
@@ -251,5 +242,16 @@ data class SimConfig(
         require(wellHeight >= pieceExtent) {
             "wellHeight ($wellHeight) is shorter than a piece ($pieceExtent); none could spawn"
         }
+    }
+
+    companion object {
+        /**
+         * Centre-to-centre width of a piece, in world units — the geometry
+         * constant every other length is derived from. Constant across quality
+         * tiers so the particle footprint does not change with the lattice
+         * (ADR 0009). Published to `:app` derivations via [SimState] rather than
+         * re-derived there.
+         */
+        const val PIECE_WIDTH: Float = 1.8f
     }
 }
