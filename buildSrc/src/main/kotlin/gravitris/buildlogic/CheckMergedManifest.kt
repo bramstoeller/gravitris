@@ -36,8 +36,13 @@ import org.w3c.dom.Element
  *    `INTERNET` regardless of that list.
  *  - CHK-3: `<application>` has `android:allowBackup="false"` and an
  *    `android:dataExtractionRules` attribute present.
- *  - CHK-4: no `<activity>`, `<service>`, `<receiver>` or `<provider>` is
- *    `android:exported="true"` other than the launcher activity.
+ *  - CHK-4: the only exported component may be the app's single launcher
+ *    activity — an `<activity>` carrying BOTH action MAIN and category
+ *    LAUNCHER in one intent-filter. Any other exported `<activity>`,
+ *    `<activity-alias>`, `<service>`, `<receiver>` or `<provider>` fails.
+ *    The exemption covers AT MOST ONE launcher: if the merged manifest
+ *    contains more than one exported launcher activity, none is exempt
+ *    (fail closed on ambiguity — see the CHK-4 block for why).
  */
 abstract class CheckMergedManifest : DefaultTask() {
 
@@ -179,22 +184,75 @@ abstract class CheckMergedManifest : DefaultTask() {
             }
         }
 
-        // CHK-4: no exported component other than the launcher activity.
+        // CHK-4: the only exported component may be the app's single launcher
+        // activity. Everything else exported is a foreign entry point.
         val exportedTags = listOf("activity", "activity-alias", "service", "receiver", "provider")
+
+        // Find the exported *launcher* activities first. The exemption below
+        // covers AT MOST ONE of them.
+        //
+        // The bug this replaces: the old code exempted `tag == "activity" &&
+        // isLauncherActivity(element)` inside the reporting loop, i.e. it waved
+        // through EVERY activity carrying a LAUNCHER category. The check's own
+        // message said "only the launcher activity" (singular), but a dependency
+        // contributing a second exported activity with a MAIN/LAUNCHER
+        // intent-filter — ad and analytics SDKs do exactly this on manifest
+        // merge — got exempted too, and shipped a foreign exported entry point
+        // while the build stayed green. That is the CHK-1 sdk-23 shape again: a
+        // guard reporting clean about a state it cannot vouch for.
+        //
+        // An app has one launcher. So: exempt the launcher only when there is
+        // exactly one. If there are two or more, the check cannot tell which is
+        // the app's own — the manifest names differ from the applicationId by
+        // design here (launcher is `gravitris.app.MainActivity`, applicationId
+        // is `nl.brainbuilders.gravitris`), so a namespace-prefix match would
+        // false-flag the legitimate build and cannot be the discriminator.
+        // Fail closed: exempt NONE and report them all. A future, deliberate
+        // second launcher is a security-engineer decision, recorded in
+        // docs/security/threat-model.md CHK-4 — not something a merged-in
+        // dependency gets to introduce silently.
+        val launcherActivities = mutableListOf<Element>()
+        val activityNodes = manifestElement.getElementsByTagName("activity")
+        for (i in 0 until activityNodes.length) {
+            val element = activityNodes.item(i) as Element
+            if (element.getAttributeNS(androidNs, "exported") == "true" &&
+                isLauncherActivity(element)
+            ) {
+                launcherActivities += element
+            }
+        }
+        val exemptLauncher: Element? = launcherActivities.singleOrNull()
+
+        if (launcherActivities.size > 1) {
+            val names = launcherActivities.joinToString(", ") {
+                it.getAttributeNS(androidNs, "name").ifBlank { "(unnamed)" }
+            }
+            failures += "CHK-4: expected exactly one exported launcher activity, " +
+                "found ${launcherActivities.size}: $names. A second launcher is a " +
+                "foreign exported entry point (ad/analytics SDKs contribute these " +
+                "on manifest merge); the check cannot identify the app's own, so " +
+                "none is exempt (docs/security/threat-model.md CHK-4)."
+        }
+
+        // Report every OTHER exported component. Note on implicit export: an
+        // activity with an intent-filter and no explicit android:exported is a
+        // hard AGP build error at this project's targetSdk (36), so the platform
+        // already forbids the implicit-export case and this check need only
+        // reason about android:exported="true".
         val exportedOthers = mutableListOf<String>()
         for (tag in exportedTags) {
             val nodes = manifestElement.getElementsByTagName(tag)
             for (i in 0 until nodes.length) {
                 val element = nodes.item(i) as Element
-                val exported = element.getAttributeNS(androidNs, "exported")
-                if (exported != "true") continue
-                if (tag == "activity" && isLauncherActivity(element)) continue
+                if (element.getAttributeNS(androidNs, "exported") != "true") continue
+                if (element === exemptLauncher) continue      // the one legit launcher
+                if (element in launcherActivities) continue    // already reported above
                 val name = element.getAttributeNS(androidNs, "name").ifBlank { "(unnamed)" }
                 exportedOthers += "$tag $name"
             }
         }
         if (exportedOthers.isNotEmpty()) {
-            failures += "CHK-4: expected only the launcher activity exported, " +
+            failures += "CHK-4: expected only the app's launcher activity exported, " +
                 "also found: ${exportedOthers.joinToString(", ")}"
         }
 
@@ -263,21 +321,35 @@ abstract class CheckMergedManifest : DefaultTask() {
         )
     }
 
+    /**
+     * True iff [activity] is a home-screen launcher entry point: it has an
+     * intent-filter carrying BOTH action MAIN and category LAUNCHER.
+     *
+     * Requiring both (in the same filter), rather than category LAUNCHER
+     * alone, narrows the CHK-4 exemption to what actually creates a launcher
+     * entry point. An exported activity with a lone LAUNCHER category and no
+     * MAIN action is not a real launcher and does not earn the exemption — it
+     * is reported like any other exported component. The narrower the
+     * exemption, the more the check catches; this is the fail-closed choice.
+     */
     private fun isLauncherActivity(activity: Element): Boolean {
         val intentFilters = activity.getElementsByTagName("intent-filter")
         for (i in 0 until intentFilters.length) {
             val filter = intentFilters.item(i) as Element
-            val categories = filter.getElementsByTagName("category")
-            var hasLauncher = false
-            for (j in 0 until categories.length) {
-                val category = categories.item(j) as Element
-                if (category.getAttributeNS(androidNs, "name") ==
-                    "android.intent.category.LAUNCHER"
-                ) {
-                    hasLauncher = true
-                }
+            if (filterHasChild(filter, "action", "android.intent.action.MAIN") &&
+                filterHasChild(filter, "category", "android.intent.category.LAUNCHER")
+            ) {
+                return true
             }
-            if (hasLauncher) return true
+        }
+        return false
+    }
+
+    private fun filterHasChild(filter: Element, tag: String, androidName: String): Boolean {
+        val nodes = filter.getElementsByTagName(tag)
+        for (i in 0 until nodes.length) {
+            val node = nodes.item(i) as Element
+            if (node.getAttributeNS(androidNs, "name") == androidName) return true
         }
         return false
     }
