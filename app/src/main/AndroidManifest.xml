@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        No permission is requested. This line is an *active block*, not
+        decoration: it tells the manifest merger to strip any <uses-permission
+        android:name="android.permission.INTERNET"/> a dependency contributes
+        from its own manifest at any depth, so a library silently gaining
+        network access fails loudly instead of shipping quietly.
+        See docs/security/threat-model.md §5 (chore/threat-model, pending
+        merge) and CHK-1 (buildSrc CheckMergedManifest task), which verifies
+        this held on the *merged* manifest rather than trusting this file.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@android:drawable/ic_dialog_info">
+        <!--
+            android:allowBackup="false" + dataExtractionRules: Android Auto
+            Backup is on by default and would otherwise copy SharedPreferences
+            off-device with no code of ours involved (threat-model.md finding
+            S-1). CHK-3 asserts both on the merged manifest.
+        -->
+
+        <!--
+            Fully-qualified, not relative (".MainActivity"): the Kotlin source
+            package (gravitris.app, shared convention with :core-sim's
+            gravitris.* packages) deliberately differs from the Android
+            namespace/applicationId (nl.brainbuilders.gravitris, below), so a
+            relative name would resolve against the wrong package and fail
+            lint's MissingClass check.
+        -->
+        <activity
+            android:name="gravitris.app.MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- The launcher activity is the only exported component (CHK-4). -->
+    </application>
+</manifest>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gravitris</string>
+    <string name="stage0_placeholder">Gravitris — Stage 0 build scaffold.\nNo renderer, no solver, no game yet.</string>
+</resources>
