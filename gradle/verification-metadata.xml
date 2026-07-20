@@ -2370,17 +2370,35 @@
          </artifact>
       </component>
       <!--
-        Two versions on purpose. Which one the root project's plugin
-        classpath resolves to is not stable across otherwise-identical cold
-        builds - observed both 1.6.4 and 1.8.0 resolve from the same
-        declared, exact-pinned plugin set (AGP 8.9.3, Kotlin 2.1.21), with no
-        version range of ours involved. Root cause not fully chased down
-        (suspected: Gradle's own embedded Kotlin DSL tooling and AGP/KGP
-        wanting different exact versions of this transitive dependency, with
-        which one "wins" depending on how much of the classpath graph a
-        given invocation realizes). Recorded here as a known gap - see
-        handoff 0006/0007 (chore/build-foundation) - rather than silently
-        re-whack-a-moled the next time a third version shows up.
+        Two versions, both legitimate, root-caused (not a mystery anymore -
+        see the earlier comment's history in git blame for the first,
+        incomplete pass at this). Two independent things depend on
+        kotlinx-coroutines-core-jvm at two different exact versions, and
+        which one shows up in the root project's plugin classpath depends
+        on whether both of their subtrees get resolved in a given
+        invocation or only one does:
+
+          - org.jetbrains.kotlin:kotlin-compiler-embeddable:2.0.20 and
+            kotlin-compiler-runner:2.0.20 (Gradle 8.11.1's own *bundled*
+            Kotlin, used internally for compiling this project's
+            .gradle.kts scripts) depend on kotlinx-coroutines-core-jvm
+            1.6.4 exactly (confirmed from their published POMs).
+          - kotlin-compiler-embeddable:2.1.21 and kotlin-compiler-runner:
+            2.1.21 (the Kotlin Gradle Plugin version this project declares
+            in gradle/libs.versions.toml, used for compiling this
+            project's own .kt sources) depend on kotlinx-coroutines-
+            core-jvm 1.8.0 exactly (also confirmed from their POMs).
+
+        Neither is a range; Gradle would deterministically prefer 1.8.0 if
+        both subtrees were resolved together in the same pass. They are not
+        always resolved together - which invocation touches which subtree
+        was not narrowed down further than that, and was not worth forcing
+        with an untested resolutionStrategy hack on a classpath
+        (`plugins{}`'s own synthesized one) that does not offer a
+        documented, supported way to do that. Both versions are pinned here
+        so verification passes regardless of which one shows up; see
+        handoff 0006/0007 (chore/build-foundation) for the full trail if a
+        third version ever needs the same treatment.
       -->
       <component group="org.jetbrains.kotlinx" name="kotlinx-coroutines-bom" version="1.8.0">
          <artifact name="kotlinx-coroutines-bom-1.8.0.pom">
