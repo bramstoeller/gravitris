@@ -126,9 +126,35 @@ interface SimState {
 
     // --- rendering topology (static per tier, ADR 0007) ---
     /**
-     * Body-local triangle indices, `0 until bodyLattice * bodyLattice`. Valid
-     * for one body and reused for every body with an offset of
-     * `bodyIndex * bodyLattice * bodyLattice`. Constant for the whole run.
+     * Body-local triangle indices. Valid for one body and reused for every body
+     * with an offset of `bodyIndex * bodyLattice * bodyLattice`. Constant for
+     * the whole run.
+     *
+     * **Length is `6 * (bodyLattice - 1) * (bodyLattice - 1)`** — six indices
+     * per lattice cell, two triangles each. The *values* it contains run
+     * `0 until bodyLattice * bodyLattice` (the particle indices), a different
+     * and smaller number: 96 versus 25 at lattice 5. Size an index buffer from
+     * the length, never from the value range.
+     *
+     * For the cell at lattice row `r`, column `c` — row 0 at the bottom, so
+     * world `y` increases with `r` — name the four corners by particle index
+     * (`L = bodyLattice`):
+     * ```
+     * p00 = r*L + c        p10 = r*L + c + 1
+     * p01 = (r+1)*L + c    p11 = (r+1)*L + c + 1
+     * ```
+     * The two triangles are emitted **counter-clockwise**:
+     * ```
+     * p00, p10, p11    then    p00, p11, p01
+     * ```
+     * so **each cell splits on the `p00`–`p11` diagonal** (bottom-left to
+     * top-right). That diagonal is not the consumer's to re-derive: the solver
+     * defines its two *area* constraints per cell on these exact two triangles
+     * (`SoftBodyWorld.addConstraints`), and [particleCompression] is their
+     * current/rest area ratio — split the other diagonal and the rendered
+     * halves are not the halves the solver measured, so a sheared cell creases
+     * the wrong way, visible in motion. `:app`'s `TopologyMatchesSolverTest`
+     * holds its topology to this array index-for-index.
      */
     val triangleIndices: IntArray
 
@@ -165,6 +191,20 @@ interface SimState {
      */
     val bandFill: FloatArray
     val bandBottomY: Float
+
+    /**
+     * Number of coverage bands, and the length of both [bandFill] and
+     * [bandClearProgress].
+     *
+     * Published for the same reason those arrays must not be measured with
+     * `.size`: the renderer's `uBandFill` is a fixed-size GLSL uniform array
+     * whose length is baked into the shader at compile time, so `:app` needs
+     * this to assert the two agree rather than discover a mismatch as
+     * out-of-range indexing, which is undefined behaviour in GLSL. Reading it
+     * from here rather than from a default-constructed `SimConfig` is what keeps
+     * the assertion honest once ADR 0010 varies the well geometry at runtime.
+     */
+    val bandCount: Int
 
     /** `wellHeight / bandCount`. */
     val bandHeight: Float
