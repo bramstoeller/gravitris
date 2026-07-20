@@ -4,7 +4,8 @@ import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
-import gravitris.coresim.CoreSimBuildScaffold
+import gravitris.game.SimConfig
+import gravitris.game.Simulation
 // The Android `namespace` (nl.brainbuilders.gravitris, in app/build.gradle.kts)
 // is the reverse-domain applicationId, kept deliberately separate from the
 // `gravitris.*` Kotlin source package convention shared with :core-sim — so
@@ -26,8 +27,14 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(
             TextView(this).apply {
+                // Reads real solver types purely to prove the :core-sim
+                // dependency links. `CoreSimBuildScaffold`, which this used to
+                // read, was the Stage 0 placeholder and was deleted when the
+                // solver landed, exactly as its own documentation instructed.
+                val config = SimConfig()
                 text = "${getString(R.string.stage0_placeholder)}\n\n" +
-                    "linked module: ${CoreSimBuildScaffold.MODULE_NAME}"
+                    "linked module: core-sim " +
+                    "(${config.substeps} substeps @ ${Simulation.TICK}s, lattice ${config.lattice})"
                 setBackgroundColor(Color.BLACK)
                 setTextColor(Color.WHITE)
                 textSize = 18f
