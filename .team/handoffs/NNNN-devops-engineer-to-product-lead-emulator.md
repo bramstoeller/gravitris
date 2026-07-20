@@ -26,64 +26,88 @@ out, to what it's worth. Re-evaluated from scratch rather than assumed.
 - API 36 (Android 16), matching the client's actual OS, not minSdk 29 (the
   floor, not the version worth testing rendering against).
 
-## What I found, and it is not good news
+## What I found — updated after a second, deeper pass
 
-Two separate, independently-confirmed problems. Both documented in
-`docs/operations.md` "Emulator — correctness testing only" in full, this is
-the short version:
+The first pass at this concluded "crashes most of the time, not fully
+root-caused, hardware GL unavailable, both bad news." The coordinator asked
+me to chase it further rather than leave it there. That was worth it —
+`make screenshot` is now reliable. Full trail in `docs/operations.md`
+"Emulator — correctness testing only", this is the short version:
 
-1. **Hardware GL is not actually available in this container**, despite
-   `/dev/dri` being present and readable. Confirmed two independent ways:
-   the host's own Mesa/EGL stack (`eglinfo -B`) falls back to `llvmpipe`
-   because the AMD GPU's kernel driver refuses
-   `amdgpu_query_info(ACCEL_WORKING)` with `EACCES`; and the emulator's own
-   capability check says the same thing directly (`Your GPU cannot be used
-   for hardware rendering`). The script detects this from the emulator's own
-   log and falls back to `-gpu swiftshader_indirect`, printing an unmissable
-   `GPU status: SOFTWARE (SwiftShader)` line rather than silently proceeding.
+1. **The crash is root-caused, and fixed.** A naive `strace` attach and a
+   post-mortem backtrace both turned out to be misleading (gdb's own
+   overhead sometimes avoided the underlying race entirely; a backtrace
+   grabbed too late caught the crash handler's cleanup, not the fault
+   itself). Attaching `gdb` to a *live* boot and catching the actual signal
+   (not a subsequent one — QEMU uses `SIGUSR1` internally, which gdb stops
+   on by default and which looks exactly like an unrelated hang if you
+   don't tell it not to) got a real answer: `-gpu swiftshader_indirect`
+   (this AVD's default) SIGSEGVs inside `libGLESv2.so` — specifically a
+   JIT-compiled shader routine (SwiftShader's Subzero/Reactor JIT) faulting
+   with `SEGV_ACCERR` (mapped memory, wrong permissions — a write-then-
+   execute JIT transition going wrong, not a plain bad pointer). `-gpu
+   swangle` runs the identical GLES calls through ANGLE on top of
+   SwiftShader's *Vulkan* backend instead of straight through the crashing
+   GLESv2 JIT path, and has not reproduced the crash once: **9/9 clean
+   boots and 3/3 full `make screenshot` runs** (build, install, launch,
+   screenshot) while confirming this. The script now uses `swangle` as its
+   software fallback. Still software — this fixed a stability bug, not the
+   hardware-acceleration question below.
 
-2. **The emulator itself crashes on a majority of boot attempts** — a
-   `SIGSEGV` inside `qemu-system-x86_64-headless` (gfxstream), ~15-20s into
-   boot, under *both* `-gpu host` and `-gpu swiftshader_indirect`, *with or
-   without* `-no-accel` (so it is not specifically a KVM or a GPU-mode
-   problem). Confirmed with `strace -f` attached that it's a genuine SIGSEGV
-   in the qemu process, not a script bug. `QT_QPA_PLATFORM=offscreen` (the
-   emulator's Qt UI layer initializes even in `-no-window` mode and
-   segfaults immediately without a display or offscreen platform plugin) is
-   a real fix for one crash mode but reduces rather than eliminates the
-   overall crash rate — repeated back-to-back attempts in a tight loop
-   still crashed 6/6 times in one run of testing. **Not fully root-caused.**
-   The script retries up to 3 times per GPU mode as a pragmatic concession,
-   then fails loudly.
+2. **Real hardware GL rendering is possible in this container — separately
+   confirmed, as asked — but the emulator has no way to reach it today.**
+   Two different claims:
+   - The AMD GPU itself works: a hand-written Vulkan compute program (real
+     compiled shader, real command submission, `vkQueueWaitIdle`, correct
+     readback) ran successfully on `AMD Radeon Graphics (RADV GFX1152)`.
+     `MESA_LOADER_DRIVER_OVERRIDE=zink eglinfo -B` separately reports a real
+     hardware-backed **OpenGL ES 3.2** renderer via EGL+GBM, headless, no X
+     server — Mesa's OpenGL-over-Vulkan driver riding on the working Vulkan
+     stack. The GPU is not the problem.
+   - What's blocked: the *classic* Mesa/AMDGPU path (what `eglinfo`'s
+     default driver selection picks, and what the emulator's `-gpu host`
+     capability check depends on) calls `amdgpu_query_info(ACCEL_WORKING)`
+     at device-init time, and that fails with `EACCES` — not a file-
+     permission issue (`/dev/dri/renderD128` is `0666`), not fixable with
+     `MESA_LOADER_DRIVER_OVERRIDE=radeonsi` (tried — same failure). An
+     `EACCES` on a specific privileged ioctl, with the device node itself
+     wide open, reads as a container-level seccomp/AppArmor restriction on
+     that operation, imposed by whoever configured this container's GPU
+     passthrough — not liftable from inside the container, even as root.
+     `-gpu host` also separately needs a real GPU-backed X server for its
+     GLX interop path; `Xvfb` doesn't substitute (tested — GLX through it
+     still resolves to `llvmpipe` regardless of driver-override env vars,
+     since Xvfb is a software-only X server with no real DRI backing at
+     all). **Precise ask, if worth pursuing, same shape as the original
+     `/dev/kvm`/`/dev/dri` grant**: whatever policy blocks the
+     `AMDGPU_INFO` accel-working query (or privileged `amdgpu`/DRM ioctls
+     more broadly) on `/dev/dri/card1` needs relaxing.
 
-**Practical effect: `make screenshot` may well fail outright in this
-container today**, separately from and in addition to the software-rendering
-finding above. I'm not shipping this as "it works" — it's shipped as
-"correctly designed, currently blocked by an environment issue neither
-finding was hiding from the other."
+**Practical effect: `make screenshot` now works reliably** (software-
+rendered, correctly and unmissably labeled as such). Not the hardware-
+accelerated correctness testing the brief originally hoped for, but the
+actual stated goal — "does it launch, does it render, does it look right" —
+is met today, not blocked.
 
 PR #4 CI is green (the scripts aren't exercised by CI — deliberately, see
 below — but nothing here broke the existing build/test/lint pipeline).
 
 ## What I deliberately did not do
 
-- Did not root-cause the qemu SIGSEGV to a specific line/commit in
-  QEMU/gfxstream. Would need a real stack trace (blocked: no `dmesg`, no
-  accessible core dump — `systemd-coredump` on the host intercepts it and
-  I have no path to it from in here) or GDB attached, neither of which I
-  have a path to from inside this sandbox. Recorded the `strace` evidence
-  (SIGSEGV in the main thread + one other, right after an ~18s idle gap,
-  followed by an orderly-looking multi-thread shutdown that reads like a
-  crash handler) in case someone with more access wants to pick it up.
+- Did not pursue getting the *emulator itself* onto real hardware GL beyond
+  confirming the GPU can do the work. Would mean either the emulator
+  exposing a "route GLES through the system's EGL/zink" mode (not offered
+  by any `-gpu` value `-help-gpu` lists), or `LD_PRELOAD`-swapping its
+  bundled `libEGL.so`/`libGLESv2.so` for the system's zink-enabled ones
+  (risky — likely ABI/version mismatches against exactly what the emulator
+  bundles), or getting the container-level ioctl restriction actually
+  lifted (not something I can do from in here). Recorded precisely what to
+  ask for, above and in `docs/operations.md`, rather than guessing further.
 - Did not wire `make screenshot` into CI. GitHub-hosted runners have neither
   `/dev/kvm` nor `/dev/dri` — an emulator there would be slower than the JVM
-  tests already are and would inherit today's crash with no way to diagnose
-  it interactively (no SSH into a CI runner here). This is a local,
+  tests already are and gains nothing now that this container's own crash
+  is fixed and the GPU question is answered. This is a local,
   this-container-only tool, same spirit as `make dev`.
-- Did not try an older emulator revision, or ask whoever administers this
-  container about the seccomp/capability profile QEMU runs under — both
-  listed as the likely next steps in `docs/operations.md`, both need access
-  or time I didn't have in this dispatch.
 
 ## What the next person needs to know
 
@@ -117,19 +141,25 @@ below — but nothing here broke the existing build/test/lint pipeline).
   failure detection, not a full timeout wait) — the script should behave
   correctly on a future container where hardware GL genuinely works, without
   needing to be rewritten.
-- Considered giving up on `make screenshot` producing a screenshot at all in
-  this dispatch, given the crash rate. Did not — the design (retry bounded,
-  fail loudly, report the real GPU status) is the right shape regardless of
-  today's crash rate, and is what the next person should build on rather
-  than starting over.
+- Considered giving up on `make screenshot` producing a screenshot at all
+  after the first pass's crash rate. Did not — kept chasing it once asked
+  to, and it paid off: `-gpu swangle` instead of the default fixed it.
+- Considered keying `GPU_STATUS` off whether the renderer log line contains
+  the word "swiftshader" (simplest to write). Rejected once `swangle`
+  entered the picture — its own renderer string legitimately contains
+  "SwiftShader" (it's ANGLE-over-SwiftShader), so that check would have
+  kept working today but been one future software-fallback mode away from
+  silently mis-reporting hardware GL. Keyed off which `-gpu` mode actually
+  booted instead.
 
 ## Open questions
 
-- Is it worth asking whoever administers this container about the seccomp/
-  capability profile QEMU is running under, given the SIGSEGV reproduces
-  independent of GPU mode and KVM? That's the most promising lead I didn't
-  get to chase.
-- Should `/dev/shm` size (63MB in this container) be increased regardless of
-  the above? I checked it wasn't the proximate cause of the crash (never
-  filled during a crash window) but it's small for a graphics-heavy VM and
-  could still matter once the SIGSEGV itself is fixed.
+- Is it worth formally asking whoever administers this container to relax
+  whatever's blocking the `AMDGPU_INFO` accel-working ioctl? I now have a
+  precise, evidenced ask rather than a vague one, and real hardware GL
+  rendering of the app is genuinely reachable if it's lifted (the GPU and
+  the driver stack both already work — only that gate is in the way). Not
+  mine to decide whether it's worth the ask.
+- `/dev/shm` is 63MB in this container — confirmed it isn't the cause of
+  the (now-fixed) crash, but it's small for graphics work generally and
+  could matter for something else later.
