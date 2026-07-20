@@ -41,6 +41,21 @@ not review, and does not replace it.
 
 Tell the Product Lead what you agreed, not what you discussed.
 
+**Check the file before you describe it to a teammate.** Talking directly is
+faster, and it introduces a failure mode the written record does not have: a
+wrong line of code is caught by a test, but **a wrong sentence to a teammate is
+caught by nothing** — they will build on it.
+
+This has already happened once. A frontend engineer told a backend engineer that
+two shader effects keyed off a uniform they did not key off. The description was
+false about their own code; the backend engineer was one step from writing a
+latch to fix a problem that did not exist. It cost a message instead of a branch
+only because they went and measured rather than answering from memory.
+
+So: open the file. Quote the line and its number. And when a teammate hands you
+a fact about their module, **measuring it yourself is not distrust** — it is the
+cheapest place to catch this.
+
 Roles available: `product-lead`, `architect`, `ux-designer`,
 `backend-engineer`, `frontend-engineer`, `data-engineer`, `devops-engineer`,
 `qa-engineer`, `code-reviewer`, `security-engineer`, `tech-writer`.
