@@ -111,15 +111,19 @@ class DeterminismTest {
         val sim = Simulation(config().copy(seed = seed))
         sim.start()
         val input = InputFrame()
-        val initialBodies = sim.state.bodyCount
-        var maxBodies = initialBodies
+        var prevBodies = sim.state.bodyCount
+        // A clear is the only thing that drops the body count from one tick to
+        // the next (spawns only add). Catch the drop as it happens rather than
+        // comparing final-vs-peak: the game keeps dealing after a clear, so the
+        // count climbs back to a new peak and a final-vs-peak test would miss it.
+        var sawRemoval = false
         repeat(frames) {
             sim.step(input)
-            if (sim.state.bodyCount > maxBodies) maxBodies = sim.state.bodyCount
+            val bodies = sim.state.bodyCount
+            if (bodies < prevBodies) sawRemoval = true
+            prevBodies = bodies
         }
-        // A clear removes bodies, so bodyCount ends below its peak. This proves
-        // the run actually exercised removeBody rather than only the spawn path.
-        return TestScenes.fingerprint(sim.state) to (sim.state.bodyCount < maxBodies)
+        return TestScenes.fingerprint(sim.state) to sawRemoval
     }
 
     @Test
