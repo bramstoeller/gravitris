@@ -3,6 +3,16 @@
 Status: proposed
 Date: 2026-07-20
 
+> **Amended by [ADR 0011](0011-silhouette-is-the-material-surface.md)
+> (2026-07-20): where the silhouette is.** This ADR specifies the shading
+> inputs in detail but never said whether the drawn outline sits at the
+> particle centres or at the material surface a `particleRadius` beyond them.
+> The renderer took the centres, drew every body a radius small on every side,
+> and the client reported it as "so much margin around the blocks". ADR 0011
+> decides the silhouette is the material surface and how it is constructed.
+> Anything added to the varying set below — `vEdge` in particular — should be
+> read against it.
+
 ## Context
 
 Every body deforms every frame, so its geometry is new every frame — the opposite

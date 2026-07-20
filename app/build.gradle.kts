@@ -39,6 +39,20 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+
+    testOptions {
+        unitTests.all {
+            // Same engine as :core-sim, so `make test` runs one kind of test.
+            it.useJUnitPlatform()
+        }
+        // The gesture, frame-stats and haptic-curve logic is written as plain
+        // Kotlin taking coordinates and timestamps rather than MotionEvent, so
+        // it needs no Android runtime. This flag covers the remaining
+        // incidental android.jar references and keeps the suite runnable in a
+        // container with no device and no emulator — which is the only kind of
+        // container this project has (docs/operations.md).
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -47,6 +61,19 @@ kotlin {
 
 dependencies {
     implementation(project(":core-sim"))
+
+    // JUnit 5, matching :core-sim. No Robolectric and no AndroidX Test: the
+    // logic worth testing here (gesture recognition, the frame-time
+    // statistics, the haptic energy curve) is deliberately written free of
+    // Android types so it can be tested on the plain JVM. Adding an Android
+    // test runtime to reach it would be adding a dependency to work around a
+    // design choice made specifically to avoid needing one — and
+    // docs/security/dependency-policy.md R5 sets a high bar for new
+    // dependencies.
+    testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.junit.jupiter.params)
+    testRuntimeOnly(libs.junit.jupiter.engine)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 // docs/security/threat-model.md CHK-1, CHK-3, CHK-4 — merged-manifest checks,

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Replaces the Stage 0 scaffold's @android:style/Theme.NoTitleBar.Fullscreen.
+
+        That legacy theme hides the system bars outright, which is the
+        immersive-fullscreen behaviour ADR 0010 explicitly REJECTS as the
+        default: it fights predictive back and gesture navigation, and this
+        game's control scheme is a full-screen drag that would collide with
+        edge gestures. The chosen approach is edge-to-edge with the bars
+        present and transparent, and the playfield laid out inside the insets.
+
+        windowBackground is true black to match color-bg (docs/ux/tokens.md)
+        so there is no flash of a lighter surface before the GL context is
+        ready — on an OLED panel that flash is very visible.
+    -->
+    <style name="Theme.Gravitris" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!--
+            Let the window extend into the camera cutout. The GL surface is
+            meant to reach the physical edge of the screen; MainActivity reads
+            the cutout inset and keeps the *playfield* clear of it.
+        -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <!--
+            The bars sit over a true-black canvas, so their content must be
+            light. Setting this false (the default) would give dark icons on
+            black.
+        -->
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

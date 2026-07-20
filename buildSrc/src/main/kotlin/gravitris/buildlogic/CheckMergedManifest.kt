@@ -32,7 +32,8 @@ import org.w3c.dom.Element
  * by name as the most likely way this gate quietly stops working.
  *
  * Checks, all against the merged `<manifest>`:
- *  - CHK-1: zero `<uses-permission>` elements of any name.
+ *  - CHK-1: no `<uses-permission>` outside [ALLOWED_PERMISSIONS], and never
+ *    `INTERNET` regardless of that list.
  *  - CHK-3: `<application>` has `android:allowBackup="false"` and an
  *    `android:dataExtractionRules` attribute present.
  *  - CHK-4: no `<activity>`, `<service>`, `<receiver>` or `<provider>` is
@@ -89,15 +90,74 @@ abstract class CheckMergedManifest : DefaultTask() {
 
         val failures = mutableListOf<String>()
 
-        // CHK-1: zero <uses-permission>, from our manifest or any dependency.
-        val permissions = manifestElement.getElementsByTagName("uses-permission")
-        if (permissions.length > 0) {
-            val names = (0 until permissions.length).joinToString(", ") { i ->
-                (permissions.item(i) as Element).getAttributeNS(androidNs, "name")
-                    .ifBlank { "(unnamed)" }
+        // Every allowlist entry must carry a justification. This makes widening
+        // the allowlist a deliberate, self-documenting act rather than a
+        // one-word edit that reads as noise in a diff.
+        val unjustified = ALLOWED_PERMISSIONS.filterValues { it.isBlank() }.keys
+        if (unjustified.isNotEmpty()) {
+            throw GradleException(
+                "CHK-1 FAIL CLOSED: allowlist entries with no justification: " +
+                    "${unjustified.joinToString(", ")}. Every permission in " +
+                    "ALLOWED_PERMISSIONS must record why it is permitted — see " +
+                    "docs/security/threat-model.md §5."
+            )
+        }
+
+        // CHK-1: no permission outside the allowlist, from our manifest or any
+        // dependency's, at any depth.
+        //
+        // Match EVERY element whose tag name starts with "uses-permission",
+        // not just the literal <uses-permission>. Android has sibling elements
+        // that request a permission just as effectively:
+        //
+        //   <uses-permission-sdk-23 android:name="android.permission.INTERNET"/>
+        //
+        // requests the permission on API 23+. minSdk is 29, so that is every
+        // device this app supports — it is a total bypass, not a partial one.
+        // The original CHK-1 spec said "zero <uses-permission> elements" and
+        // this task implemented exactly that, so a dependency contributing the
+        // sdk-23 form would have been granted INTERNET on 100% of the install
+        // base while the build stayed green.
+        //
+        // Prefix-matching rather than enumerating the known variants is
+        // deliberate: it is the fail-closed choice. A future platform version
+        // adding another <uses-permission-*> form is caught by default instead
+        // of being silently missed until someone remembers to update a list.
+        val unexpected = mutableListOf<String>()
+        var declaresInternet = false
+        val allElements = manifestElement.getElementsByTagName("*")
+        for (i in 0 until allElements.length) {
+            val element = allElements.item(i) as Element
+            if (!element.tagName.startsWith(PERMISSION_ELEMENT_PREFIX)) continue
+            val name = element.getAttributeNS(androidNs, "name")
+                .ifBlank { "(unnamed)" }
+            if (name == INTERNET_PERMISSION) declaresInternet = true
+            if (name !in ALLOWED_PERMISSIONS) {
+                // Report the tag too: "<uses-permission-sdk-23> FOO" is a very
+                // different thing to debug than "FOO", and the reader needs to
+                // know which form slipped in.
+                unexpected += "<${element.tagName}> $name"
             }
-            failures += "CHK-1: expected zero <uses-permission> elements in the " +
-                "merged manifest, found ${permissions.length}: $names"
+        }
+
+        if (unexpected.isNotEmpty()) {
+            failures += "CHK-1: merged manifest declares ${unexpected.size} " +
+                "permission(s) outside the allowlist: ${unexpected.joinToString(", ")}. " +
+                "The allowlist is ${ALLOWED_PERMISSIONS.keys.joinToString(", ")}. " +
+                "Adding to it is a security-engineer decision recorded in " +
+                "docs/security/threat-model.md, not a build fix."
+        }
+
+        // Belt-and-braces, and deliberately independent of the allowlist: even
+        // if someone adds INTERNET to ALLOWED_PERMISSIONS, this still fails.
+        // The no-network guarantee is the one the client asked to have enforced
+        // rather than intended, so it does not get to depend on a list staying
+        // correct.
+        if (declaresInternet) {
+            failures += "CHK-1: merged manifest declares $INTERNET_PERMISSION. " +
+                "This is never permitted — the brief's no-telemetry guarantee is " +
+                "kernel-enforced by the absence of this permission " +
+                "(docs/security/threat-model.md §5)."
         }
 
         // CHK-3: allowBackup=false and dataExtractionRules present (S-1).
@@ -145,6 +205,62 @@ abstract class CheckMergedManifest : DefaultTask() {
                     failures.joinToString("\n") { "  - $it" }
             )
         }
+    }
+
+    private companion object {
+        const val INTERNET_PERMISSION = "android.permission.INTERNET"
+
+        /**
+         * Matches `<uses-permission>` and every sibling form that requests a
+         * permission — notably `<uses-permission-sdk-23>`. See the scan in
+         * [check] for why this is a prefix match and not an exact one.
+         */
+        const val PERMISSION_ELEMENT_PREFIX = "uses-permission"
+
+        /**
+         * The complete set of permissions this app may declare, each mapped to
+         * the reason it is allowed.
+         *
+         * CHK-1 originally asserted **zero** permissions, which was correct
+         * when the app did nothing. Stage 1B needs `VIBRATE` for impact
+         * haptics: `Vibrator.vibrate()` requires it, and the permission-free
+         * alternative (`View.performHapticFeedback`) plays a fixed canned
+         * effect with no amplitude control, discarding the energy ramp in
+         * docs/ux/feel-feedback.md that makes the blocks read as heavy.
+         *
+         * An allowlist rather than deleting the check, because the property
+         * worth protecting was never "zero permissions" — it was "no
+         * permission arrives that nobody decided on". A dependency
+         * contributing anything at all still turns the build red, which is the
+         * behaviour the client asked for.
+         *
+         * **The value is a justification, not documentation.** The task fails
+         * if any entry's justification is blank, so widening this list cannot
+         * be a one-word edit — you must state why, in the same diff, and that
+         * makes the change legible to a reviewer who is skimming.
+         *
+         * Be clear about what this does and does not do: it removes the
+         * *silent* path, not the determined one. Nothing here can stop an
+         * author who is willing to write a justification. The control that
+         * would actually gate this is a CODEOWNERS entry covering the
+         * `buildSrc` tree (note: not written with a glob here, because Kotlin
+         * block comments nest and a stray comment-opener would silently
+         * swallow the rest of this file) plus branch protection requiring
+         * code-owner review — which only
+         * bites once merges go through pull requests on origin rather than
+         * locally. Recorded as the follow-up in
+         * .team/reviews/security-chk1-allowlist.md.
+         *
+         * Adding an entry here is a security-engineer decision and belongs in
+         * docs/security/threat-model.md §5, not in a build fix.
+         */
+        val ALLOWED_PERMISSIONS = mapOf(
+            "android.permission.VIBRATE" to
+                "Impact haptics scaled to mass and fall speed (docs/ux/" +
+                "feel-feedback.md). Normal install-time permission: no runtime " +
+                "prompt, no data access, no network. Approved by Security " +
+                "Engineer, see .team/reviews/security-chk1-allowlist.md.",
+        )
     }
 
     private fun isLauncherActivity(activity: Element): Boolean {

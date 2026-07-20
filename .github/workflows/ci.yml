@@ -51,6 +51,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          # gitleaks-action@v3 requires a token to enumerate a pull request's
+          # commits; without it the step aborts before scanning. The
+          # auto-provisioned job token is sufficient — no PAT, no secret added.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # CHK-6 (docs/security/dependency-policy.md R4): a modified wrapper JAR
       # is a well-documented supply-chain attack and is invisible in a normal

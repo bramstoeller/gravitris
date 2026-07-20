@@ -62,29 +62,48 @@ make build
 
 ### Installing on a phone (sideload)
 
-This is written for the client, who is not an Android developer.
+**The client-facing instructions are `docs/install-milestone-1.md`** — send them
+that, not this file. It covers the "install from unknown sources" warning in
+plain language, states the permission posture accurately, and says what to
+report back.
+
+The short version for the team:
 
 1. Copy `app-debug.apk` to the phone (USB cable, or any file-transfer app).
-2. Open it from the phone's Files app. Android will warn that installing
-   apps from outside the Play Store is normally blocked — this is Android
-   protecting you by default, not a sign that anything is wrong. Tap
-   through to allow this one install ("Install unknown apps" / "Install
-   anyway").
-3. The app installs and appears as **Gravitris** in the app drawer.
+2. Open it from the phone's Files app and allow the unknown-sources install.
+3. It appears as **Gravitris** in the app drawer.
 
 There is currently no release signing (Stage 5) — this is a debug build,
 which Android will install and run identically to a signed one, it just
-cannot be distributed as the final release artifact. Nothing about the
-sideload warning is specific to this project; it is what Android shows for
-every app installed outside a store.
+cannot be distributed as the final release artifact.
 
-## What Stage 0 actually ships
+**On the permission claim.** The honest statement is **"no internet access"**,
+not "no permissions": the app ships `android.permission.VIBRATE` for impact
+haptics, and Android does not show normal permissions on the install screen
+anyway. `INTERNET` is banned unconditionally by `CheckMergedManifest`, on a
+code path that does not consult the allowlist, so the no-network guarantee is
+build-enforced rather than asserted. See `docs/security/threat-model.md` §5.
+The older "no permissions" wording is wrong and must not be reintroduced.
 
-`:app`'s `MainActivity` is a placeholder screen proving the module structure,
-not the game. There is no solver, no renderer, no touch input, and nothing to
-play yet — that is Stage 1 (docs/build-order.md), owned by the backend and
-frontend engineers. If you install the APK you will see a black screen with
-white placeholder text; that is expected and correct for this stage.
+## What the current build ships
+
+Milestone 1, the "squish toy": one soft-body piece falls into an empty well,
+the player drags it, drops it and watches it squash and settle, with an impact
+haptic scaled to the landing. Flat colours plus the approved compression
+darkening term — no procedural shading, no landing silhouette.
+
+Deliberately **not** in it: piece sequence, lock detection, coverage bands,
+clearing, losing, scoring, menus and settings. Those are Stage 3 and later
+(`docs/build-order.md`). The milestone exists to answer "does the squish feel
+heavy?", and anything else dilutes the answer.
+
+Two hidden measurement affordances in the debug build, both hardware keys so
+they carve no dead zone out of a drag-anywhere play area:
+
+| Key | Effect |
+| --- | ------ |
+| Volume **up** | Toggles the compression-darkening shader term. The readout's `shade:` field says which state it is in. Frame times are not comparable across the two, which is the entire point. |
+| Volume **down** | Runs the ADR 0009 solver benchmark and prints the result under the live figures. Freezes the screen for a few seconds. Debug builds only, gated on `FLAG_DEBUGGABLE`. |
 
 ## Build-time checks — what they catch and where to look when one fails
 

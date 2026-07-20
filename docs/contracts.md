@@ -22,8 +22,8 @@ package gravitris.game
 data class SimConfig(
     // --- solver (ADR 0001, 0003) ---
     val substeps: Int = 8,              // PINNED. See ADR 0003 — below 8 stacks jitter.
-    val distanceCompliance: Float = 1e-6f,
-    val areaCompliance: Float = 1e-6f,
+    val distanceCompliance: Float = 1e-4f,  // the squash dial — see note below
+    val areaCompliance: Float = 1e-6f,      // 100x stiffer, so squash bulges rather than shrinks
     val linearDamping: Float = 0.005f,
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
@@ -73,6 +73,26 @@ class Simulation(config: SimConfig) {
     }
 }
 ```
+
+**Compliance: which dial is the squash dial.** Milestone 1 shipped with
+`distanceCompliance` at `1e-6` and the blocks were visually rigid — a hard
+landing took 2% off a body's height. It is `1e-4` from Milestone 2 on. Two
+things about this are worth `:app` knowing:
+
+- **`distanceCompliance` controls shape; `areaCompliance` controls volume.**
+  They are kept 100x apart on purpose, so a squashed body bulges sideways
+  instead of shrinking. Bulging into gaps is the coverage-band mechanic.
+- **`particleCompression` is an area ratio, and area is deliberately
+  near-rigid.** It spans roughly `0.895..1.0` at impact both before and after
+  the fix, so it is *not* a measure of how squashy the material looks — judging
+  squash by it reports "11% deformation" for a block that is visually a perfect
+  square. The compression-darkening gain tuned against `0.888..1.0` therefore
+  remains correct and needs no retuning. The quantity that actually changed is
+  the silhouette: peak landing aspect ratio went from 1.17 to 1.41.
+
+Changing either value means constructing a new `Simulation` — configs are
+immutable so that determinism holds (ADR 0006). `:app` already rebuilds on a
+well-geometry change, which is the same path a tuning panel would use.
 
 **Determinism contract.** Same `seed` + same `InputFrame` sequence ⇒ bit-identical
 `SimState`. Guaranteed only if the core obeys ADR 0006: no transcendental
@@ -159,6 +179,26 @@ interface SimState {
      */
     val bodyArchetype: IntArray
     val bodyLattice: Int            // same for all bodies in a run
+    /**
+     * How far the material surface extends beyond a particle CENTRE, in world
+     * units. Half the lattice spacing: 0.30 / 0.225 / 0.18 at lattice 4/5/6.
+     *
+     * Every position in this contract is a particle centre. The solver treats
+     * the material as reaching particleRadius past it — contacts hold two
+     * touching bodies' centres exactly 2*particleRadius apart, and a body
+     * resting on the floor has its lowest centres exactly particleRadius above
+     * y=0. Both are measured exactly (ContactGapTest).
+     *
+     * A mesh built from positions alone is therefore INSET by this much on
+     * every side, and two bodies whose surfaces touch draw with a
+     * 2*particleRadius gap between them — 0.45 world units at lattice 5, a
+     * quarter of a piece's width. That is the "margin around the blocks" the
+     * client reported at Milestone 1. The renderer must expand its outline by
+     * this radius; ADR 0004's occupancy stamp must stamp disks of it.
+     *
+     * Consume this value; do not re-derive it from PIECE_WIDTH and bodyLattice.
+     */
+    val particleRadius: Float
 
     // --- rendering topology (static per tier, ADR 0007) ---
     val triangleIndices: IntArray   // valid for one body; reused with offsets
@@ -255,9 +295,19 @@ Uniforms:
 | uniform | meaning |
 | ------- | ------- |
 | `uPalette[N]` | per-archetype `{hue, sat, light, grainScale}` — owned by `:app`, extensible without a shader change |
-| `uBandFill[20]` | per-band fill 0..1 |
-| `uBandClear[20]` | per-band clear-envelope progress, -1 when not clearing |
-| `uBandBottomY`, `uBandHeight` | band geometry for world-Y lookup |
+| `uBandFill[20]` | per-band fill 0..1. **Anticipation glow only** — never ignition or dissolve |
+| `uBandClearProgress[20]` | per-band clear-envelope progress, -1 when not clearing. Drives ignition, hold and dissolve |
+| `uBandBottomY`, `uBandInvHeight` | band geometry for world-Y lookup |
+
+`uBandInvHeight` is the **reciprocal** of `SimState.bandHeight`, uploaded as
+`1f / state.bandHeight`, because the shader multiplies rather than divides:
+`(worldY - uBandBottomY) * uBandInvHeight`. The ugly name is deliberate and is
+not a candidate for tidying. Renaming it to `uBandHeight` and uploading
+`bandHeight` would scale every band lookup by height² — glow landing in the
+wrong bands, with no compile error and no assertion to catch it. It stays
+invisible at the default `wellHeight / bandCount = 20 / 20 = 1.0`, and appears
+only once the well geometry changes, which is exactly what ADR 0010 does at
+runtime from the display insets.
 | `uOverflow` | spawn-zone warning intensity 0..1 (ADR 0005) |
 | `uTime` | seconds |
 | *look parameters* | the UX Designer's named tunables |
