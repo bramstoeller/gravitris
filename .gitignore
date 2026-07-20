@@ -54,3 +54,6 @@ build/
 .gradle/
 *.apk
 *.aab
+
+# Personal Claude Code overrides — operator config, not product config.
+.claude/settings.local.json
