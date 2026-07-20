@@ -66,10 +66,16 @@ class DeformationTest {
         val widthRatio = widest / SimConfig.PIECE_WIDTH
         val aspect = widthRatio / heightRatio
 
-        // Measured 0.852 / 1.203 / 1.412 at distanceCompliance 1e-4. The bounds
-        // are loose enough not to pin the tuning, tight enough that a return to
-        // Milestone 1's 1e-6 — which gave 0.980 / 1.149 / 1.17 — fails all
-        // three.
+        // Measured 0.852 / 1.203 / 1.412 at distanceCompliance 1e-4, against
+        // 0.980 / 1.149 / 1.173 at Milestone 1's 1e-6.
+        //
+        // Height and aspect ratio are the assertions that discriminate, with
+        // wide margin on both sides. The width bound does *not*: 1.149 against
+        // a bound of 1.15 rejects the old value by 0.0006, which is luck, not
+        // design. Its job is to guard the bulge — that squash comes from shape
+        // change and not from the body shrinking — and for that it has a
+        // sufficient 4% margin at the shipped value. Do not lean on it to
+        // catch a stiffness regression; the other two do that.
         assertTrue(
             heightRatio < 0.90f,
             "a hard landing should visibly flatten the block: height was " +
