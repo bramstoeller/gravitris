@@ -92,6 +92,18 @@ zero allocation; treat any result change as a fixture-regeneration event.
   property is "rigid at every tier"; I assert one budget (15%) that l4/l5 clear
   at 0% and l6 fails at 44%, so the threshold is nowhere near either.
 
+## Housekeeping — a stale CI fix propagated (for DevOps)
+
+CI on this PR first failed before `make test` even ran: the `Secret scan
+(CHK-7)` gitleaks step aborts on `pull_request` events without a `GITHUB_TOKEN`.
+This base (`feat/core-sim`) predates the devops fix that newer branches already
+carry (`feat/gel-shading` has it, with the same comment). I propagated the exact
+one-line fix — `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` on that step — so CI
+could actually run my tests. It strengthens the scan (it was aborting, i.e. not
+scanning) rather than weakening it, and adds no secret. DevOps owns the workflow;
+this just unblocked verification. When `feat/core-sim` picks up the CI fix from
+trunk the two converge.
+
 ## Open question for the Product Lead
 
 `BroadphaseMarginTest` is a parked failing test; per the constitution it wants a
