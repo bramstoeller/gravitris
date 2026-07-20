@@ -14,6 +14,31 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
 
+    <!--
+        The ONE permission this app requests.
+
+        Required by Vibrator.vibrate(), which is how impact haptics are scaled
+        to mass and fall speed (docs/ux/feel-feedback.md). Without it the
+        vibrate call throws SecurityException; the only permission-free
+        alternative, View.performHapticFeedback(), plays a fixed canned effect
+        with no amplitude or duration control, which discards the entire
+        energy ramp the spec is built around. That ramp is the brief's
+        highest-return cue for making the blocks read as HEAVY.
+
+        VIBRATE is a normal, install-time permission. It grants no data access
+        of any kind, shows no runtime prompt, and does not weaken the
+        no-network guarantee the client asked to have enforced — that
+        guarantee rests on the absence of INTERNET, which is stripped above
+        and asserted on the merged manifest by CHK-1.
+
+        CHK-1 previously asserted "zero <uses-permission> elements". It now
+        asserts an explicit allowlist containing exactly this permission, with
+        INTERNET banned unconditionally even if someone adds it to that list.
+        See buildSrc CheckMergedManifest and the Stage 1B handoff. This change
+        needs security-engineer sign-off before merge.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:label="@string/app_name"
         android:allowBackup="false"
@@ -34,10 +59,19 @@
             relative name would resolve against the wrong package and fail
             lint's MissingClass check.
         -->
+        <!--
+            configChanges: handle rotation and density changes in-process
+            rather than being recreated. The well's geometry is derived from
+            insets at runtime (ADR 0010) and the GL surface already gets
+            surfaceChanged plus a fresh WindowInsets callback, so a recreation
+            would buy nothing and would cost the EGL context and the piece
+            currently in flight.
+        -->
         <activity
             android:name="gravitris.app.MainActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            android:theme="@style/Theme.Gravitris"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
