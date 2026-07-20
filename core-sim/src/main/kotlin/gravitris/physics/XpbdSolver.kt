@@ -223,12 +223,14 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
             var vy = (world.posY[i] - world.substepPrevY[i]) * inv * retain
             // Terminal velocity. Heavy material should stop accelerating, and
             // capping speed also bounds how far a particle can travel between
-            // broadphase rebuilds (the grid is rebuilt per frame, not per
-            // substep — ADR 0003 §1). Deliberately a fixed constant rather
-            // than something derived from cell size: a lattice-dependent cap
-            // would make the physics differ per ADR 0009 quality tier, and an
-            // accessibility or performance setting must never change what
-            // happens in the game.
+            // broadphase rebuilds (the grid is rebuilt once per substep — see
+            // the note in [step], revising ADR 0003 §1). Deliberately a fixed
+            // constant rather than something derived from cell size: a
+            // lattice-dependent cap would make the physics differ per ADR 0009
+            // quality tier, and an accessibility or performance setting must
+            // never change what happens in the game. That the cap is
+            // tier-independent is exactly what `BroadphaseMarginTest` asserts:
+            // a hard drop stays rigid at lattice 4, 5 and 6 alike.
             val speedSq = vx * vx + vy * vy
             if (speedSq > MAX_SPEED * MAX_SPEED) {
                 val scale = MAX_SPEED / sqrt(speedSq)
