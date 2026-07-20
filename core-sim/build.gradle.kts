@@ -41,22 +41,38 @@ tasks.test {
 
 // ADR 0008 / docs/build-order.md Stage 0: ":core-sim has no Android
 // dependency ... write it now, or it is violated within a week."
+//
+// Both properties below are derived from the same underlying resolution
+// (one entry per (configuration, DependencyResult) pair) so an unresolved
+// dependency can never simply disappear from the graph we inspect — see
+// review finding S-1 and CheckNoAndroidDependency's kdoc.
+val dependencyResolutionResults = provider {
+    listOf("compileClasspath", "runtimeClasspath", "testCompileClasspath", "testRuntimeClasspath")
+        .flatMap { name ->
+            configurations.getByName(name).incoming.resolutionResult.allDependencies
+                .map { result -> name to result }
+        }
+}
+
 val checkNoAndroidDependency = tasks.register<CheckNoAndroidDependency>("checkNoAndroidDependency") {
     group = "verification"
     description = "Fails if :core-sim acquires any Android dependency or import (ADR 0008)."
     moduleIdentifiers.set(
-        provider {
-            listOf("compileClasspath", "runtimeClasspath", "testCompileClasspath", "testRuntimeClasspath")
-                .flatMap { name ->
-                    configurations.getByName(name).incoming.resolutionResult.allDependencies
-                        .mapNotNull { result ->
-                            (result as? org.gradle.api.artifacts.result.ResolvedDependencyResult)
-                                ?.selected?.moduleVersion
-                                ?.let { "${it.group}:${it.name}" }
-                        }
+        dependencyResolutionResults.map { results ->
+            results.mapNotNull { (_, result) ->
+                (result as? org.gradle.api.artifacts.result.ResolvedDependencyResult)
+                    ?.selected?.moduleVersion
+                    ?.let { "${it.group}:${it.name}" }
+            }.distinct().sorted()
+        }
+    )
+    unresolvedDependencies.set(
+        dependencyResolutionResults.map { results ->
+            results.mapNotNull { (configurationName, result) ->
+                (result as? org.gradle.api.artifacts.result.UnresolvedDependencyResult)?.let {
+                    "$configurationName: ${it.attempted.displayName} — ${it.failure.message}"
                 }
-                .distinct()
-                .sorted()
+            }.distinct().sorted()
         }
     )
     sourceFiles.setFrom(
