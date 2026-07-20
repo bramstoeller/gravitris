@@ -204,6 +204,11 @@ const float TWO_PI = 6.2831853;
 // 10-15%". See bandFillAt.
 const float BAND_FEATHER = 0.07;
 
+// Softness of the dissolve's leading edge, in units of the noise field. Wide
+// enough that material crumbles rather than switching off cell by cell,
+// narrow enough that the edge is legible as an edge.
+const float DISSOLVE_EDGE = 0.30;
+
 /**
  * Low-discrepancy ordered dither, three ops.
  *
@@ -306,11 +311,22 @@ float bandFillAt(float worldY) {
 
 void main() {
     vec3 base = uPalette[vArchetype];
-    float baseLuma = dot(base, LUMA);
     vec3 color = base;
+
+    // Assigned inside tier 1 rather than here, so tier 0 stays a genuinely
+    // bit-identical Stage 1 baseline. Three wasted ops out of twelve would
+    // inflate the floor the other four readings are measured against, and that
+    // subtraction is the whole reason the dial exists.
+    float baseLuma = 0.0;
+
+    // The grain, hoisted out of tier 2 so the glow's shimmer can reuse it
+    // rather than evaluating a second pair of sines. See the shimmer term.
+    float grain = 0.0;
 
     // --- tier 1: the legibility terms ------------------------------------
     if (uShadeTier >= 1) {
+        baseLuma = dot(base, LUMA);
+
         // Subsurface depth: 0 at the body's silhouette, 1 at its core.
         // Taken from the body UV rather than from vEdge on purpose. vEdge goes
         // 1 -> 0 across a single lattice cell, which is a fifth of the body at
@@ -348,8 +364,8 @@ void main() {
 
     // --- tier 2: identity grain ------------------------------------------
     if (uShadeTier >= 2) {
-        float m = mottle(vBodyUv * (uGrainFrequency * uGrainScale[vArchetype]));
-        color *= 1.0 + m * uGrainGain;
+        grain = mottle(vBodyUv * (uGrainFrequency * uGrainScale[vArchetype]));
+        color *= 1.0 + grain * uGrainGain;
     }
 
     // --- the Stage 1 term, unchanged and applied last ---------------------
@@ -396,11 +412,19 @@ void main() {
 
         // Ember shimmer reuses the grain field rather than sampling a second
         // noise source — band-glow.md asks for exactly this, to avoid a second
-        // fetch. Scrolling the UV in time is what makes the glow's internal
-        // structure MOVE, which the spec names as the primary tell that the
-        // warmth is a property of the zone and not of the piece.
+        // fetch — and it reuses the *already computed value*, not just the
+        // function. Scrolling a second set of UVs through mottle() would be
+        // honest but costs another pair of sines, and tier 3 is already the
+        // most expensive thing in this shader by a factor of four.
+        //
+        // Instead the static grain becomes a per-fragment PHASE OFFSET on one
+        // sine. That still makes the glow's internal structure move, which is
+        // what the spec is actually asking for — it names animated shimmer as
+        // the primary tell that the warmth belongs to the zone rather than to
+        // the piece — but the motion is a travelling wave through the existing
+        // grain rather than the grain itself drifting. One sine, not two.
         float shimmer = 1.0 + uShimmerGain * urgency *
-            mottle(vBodyUv * uGrainFrequency + vec2(uTime * 0.7, uTime * -0.5));
+            sin(uTime * 2.3 + grain * 6.0);
 
         float glow = emissive * pulse * shimmer;
 
@@ -437,6 +461,36 @@ void main() {
         float cap = mix(uGlowCapRatio, uIgnitionCapRatio, flash);
         glow = min(glow + flash, cap * baseLuma);
         color += mix(GLOW_COLOR, uIgnitionColor, flash) * (glow * uGlowGain);
+
+        // --- the dissolve ---------------------------------------------------
+        //
+        // `feel-feedback.md` asks for a clear that "dissolves/shrinks-and-fades
+        // (not a hard pop/disappear)". The backend engineer keeps the geometry
+        // alive for the whole 24-tick envelope specifically so this can happen
+        // on real material, and removes the bodies on the tick progress reaches
+        // 1.0. Without this term that removal is a one-frame pop.
+        //
+        // Progress 0.50 -> 1.00 is the 200ms dissolve window.
+        //
+        // **Erode toward black rather than fading out.** A true alpha fade would
+        // need GL_BLEND, which the renderer deliberately keeps off — the scene
+        // is opaque and blending costs bandwidth on a tile-based GPU. On this
+        // panel it would also be redundant: color-bg is #000000, so on an OLED
+        // fading a fragment to black *is* fading it to the background, exactly,
+        // with no blend stage and no sorting.
+        //
+        // The grain field is reused a third time as the spatial threshold, so
+        // the material breaks up into embers and goes out in patches rather
+        // than dimming uniformly — which is what makes it read as a dissolve
+        // rather than as someone turning the brightness down. No discard: on a
+        // tile-based GPU that forces late-Z for the whole draw, and multiplying
+        // to black reaches the same pixel for a couple of ALU ops.
+        float window = smoothstep(0.5, 1.0, clearing) * step(0.0, clearing);
+        // Sweep the threshold past both ends of the noise range so the material
+        // is fully present at the start and fully gone at the end.
+        float threshold = mix(-DISSOLVE_EDGE, 1.0 + DISSOLVE_EDGE, window);
+        float noise = 0.5 + 0.5 * grain;
+        color *= smoothstep(threshold - DISSOLVE_EDGE, threshold + DISSOLVE_EDGE, noise);
     }
 
     // Always on, at every tier above the flat baseline, and deliberately after
