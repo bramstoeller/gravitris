@@ -1,6 +1,6 @@
 # 0003. Collision, contacts, and the substep floor for stack stability
 
-Status: proposed
+Status: proposed — **substep-floor claim amended 2026-07-20, see "Amendment 1"**
 Date: 2026-07-20
 
 ## Context
@@ -25,9 +25,11 @@ Four parts, each measured.
 
 **1. Broadphase: uniform grid, counting sort, rebuilt once per frame.** Cell size
 equals one particle diameter. Rebuilt per *frame*, not per substep; narrowphase
-runs per substep against the frame's grid. Particles move a fraction of a cell
-per substep, so this is safe, and it moves the rebuild cost off the substep
-multiplier. The rebuild allocates nothing (cell arrays are retained and refilled)
+runs per substep against the frame's grid, which moves the rebuild cost off the
+substep multiplier. Safety comes from the 3x3 neighbourhood search tolerating
+about a cell of drift per **frame**, and from floor/wall contacts bypassing the
+grid entirely — **see Amendment 3, which corrects the looser argument originally
+given here.** The rebuild allocates nothing (cell arrays are retained and refilled)
 — a per-frame `IntArray` in the first draft showed up immediately in the
 allocation check and was hoisted.
 
@@ -57,6 +59,10 @@ settled pile of 60 bodies, after 1200 frames:
 is worse than uniformly bad because it makes stability depend on a tuning dial
 the designer expects to be free. Above 8 the returns are marginal.
 
+> ⚠ **The paragraph above is superseded by Amendment 1. The floor is ~3–4, not 8.
+> The table is retained because it is what was measured; the inference drawn from
+> it was wrong.**
+
 Stability holds as pieces get heavier, which is the late-game case that matters:
 at 8 substeps, per-particle mass 1, 2, 4 and 8 all settle (residual KE 0.002 to
 0.023). The brief's difficulty ramp does not destabilise the solver.
@@ -72,6 +78,116 @@ distance and area constraints, so a body folding through itself requires extreme
 deformation we do not expect at these compliance values. Skipping same-body pairs
 cuts narrowphase work substantially. If playtesting shows bodies self-intersecting
 under heavy load, this flips to on for a measured cost increase.
+
+## Amendment 1 — the substep floor is ~3–4, not 8 (2026-07-20)
+
+The backend engineer measured the floor independently in production code
+(handoff 0006) and put it **between 2 and 4, with no trend above 4**. They kept
+8 and escalated rather than silently diverging, which was the right call.
+
+**They are right and I was wrong.** I re-ran the spike to find out why we
+disagreed; results in `spike/solver-budget/results-reconcile.txt`.
+
+**The two solvers agree. It was never a solver disagreement — it was a scene
+disagreement.** Reproducing their two scenes in the spike solver reproduces their
+numbers:
+
+| scene | 2 | 4 | 6 | 8 | 12 | 16 |
+| ----- | - | - | - | - | -- | -- |
+| wide well 10x20, 24 bodies (spike) | 0.0000 | 0.0003 | 0.0001 | 0.0000 | 0.0030 | 0.0008 |
+| tall tower 5 wide, 40 bodies (spike) | **160624** | 0.0002 | 0.0161 | 0.0011 | 0.0826 | 0.0036 |
+
+Their tall tower exploded to 139 405 at 2 substeps; mine to 160 624. Same
+phenomenon, same order of magnitude. From 4 upward, both solvers show flat noise
+with no trend, in both scene shapes.
+
+**Why my original table said 8.** Three compounding measurement faults, and they
+are worth naming because they are the same class of error as the three spike bugs
+already recorded in the README:
+
+1. **The scene was chaotic and I reported single runs.** Residual kinetic energy
+   in a deep pile varies non-monotonically by orders of magnitude between adjacent
+   substep counts, for reasons that are about which metastable configuration the
+   pile fell into, not about solver fidelity. The new run shows this directly: at
+   drop pitch 1.05, 6 substeps leaves KE 19.5 while 4 and 8 leave 0.002 — and the
+   19.5 is *stable across 2 700 further frames*, so it is a trapped configuration,
+   not a convergence failure. Reading a monotonic floor off that noise was
+   unjustified.
+2. **I took the worst verdict across three compliance values** in that noisy
+   scene, so any single unlucky configuration at 4 or 6 pushed the apparent floor
+   to 8.
+3. **The 1200-frame window measured settling *time*, not stability**, in a scene
+   whose pile was seeded ~57 units in the air and was still settling when I
+   measured it. Running to 3600 frames, my own original scene settles at 4
+   substeps.
+
+**A hypothesis I tested and had to discard.** I expected the 2-substep failure to
+be a tunnelling/velocity condition — travel per substep approaching a particle
+diameter. It is not. Driving a body into a settled pile at up to 240 units/s, a
+travel of **2.0 particle diameters per substep**, produced no penetration at any
+substep count. The velocity explanation is refuted.
+
+What the evidence supports instead is **contact-depth accumulation in a deep
+pile**: with few substeps, gravity integrates further between corrections, so
+particles sink deeper before the rigid contact resolves them, and resolving a deep
+overlap rigidly injects energy. In a long contact chain that compounds down the
+stack. This is why pile *depth* discriminates and impact *speed* does not, and why
+the tall tower fails where the wide well never does.
+
+**The decision does not change: substeps stay at 8. The justification does.**
+
+8 is **engineering margin of roughly 2x over a measured floor of ~3–4**, not the
+measured floor. That distinction matters:
+
+- It is honest about what was measured, which is the point of this record.
+- The failure below the floor is *catastrophic and not graceful* — eight orders of
+  magnitude, in both implementations. Sitting one step above a cliff that steep is
+  not where a shipped game should be, so the margin is worth its cost.
+- The cost is known and affordable: 8 substeps is 0.49 ms against 0.25 ms at 4
+  (ADR 0001). We are paying ~0.25 ms for the margin.
+- **It gives ADR 0009 a lever it thought it did not have.** Dropping to 6 is now a
+  defensible move with margin remaining, if the on-device budget ever proves
+  tight. It is still not a *runtime* dial — see the amendment there.
+
+**QA can now build replay fixtures against 8**, which was the reason this needed
+settling before Stage 3. The number is not going to move.
+
+## Amendment 2 — the wide-well question is answered (2026-07-20)
+
+The "unease worth recording" below flagged that the spike's numbers came from a
+narrow tower and that a wide well "produces more simultaneous contacts per body …
+and that specific configuration has not been measured".
+
+**Measured, by the backend engineer and independently reproduced above: the wide
+well is the *gentler* case.** It settles at every substep count tested, including
+2, where the tall tower explodes. The conservatism held in the direction hoped.
+This is the shape the real game has — a 10x20 well — which is a further reason the
+production floor sits lower than the spike's tower suggested.
+
+## Amendment 3 — the per-frame broadphase justification was looser than it read (2026-07-20)
+
+The backend engineer flagged that this ADR justifies rebuilding the grid per frame
+by arguing "particles move a fraction of a cell per substep" — but the rebuild is
+per *frame*, so the motion that matters is up to **8x** that. The argument as
+written does not describe what the code does. Nothing is broken; the reasoning was
+sloppy. Corrected statement:
+
+- The grid is rebuilt **once per frame**; narrowphase runs per substep against it.
+- The safety margin therefore has to cover **per-frame** motion, not per-substep.
+  A particle travelling one cell per frame is still found, because narrowphase
+  searches the **3x3 cell neighbourhood** — so the true bound is roughly one cell
+  of drift per frame before a contact could be missed.
+- **Floor and wall contacts never go through the broadphase at all**; they are
+  solved directly for every particle every substep. The containment guarantee —
+  the one that matters for "can a piece escape the well" — does not depend on grid
+  freshness.
+- Empirically, no penetration was observed even at 2 particle diameters of travel
+  per substep (Amendment 1), and the backend engineer has a non-tunnelling test on
+  hard drop.
+
+**This is a real coupling to respect when tuning**: raising the terminal-velocity
+clamp, lowering substeps, or shrinking particle radius all eat this margin. If any
+of those change, re-check the non-tunnelling test rather than assuming.
 
 ## Alternatives considered
 
@@ -128,9 +244,11 @@ pile is somewhat *stickier* than reality. This helps stability and may hurt the
 feel of material flowing into gaps. It is a tuning risk to watch at Milestone 1,
 not a known defect.
 
-**Unease worth recording:** the stability numbers come from a pile roughly 4 units
-wide and 46 tall, not a filled 10x20 well, because of how the spike seeds bodies.
-That is a *harder* compression case, so the substep floor is conservative — but a
-wide well produces more simultaneous contacts per body than a narrow tower, and
-that specific configuration has not been measured. It should be checked at
-Milestone 1.
+**Unease worth recording — now resolved, see Amendment 2:** the stability numbers
+came from a pile roughly 4 units wide and 46 tall, not a filled 10x20 well,
+because of how the spike seeds bodies. That was a *harder* compression case, so
+the substep floor was conservative — but a wide well produces more simultaneous
+contacts per body than a narrow tower, and that configuration had not been
+measured. **It has now been: the wide well is the gentler case.** The conservatism
+held, and it was in fact conservative enough to have produced a wrong floor
+(Amendment 1).

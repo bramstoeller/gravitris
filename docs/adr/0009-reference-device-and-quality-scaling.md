@@ -56,11 +56,25 @@ the derating factor knowable rather than assumed — see the blocker below.
 **4. Push back on the dial: substeps and particle count are not runtime dials.**
 This is the detail the spike changes.
 
-ADR 0003 measured that below 8 substeps a settled stack does not settle — at 4 or
-6 substeps some materials creep or jitter. **Degrading substeps to hold framerate
-would trade a smooth-framerate problem for a visible-jitter problem, and jitter
-reads to a player as a bug, not as reduced quality.** Substeps are a correctness
-floor. They are pinned at 8 and never scaled.
+Below the substep floor a deep pile does not merely jitter — it **explodes**, by
+eight orders of magnitude, reproduced independently in two implementations (ADR
+0003 Amendment 1). **Degrading substeps to hold framerate would trade a
+smooth-framerate problem for a catastrophic-failure problem.** Substeps are a
+correctness floor, not a quality dial, and they are **never scaled at runtime**.
+
+**Amended 2026-07-20.** ADR 0003 Amendment 1 corrects the floor from 8 to ~3–4,
+so 8 is margin rather than the edge. That changes one thing here and not the
+other:
+
+- **Still true:** substeps are not a *runtime* dial. Changing them mid-session
+  changes simulation results (ADR 0006's determinism contract), so it would alter
+  feel and invalidate replay fixtures — and the failure below the floor is a cliff,
+  not a slope.
+- **Now available:** there is real headroom. Re-pinning globally from 8 to 6
+  would still leave margin over the measured floor and would return ~0.12 ms/frame.
+  That is a legitimate lever if on-device measurement proves tight — but it is a
+  **build-time re-pin with replay fixtures regenerated**, not a runtime scale, and
+  it should be spent only after render-side scaling has been exhausted.
 
 Particle count cannot change mid-game either: bodies already exist in the well
 with a fixed lattice, and re-meshing a deformed body mid-run would visibly pop.

@@ -21,7 +21,16 @@ package gravitris.game
  */
 data class SimConfig(
     // --- solver (ADR 0001, 0003) ---
-    val substeps: Int = 8,              // PINNED. See ADR 0003 — below 8 stacks jitter.
+    /**
+     * PINNED at 8. This is ~2x margin over a measured floor of ~3-4, NOT the
+     * floor itself — ADR 0003 Amendment 1 corrects the original claim. Below the
+     * floor a deep pile does not jitter, it explodes by eight orders of
+     * magnitude, so the margin is deliberate.
+     *
+     * Changing this changes simulation results and invalidates replay fixtures
+     * (ADR 0006). It is a build-time re-pin, never a runtime dial.
+     */
+    val substeps: Int = 8,
     val distanceCompliance: Float = 1e-6f,
     val areaCompliance: Float = 1e-6f,
     val linearDamping: Float = 0.005f,

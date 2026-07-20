@@ -1,0 +1,81 @@
+# Reconciling ADR 0003's substep floor with the backend engineer's measurement
+# HOST numbers (x86-64, HotSpot 21.0.11), single-threaded.
+
+Hypothesis: the spike's floor of 8 is a property of its SCENE (a column
+seeded ~57 units in the air), not of the solver. Lowering the drop height
+should move the floor to ~4 and reproduce the backend engineer's result.
+
+## 1. Substep floor vs drop height
+
+Same solver, same body count, same compliance. Only the initial vertical
+pitch changes, which changes how far bodies fall before landing.
+'peak speed' is the fastest any particle moved during settling.
+
+| drop pitch | initial top | peak speed | substeps | KE @900 | KE @1800 | KE @3600 | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1.05 (nearly touching) | 38.0 | 104.4 | 2 | 150.7254 | 186.8468 | 280.2234 | ringing |
+|  | NaN | 86.0 | 4 | 0.0021 | 0.0017 | 0.0006 | settled |
+|  | NaN | 95.6 | 6 | 19.5314 | 19.5160 | 19.5098 | ringing |
+|  | NaN | 110.3 | 8 | 0.0078 | 0.0026 | 0.0007 | settled |
+|  | NaN | 160.3 | 12 | 0.0055 | 0.0216 | 0.0028 | settled |
+|  | NaN | 155.4 | 16 | 0.0093 | 0.0072 | 0.0050 | settled |
+| 1.60 (the spike's original) | 56.8 | 134.1 | 2 | 45.7142 | 46.4305 | 96.9179 | ringing |
+|  | NaN | 22.9 | 4 | 0.0048 | 0.0082 | 0.0081 | settled |
+|  | NaN | 16.8 | 6 | 0.7439 | 0.7436 | 0.7425 | settled |
+|  | NaN | 21.1 | 8 | 0.0019 | 0.0018 | 0.0026 | settled |
+|  | NaN | 10.8 | 12 | 0.0455 | 0.0065 | 0.0186 | settled |
+|  | NaN | 7.5 | 16 | 0.0018 | 0.0016 | 0.0040 | settled |
+| 2.50 (extreme) | 87.6 | 135.0 | 2 | 121.2546 | 59.4519 | 57.2298 | ringing |
+|  | NaN | 31.7 | 4 | 0.5261 | 0.5425 | 0.1003 | settled |
+|  | NaN | 22.4 | 6 | 0.0088 | 0.0009 | 0.0004 | settled |
+|  | NaN | 23.4 | 8 | 0.0026 | 0.0007 | 0.0020 | settled |
+|  | NaN | 12.4 | 12 | 0.0039 | 0.0061 | 0.0019 | settled |
+|  | NaN | 10.1 | 16 | 0.0087 | 0.0048 | 0.0024 | settled |
+
+## 2. The backend engineer's two scenes, reproduced in the spike solver
+
+If the solvers agree, these should match handoff 0006's table shape:
+catastrophic at 2 in the tall tower, flat noise from 4 upward in both.
+
+| scene | substeps | peak speed | KE @900 | verdict |
+| --- | --- | --- | --- | --- |
+| wide well 10 wide, 24 bodies | 2 | 75.4 | 0.0000 | settled |
+|  | 4 | 62.2 | 0.0003 | settled |
+|  | 6 | 95.5 | 0.0001 | settled |
+|  | 8 | 83.5 | 0.0000 | settled |
+|  | 12 | 108.0 | 0.0030 | settled |
+|  | 16 | 118.4 | 0.0008 | settled |
+| tall tower 5 wide, 40 bodies | 2 | 165.2 | 160624.2949 | EXPLODED |
+|  | 4 | 46.7 | 0.0002 | settled |
+|  | 6 | 71.2 | 0.0161 | settled |
+|  | 8 | 78.8 | 0.0011 | settled |
+|  | 12 | 134.1 | 0.0826 | settled |
+|  | 16 | 159.2 | 0.0036 | settled |
+
+## 3. Is the requirement a velocity condition?
+
+A hard drop is the fastest thing in the real game, so if the floor tracks
+velocity it is the hard drop that sets it — not the depth of the pile.
+Below: one body driven downward at a chosen speed into a settled pile.
+particle diameter = 0.6; 'travel/substep' = speed / (60 x substeps).
+
+| impact speed | substeps | travel/substep | penetrated? | KE after |
+| --- | --- | --- | --- | --- |
+| 20 | 2 | 0.167 | no | 0.0002 |
+| 20 | 4 | 0.083 | no | 0.0000 |
+| 20 | 8 | 0.042 | no | 0.0003 |
+| 20 | 16 | 0.021 | no | 0.0001 |
+| 60 | 2 | 0.500 | no | 0.0012 |
+| 60 | 4 | 0.250 | no | 0.0000 |
+| 60 | 8 | 0.125 | no | 0.0000 |
+| 60 | 16 | 0.063 | no | 0.0001 |
+| 120 | 2 | 1.000 | no | 0.0019 |
+| 120 | 4 | 0.500 | no | 0.0000 |
+| 120 | 8 | 0.250 | no | 0.0004 |
+| 120 | 16 | 0.125 | no | 0.0001 |
+| 240 | 2 | 2.000 | no | 0.0007 |
+| 240 | 4 | 1.000 | no | 0.0000 |
+| 240 | 8 | 0.500 | no | 0.0000 |
+| 240 | 16 | 0.250 | no | 0.0001 |
+
+Contact is missed when travel/substep approaches the particle diameter (0.6).

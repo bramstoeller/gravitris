@@ -22,7 +22,7 @@ ADR [0001](../../docs/adr/0001-xpbd-substepped-soft-body-solver.md),
 | # | Experiment | Answer |
 | - | ---------- | ------ |
 | 1 | Cost vs particles / constraints / substeps | linear: `0.49ms × (particles/960) × (substeps/8)` |
-| 2 | Stack stability vs substeps and stiffness | **8 substeps is the floor**; below it a settled pile jitters |
+| 2 | Stack stability vs substeps and stiffness | ⚠ **Wrong — see `results-reconcile.txt`.** The floor is ~3–4, not 8 |
 | 2b | Stability vs piece mass | stable to 8x mass — the difficulty ramp is safe |
 | 3 | SoA vs AoS on identical work | only **1–3%** at our scale; 1.15x at 138k particles |
 | 3b | Steady-state allocation | **0 bytes/frame** |
@@ -58,6 +58,29 @@ taskset -c 2 java -Xmx6g -XX:+UseSerialGC -cp spike.jar spike.BenchKt
 ```
 
 Full run takes several minutes, dominated by the 138k-particle layout case.
+
+## ⚠ A fourth defect, found later — the substep floor was wrong
+
+`Reconcile.kt` / `results-reconcile.txt` exist because the backend engineer's
+independent implementation put the stability floor **between 2 and 4**, not at 8.
+They were right. The two solvers agree exactly; the disagreement was between
+*scenes*, not solvers.
+
+Experiment 2's scene was a chaotic deep pile seeded ~57 units in the air, measured
+in a fixed 1200-frame window, with the worst verdict taken across three compliance
+values. Residual energy in that scene varies non-monotonically by orders of
+magnitude between adjacent substep counts for configuration reasons — at drop
+pitch 1.05, 6 substeps leaves KE 19.5 while 4 and 8 leave 0.002, and the 19.5 is
+*stable over 2 700 further frames*, so it is a trapped configuration rather than a
+convergence failure. A monotonic floor was read off noise.
+
+A hypothesis worth recording because it was **refuted**: the 2-substep explosion is
+not tunnelling. Driving a body into a settled pile at 2.0 particle diameters of
+travel per substep produced no penetration at any substep count. The evidence
+points at contact-depth accumulation down a long chain in a deep pile — which is
+why pile *depth* discriminates and impact *velocity* does not.
+
+Full reasoning in ADR 0003, Amendments 1–3.
 
 ## Bugs found while building it — worth knowing
 
