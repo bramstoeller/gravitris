@@ -20,7 +20,7 @@ export ANDROID_SDK_ROOT := $(ANDROID_HOME)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev test lint build clean apk doctor emulator-setup emulator screenshot
+.PHONY: help setup dev test lint build clean apk doctor emulator-setup emulator screenshot playthrough
 
 help: ## Show this list
 	@echo "Gravitris — Stage 0 build scaffold. Targets:"
@@ -83,3 +83,6 @@ emulator: emulator-setup ## Launch the correctness AVD interactively (window, fo
 
 screenshot: ## Build the debug APK, boot the emulator, install, launch, and save a screenshot. Correctness only — see docs/operations.md before reading anything into how it performed.
 	@bash scripts/emulator-screenshot.sh
+
+playthrough: ## Build+boot+install, then drive real adb input over a scripted session and screenshot each moment. Proves the mechanic RUNS and RENDERS — correctness only, never a performance or appearance claim.
+	@bash scripts/emulator-playthrough.sh
