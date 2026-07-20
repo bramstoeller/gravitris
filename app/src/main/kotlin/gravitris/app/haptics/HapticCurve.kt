@@ -22,8 +22,21 @@ import gravitris.app.Tunables
  */
 object HapticCurve {
 
-    /** True when this impact should produce no haptic at all. */
-    fun isSuppressed(energy: Float): Boolean = energy < Tunables.HAPTIC_ENERGY_FLOOR
+    /**
+     * True when this impact should produce no haptic at all.
+     *
+     * A non-finite energy counts as suppressed. Without that clause `NaN`
+     * compares false against the floor, passes through [normalise]'s `coerceIn`
+     * unchanged, and lands on the *weakest* pulse — so a broken solver value
+     * would present on a device as "the haptics all feel the same and weak",
+     * which is indistinguishable by feel from having no amplitude control. That
+     * ambiguity cost us a milestone once already; silence is the honest answer
+     * to an energy we cannot interpret, and
+     * [gravitris.app.haptics.ImpactEnergyRangeTest] asserts the solver does not
+     * actually produce one.
+     */
+    fun isSuppressed(energy: Float): Boolean =
+        !energy.isFinite() || energy < Tunables.HAPTIC_ENERGY_FLOOR
 
     /**
      * Duration in milliseconds for an impact of [energy] (0..1). Undefined

@@ -40,6 +40,26 @@ class HapticCurveTest {
         assertEquals(60, HapticCurve.amplitude(energy))
     }
 
+    /**
+     * A non-finite energy must be silent, not weak.
+     *
+     * `NaN` compares false against the floor, so without the explicit check it
+     * passes the suppression test, survives `coerceIn` unchanged, and truncates
+     * to the *minimum* amplitude. On a phone that presents as "every impact
+     * feels the same and feeble" — which is exactly how a device without
+     * amplitude control feels, and exactly the ambiguity that made Milestone 1's
+     * `haptics:fixed` unactionable. Silence is the honest answer to an energy we
+     * cannot interpret.
+     */
+    @ParameterizedTest
+    @ValueSource(floats = [Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY])
+    fun `a non-finite energy is suppressed rather than played weakly`(energy: Float) {
+        assertTrue(
+            HapticCurve.isSuppressed(energy),
+            "energy $energy must be silent, not the weakest pulse",
+        )
+    }
+
     @Test
     fun `the heaviest impact is forty milliseconds at full amplitude`() {
         assertEquals(40L, HapticCurve.durationMs(1f))
