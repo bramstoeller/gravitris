@@ -56,19 +56,23 @@ None.
   `:core-sim:test` BUILD SUCCESSFUL, `LoseConditionTest` = 7 tests, 0 failures. PR
   CI `build-and-test` pass.
 
+## Consumer sign-off — CONFIRMED (was the main should-fix, now closed)
+
+- The Frontend Engineer recorded the consumer sign-off on the `Phase` contract as
+  a PR #17 comment, signed. Confirmed against their real consumer path
+  (`onDrawFrame` reads `state.phase` fresh every frame, never retains it): the
+  `Overflow(var remainingTicks)` reused-instance / read-don't-retain shape is
+  workable **and** preferred over an immutable snapshot ("do not spend a per-tick
+  allocation on my account"); `Phase.GameOver` as a terminal absorbing state is
+  fine; app-side restart (reconstruct `Simulation` + `resetAccumulator`, no
+  `Simulation.restart()`) is what they want, since `GameSession` already owns
+  construct+start+driver; and the `gameOver > clearing > overflow > playing`
+  precedence matches their `when (state.phase)`. Contract consumer-confirmed —
+  this closes the gap; the producer's claim in handoff 0027 is now backed by a
+  consumer-side record.
+
 ## Should fix (non-blocking)
 
-- **Record the consumer sign-off on the `Phase` contract.** Handoff 0027 says
-  "the shape I agreed with the Frontend Engineer," but that is the producer's
-  claim — there is no consumer-side record (no PR comment; handoff 0022 is an
-  unrelated earlier finding). This contract has a real trap: `Phase.Overflow` is
-  now `data class Overflow(var remainingTicks: Int)`, one reused instance mutated
-  in place — a consumer that retains the reference instead of reading it gets a
-  value that changes underneath it. That is exactly the kind of detail the
-  consumer must confirm, as band-contract and FrameDriver both did. I have asked
-  the Frontend Engineer to confirm and record it. #17 can land first (it is the
-  core state machine, and the `Phase` types pre-existed), but the sign-off should
-  be recorded before the Frontend wires the game-over UI against it.
 - **Add a clear-precedence test.** The precedence is correct but untested: no test
   sets up a clear coinciding with an overflow, so a future reordering of
   `advanceMechanic` (overflow before clear) would pass CI. A test that locks
