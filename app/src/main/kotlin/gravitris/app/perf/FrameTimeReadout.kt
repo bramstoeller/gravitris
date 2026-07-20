@@ -263,26 +263,42 @@ class FrameTimeReadout(context: Context) {
         /**
          * States what these numbers are before anyone reads them.
          *
-         * "stage1" is no longer accurate — the real solver is now underneath
-         * these figures, so they are a Milestone 1 measurement rather than a
-         * shell-only one — but **"not a verdict" is still exactly right and
-         * must stay**. The fragment shader is still a palette lookup and one
-         * compression term, so these figures remain a **floor**: the cost of
-         * geometry and overdraw with almost no per-pixel work. Stage 3's
-         * procedural gel, subsurface, grain and band glow are the unmeasured
-         * part, and they are the reason ADR 0006 protects the 60Hz budget in
-         * the first place.
+         * Both old descriptors are stale now and were removed:
          *
-         * A good number here therefore says "nothing is structurally wrong
-         * yet", not "we have headroom". Someone will photograph this readout
-         * and paste it into a discussion without the surrounding context, so
-         * the caveat travels with the numbers rather than living only in a
-         * handoff. Do not let a future edit of this string start implying more
-         * than the build measures.
+         * - **"milestone1"** — the build is well past Milestone 1, and a client
+         *   photographing this screen expecting the current game would be told,
+         *   in the corner, that they were looking at the first milestone. That
+         *   is the confusion this line exists to prevent, not to create.
+         * - **"floor"** — that word meant the numbers were a lower bound because
+         *   the fragment shader was a palette lookup and one compression term,
+         *   with Stage 3's procedural gel, subsurface, grain and band glow still
+         *   unmeasured. Those now run: [GameRenderer.shadeLevel] defaults to
+         *   [GameRenderer.SHADE_LEVEL_MAX] ("everything — the shipped look"), so
+         *   the default reading already carries the full per-pixel cost. It is
+         *   no longer a floor, and calling it one would now understate it.
+         *
+         * What is deliberately **not** claimed: this line does not name a
+         * shading level. The dial can drop below the top tier — the `shade:N/4`
+         * line reports which — so a fixed header that hardcoded "full shading"
+         * would contradict it in the lower tiers. The header therefore describes
+         * the *numbers* — live, in-app frame time — which is true in every
+         * state, and leaves the shading level to the line that actually tracks
+         * it.
+         *
+         * **"not a verdict" stays, and stays exactly.** It is the honest core.
+         * On the emulator these figures are a software-render artifact and no
+         * frame-time number from it is ever a performance claim; on the client's
+         * phone — still the only performance instrument this project has — a
+         * single readout is a measurement to interpret alongside the shade level
+         * and the solver benchmark, not a pass/fail on the 60Hz budget. Someone
+         * will photograph this readout and paste it into a discussion without the
+         * surrounding context, so the caveat travels with the numbers rather than
+         * living only in a handoff. Do not let a future edit of this string start
+         * implying more than the build measures.
          */
-        const val BASELINE_LABEL = "milestone1 floor - not a verdict"
+        const val BASELINE_LABEL = "live frame time - not a verdict"
 
-        const val PLACEHOLDER = "milestone1 floor - measuring…"
+        const val PLACEHOLDER = "live frame time - measuring…"
 
         /**
          * The benchmark block's own header, carrying its own caveat for the
