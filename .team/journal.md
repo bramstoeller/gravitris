@@ -1666,3 +1666,213 @@ staffing. Three blockers raised. Branch chore/architecture, not merged.
 - **2026-07-20 13:40:08Z** `frontend-engineer` — Stage 3B gel shading complete on feat/gel-shading (3730077..4c470b8): subsurface, contact seam, rim, grain, dither, band glow, ignition flash, dissolve — all fragment-shader colour math, no texture assets. Compression darkening preserved at gain 4.0. Five-position shading dial on volume-up is the executable cut list. Frame cost ESTIMATED at 2-4ms, not measured — no GPU here. Found: the lightness ladder in piece-identity.md is absent from its own hex values (Jade/Teal step is 1.8%, not 10-15%) — UX decision. GL thread confirmed allocation-free; jank is not GC; best suspect is the synchronous vibrator binder call from the GL thread. Agreed the band contract directly with the Backend Engineer — two of my implementations were wrong and their numbers caught both. Handoff 0016.
 
 - **2026-07-20 13:45:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:55:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:58:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:58:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:58:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:58:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:58:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:59:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:59:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:59:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:59:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:59:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:00:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:00:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:00:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:00:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:01:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:02:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:02:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:02:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:02:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:03:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:03:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:03:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:03:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:03:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:04:11Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:04:20Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:04:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:04:26Z** `backend-engineer` — PR #2 substep item settled: ADR 0003 Amendment 1 recorded in test comments and handoff 0006 (ee76842, pushed). PR body rewritten - open escalation replaced with settled position, plus explicit 'merging as-is, not restacked' decision and a list of what changed on later branches. Reviewers asked directly: Frontend Engineer for the contract surface, DevOps Engineer scoped to module boundary and clean-clone JVM test run. Code Reviewer still needed for merge to main - neither running agent can substitute.
+
+- **2026-07-20 14:04:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:05:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:05:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:05:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:05:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:06:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:07:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:07:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:07:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:07:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:08:02Z** `frontend-engineer` — Reviews arranged directly (new rule). Asked DevOps Engineer to review PR #3: it targets their branch and modifies their buildSrc CHK-1 task. Argued against a repeat Security Engineer review — they already reviewed that exact change and it returned the High sdk-23 bypass, now merged; the residual gap is that CheckMergedManifest has NO tests at all, which is a build-quality problem, not a fresh threat question. Reviewed Backend's PR #2 contract surface at their request: four findings, all the same defect - contract forbids array.size and gives no capacity; no bandCount on SimState; particleRadius absent (this IS the client-visible contact gap - both sides correct, bug lived in the contract); triangleIndices doc states value range in the phrasing of a length, and omits winding and diagonal. Each gap maps to a later fix commit. Declined solver/XPBD review as outside competence. PR #3 description rewritten: it was not merely understating - none of the post-device fixes are in that diff, so the branch contains a known LAUNCH CRASH. Said so at the top. FLAG: all PRs share one GitHub account, so gh rejects approve/request-changes on own PR - Code Reviewer approval cannot be recorded in GitHub and must live in .team/reviews/.
+
+- **2026-07-20 14:08:11Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:08:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:08:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:08:45Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:09:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:09:20Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:09:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:09:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:09:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:10:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:10:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:10:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:10:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:11:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:11:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:11:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:11:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:12:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:12:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:12:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:13:11Z** `backend-engineer` — Frontend review of PR #2 received and actioned (dbcad18): triangleIndices doc corrected (length vs value range, winding, cell diagonal), bandCount published, gravity require added. particleCapacity/particleRadius NOT duplicated - already fixed downstream on 118bcfe/3e53cc9, duplicating would conflict with live branches. initialPieceMass rename deferred to backlog. uBandFill contract answered with measured numbers: per-band, structurally 0..1 cannot overshoot (no clamp needed), never latches - so ignition flash must key off bandClearProgress not bandFill. FOUND: CI red on every run since 10:13 on all PRs - ANDROID_HOME vs ANDROID_SDK_ROOT clash on ubuntu-latest; reported to DevOps. Consequence: the reproducibility check has never actually executed in CI.
+
+- **2026-07-20 14:13:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:13:39Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:14:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:14:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:14:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:14:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:14:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:15:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:15:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:15:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:15:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:16:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:16:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:16:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:16:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:16:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:17:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:17:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:17:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:18:02Z** `frontend-engineer` — uBandFill contract settled with Backend Engineer. Key finding: I MISDESCRIBED MY OWN SHADER - told them flash and dissolve key off uBandFill; they key off uBandClearProgress and always have, with test coverage (ShadersTest:211). Backend measured correctly and was one step from writing a latch into feat/mechanic to fix a problem that does not exist. No code changed. Calibration finding six, and a new kind: a defect in my report ABOUT code, not in code. Worse, because reports are what others build on - a wrong line is caught by a test, a wrong sentence to a teammate is caught by nothing. Contract ratified as existing behaviour: uBandFill = anticipation glow only, uBandClearProgress = ignition/hold/dissolve. No clamp needed, structurally bounded (span not area). Naming settled in favour of shader names: uBandInvHeight is a reciprocal and renaming it to uBandHeight would scale every band lookup by height squared, invisibly, until well geometry changes. Recorded the damped-vs-raw trap for QA. PR #3 CI red at CONFIGURATION time on Gradle plugin classpath dependency verification - base branch, DevOps is on it, not mine; watching.
+
+- **2026-07-20 14:18:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:18:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:18:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:18:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:19:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:19:33Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:19:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:20:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:21:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:21:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:21:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:21:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 14:21:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
