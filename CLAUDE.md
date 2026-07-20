@@ -67,6 +67,18 @@ one belongs in the log — that is what makes this auditable.
   `docs/<slug>`.
 - Parallel agents use worktrees: `git worktree add /work/.worktrees/<slug> -b feat/<slug>`.
   Remove the worktree when the branch merges.
+- **Commit under your own role.** The commit *author* is the role that did the
+  work; the committer stays the team identity. Pass it explicitly on every
+  commit, because worktrees share one `.git/config` and a repo-level identity
+  would be wrong for whoever is not currently holding it:
+
+  ```
+  git -c user.name="Backend Engineer" -c user.email="backend-engineer@ai-team.local" commit -m "..."
+  ```
+
+  Use your role name exactly as it appears in the Roles list above. Client
+  instruction, 2026-07-20: `git log` should show who did what without needing to
+  cross-reference the handoffs.
 - **Conventional commits**, enforced by a `commit-msg` hook:
   `type(scope): subject` — types `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
   Subject in the imperative, lower case, no trailing period, under 72 characters.
