@@ -19,3 +19,5 @@ order it happened. Written by agents and by the team's hooks.
 Gate 2 architecture: solver budget spike measured (8-substep floor, spongy is
 affordable, SoA worth only 1-3%), ADRs 0001-0010, contracts, build order,
 staffing. Three blockers raised. Branch chore/architecture, not merged.
+
+- **2026-07-20 09:37:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
