@@ -7,6 +7,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.TextView
+import gravitris.app.GameRenderer
 import gravitris.app.haptics.ImpactHaptics
 import java.util.Locale
 
@@ -110,7 +111,7 @@ class FrameTimeReadout(context: Context) {
             snapshot.fps, snapshot.jankPerSecond,
             context.triangles, context.bodies,
             context.dynamicBytesPerFrame / 1024f,
-            if (context.compressionDarkening) "shade:on" else "shade:OFF",
+            shadeLabel(context.shadeLevel),
             context.hapticsMode.readout,
             context.impactsSeen, context.pulsesRequested, context.lastImpactEnergy,
             settingLabel(context.masterVibrateOn), settingLabel(context.touchFeedbackOn),
@@ -210,17 +211,37 @@ class FrameTimeReadout(context: Context) {
         var touchFeedbackOn: Boolean? = null
 
         /**
-         * Whether the compression darkening term is active. Shown because a
-         * frame time is not comparable across the two, and the whole point of
-         * the toggle is comparing them.
+         * How much of the art direction is running, 0..4. See
+         * `GameRenderer.shadeLevel`.
          *
-         * The off state is shouted (`shade:OFF`) rather than stated. It
-         * defaults to *on* and only a deliberate key press turns it off, yet
-         * both Milestone 1 screenshots came back with it off — so the client
-         * spent the demo unable to see the deformation the demo existed to
-         * show, and the only clue was three lower-case characters in a corner.
+         * Shown because a frame time is meaningless without it — the whole
+         * point of the dial is comparing the five readings, and a screenshot
+         * that does not say which one it is cannot be used.
+         *
+         * Every level below the top is **shouted** (`shade:2/4`, upper case,
+         * with the maximum alongside), not stated. Milestone 1 is the reason:
+         * the compression toggle defaulted to on and only a deliberate key
+         * press turned it off, yet both screenshots came back with it off, so
+         * the client spent the demo unable to see the deformation the demo
+         * existed to show — and the only clue was three lower-case characters
+         * in a corner. Showing the denominator means a screenshot of a reduced
+         * tier is self-evidently a reduced tier.
          */
-        var compressionDarkening = false
+        var shadeLevel = 0
+    }
+
+    /**
+     * `shade:FULL` at the top of the dial, `shade:2/4` anywhere below it.
+     *
+     * The band-fill source rides along on the same line because the two are
+     * read together or not at all: the glow only runs at the top level, and at
+     * Stage 3B what it is glowing *at* is a debug sweep rather than real
+     * coverage. A screenshot of a glowing stack that does not say `band:DEBUG`
+     * would be read as the mechanic working.
+     */
+    private fun shadeLabel(level: Int): String = when (level) {
+        GameRenderer.SHADE_LEVEL_MAX -> "shade:FULL band:DEBUG"
+        else -> "shade:$level/${GameRenderer.SHADE_LEVEL_MAX}"
     }
 
     /** `?` is a genuinely different answer from `on` or `off` and is shown as

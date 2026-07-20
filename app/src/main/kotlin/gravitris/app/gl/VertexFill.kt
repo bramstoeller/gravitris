@@ -58,10 +58,17 @@ object VertexFill {
      * describe a deformation the geometry on screen does not have. The error is
      * invisible at 60Hz and the honest value is also the cheaper one.
      *
+     * **Contact is not interpolated either, for the same reason and one more.**
+     * It is the solver's occlusion accumulator, written only on the final
+     * substep so it already describes the configuration being rendered, and it
+     * changes discontinuously by nature — a body either has a neighbour or does
+     * not. Lerping it would smear the seam across the frame in which contact
+     * begins, which is precisely the frame the seam exists to mark.
+     *
      * @param alpha `accumulator / TICK`, in `[0, 1]`. 0 draws the previous
      *   tick's state, 1 draws the current one.
-     * @param out interleaved `[x, y, compression]` per particle. Must hold at
-     *   least `state.particleCount * FLOATS_PER_VERTEX` floats.
+     * @param out interleaved `[x, y, compression, contact]` per particle. Must
+     *   hold at least `state.particleCount * FLOATS_PER_VERTEX` floats.
      * @return the number of floats written.
      */
     fun fill(state: SimState, alpha: Float, out: FloatArray): Int {
@@ -76,15 +83,52 @@ object VertexFill {
         val previousX = state.prevPositionX
         val previousY = state.prevPositionY
         val compression = state.particleCompression
+        val contact = state.particleContact
 
         var cursor = 0
         for (i in 0 until particles) {
             out[cursor++] = previousX[i] + (currentX[i] - previousX[i]) * alpha
             out[cursor++] = previousY[i] + (currentY[i] - previousY[i]) * alpha
             out[cursor++] = compression[i]
+            out[cursor++] = contact[i]
         }
 
         extrudeBoundary(out, particles, state.bodyLattice, state.particleRadius)
+        return cursor
+    }
+
+    /**
+     * Fill the per-particle attributes that never change: body UV and the
+     * free-surface flag.
+     *
+     * These are the two members of ADR 0007's varying list that are **static
+     * per particle** — `:core-sim` writes them once when a body is created and
+     * never touches them again, because a particle's position within its own
+     * lattice is what identifies it. So they are uploaded on the same schedule
+     * as the archetype (only when the set of bodies changes) rather than
+     * rewritten every frame, and Stage 3B's two new material inputs therefore
+     * cost **zero** per-frame bandwidth and zero per-frame CPU.
+     *
+     * They are copied out of [SimState] rather than re-derived from the lattice
+     * index here, even though the shell knows the lattice and the arithmetic is
+     * two divisions. Re-deriving would put a second definition of "where is
+     * this particle in its body" in the shell, and the first thing that breaks
+     * when a quality tier changes is the copy nobody remembered was a copy.
+     *
+     * @param out interleaved `[u, v, edge]` per particle.
+     * @return the number of floats written.
+     */
+    fun fillStatics(state: SimState, out: FloatArray): Int {
+        val u = state.particleU
+        val v = state.particleV
+        val edge = state.particleEdge
+
+        var cursor = 0
+        for (i in 0 until state.particleCount) {
+            out[cursor++] = u[i]
+            out[cursor++] = v[i]
+            out[cursor++] = edge[i]
+        }
         return cursor
     }
 

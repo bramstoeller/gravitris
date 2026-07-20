@@ -146,14 +146,39 @@ class WellFrame {
         return i
     }
 
+    /**
+     * The walls are not gel, and this is where that is arranged.
+     *
+     * The frame shares the body program — it is three quads, and a second
+     * program would cost a state change per frame to save nothing — but it has
+     * none of the material attribute arrays, because the walls do not deform,
+     * have no lattice, and have no free surface. With an array disabled the
+     * shader reads the *generic* attribute value, so each one has to be set to
+     * whatever makes the gel shader collapse back to a flat `color-surface`
+     * quad. Every value below is chosen for that, and each one is load-bearing:
+     *
+     * | attribute | value | what a wrong value would look like |
+     * | --------- | ----- | ---------------------------------- |
+     * | compression | 1 (rest) | the generic default is 0, read as *fully* compressed, darkening the walls to the shader's ceiling |
+     * | contact | 0 | walls uniformly darkened by the AO seam term |
+     * | edge | 0 | the whole wall rim-lit cool white, since the rim term has no geometry to concentrate it on |
+     * | body UV | (0, 0) | at (0,0) the subsurface depth is 0 and `mottle` is `sin(0)*sin(0)` = 0, so both terms vanish; at the centre (0.5, 0.5) the walls would instead take the full deep-tone tint |
+     *
+     * Band glow is the one term this cannot reach, because it is driven by
+     * world height rather than by a vertex attribute. It is suppressed in the
+     * shader instead, by testing `vArchetype` against the piece count — a wall
+     * glowing on its own would read as a horizontal HUD line rather than as
+     * material warming from within, which is exactly what the client rejected.
+     *
+     * The dither still applies, which is intentional: `color-surface` #1B1E29
+     * is dark enough to band against a true-black background on its own.
+     */
     fun draw() {
         GLES30.glBindVertexArray(vao)
-        // The frame shares the body program but has no compression attribute
-        // array — the walls do not deform. With the array disabled the shader
-        // reads the generic attribute value, which defaults to 0 and would be
-        // interpreted as "fully compressed", darkening the walls to the
-        // shader's ceiling. Rest is 1.
         GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_COMPRESSION, 1f)
+        GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_CONTACT, 0f)
+        GLES30.glVertexAttrib2f(BodyMesh.ATTRIB_BODY_UV, 0f, 0f)
+        GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_EDGE, 0f)
         GLES30.glDrawElements(GLES30.GL_TRIANGLES, QUADS * 6, GLES30.GL_UNSIGNED_SHORT, 0)
         GLES30.glBindVertexArray(0)
     }

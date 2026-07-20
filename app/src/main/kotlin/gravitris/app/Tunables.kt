@@ -151,6 +151,197 @@ object Tunables {
      */
     const val COMPRESSION_MAX_DARKEN = 0.55f
 
+    // --- Stage 3B gel shading (docs/ux/piece-identity.md) -------------------
+
+    /**
+     * Default shading tier. See `Shaders` for the tier table.
+     *
+     * 3 — everything — is the default because the client is being asked to
+     * judge the art direction, and shipping them a reduced tier by default
+     * would have them judge something we did not build. The tier is walked
+     * *down* on the device with volume-up, and the frame time at each step is
+     * the measurement this stage owes.
+     */
+    const val SHADE_TIER_DEFAULT = 3
+    const val SHADE_TIER_MAX = 3
+
+    /**
+     * How far the deep subsurface tone is mixed in at the body's core.
+     *
+     * Not 1.0: at full strength the centre of every piece reaches the deep tone
+     * exactly, and since that tone is both darker and more saturated the piece
+     * reads as a ring of hue around a dark middle — a tube, not a solid. 0.55
+     * leaves the core recognisably the piece's own colour while still putting a
+     * visible gradient across it, which is what sells thickness.
+     */
+    const val SUBSURFACE_GAIN = 0.55f
+
+    /**
+     * Saturation of the deep tone, as a multiplier away from the colour's own
+     * luma. Above 1 saturates.
+     *
+     * `piece-identity.md`: the deep interior colour is "a darkened,
+     * more-saturated version of the *same* hue — never shifted toward brown or
+     * grey. Muddying the hue at low light is the same failure mode as tinting
+     * the rim." 1.35 is the saturation half of that sentence; [SUBSURFACE_DARKEN]
+     * is the darkening half. Neither may rotate the hue, and mixing away from
+     * luma cannot.
+     */
+    const val SUBSURFACE_SATURATE = 1.35f
+
+    /** Brightness of the deep tone. Deep material absorbs more light on the way
+     *  back out, so the core is darker than the surface. */
+    const val SUBSURFACE_DARKEN = 0.62f
+
+    /**
+     * How much the contact seam darkens, at full occlusion.
+     *
+     * This is the term `piece-identity.md` ranks as the **primary**
+     * small-screen boundary cue — "the player is never relying on a colour edge
+     * alone to tell where one piece ends and another begins" — so it is tuned
+     * to be clearly visible rather than tastefully subtle. 0.45 at full contact
+     * is a strong crease, and full contact is rare: the solver's occlusion is a
+     * penetration ratio, so ordinary resting contact lands well below it.
+     *
+     * It is a *crease*, not a stroke. The spec asks for "a thin AO-darkened
+     * line, not a hard black stroke", and because this darkens a physical
+     * quantity that falls off across the outer lattice ring it is soft by
+     * construction — there is no way to make it an outline without adding
+     * geometry.
+     */
+    const val CONTACT_GAIN = 0.45f
+
+    /**
+     * Strength of the rim light on the free surface.
+     *
+     * Kept below the point where the rim reaches white, for the same reason
+     * [COMPRESSION_MAX_DARKEN] exists at the other end: hue is the identity
+     * cue, and a blown-out rim erases it exactly at the silhouette, which is
+     * where the eye goes first.
+     */
+    const val RIM_GAIN = 0.30f
+
+    /**
+     * Amplitude of the grain, as a fraction of the material colour.
+     *
+     * Small on purpose. Grain is a texture cue and a tertiary identity cue, not
+     * a pattern — at a strength where you notice it as a pattern it competes
+     * with the compression darkening, which is the term the client has already
+     * approved as the weight cue.
+     */
+    const val GRAIN_GAIN = 0.09f
+
+    /** Base grain frequency in cycles across a body, before the per-archetype
+     *  multiplier in [Palette.grainScales]. */
+    const val GRAIN_FREQUENCY = 7.0f
+
+    /**
+     * Dither amplitude, in units of the 0..1 colour channel.
+     *
+     * `1.4 / 255` — a little over one 8-bit code value, peak to peak. That is
+     * the whole design: a dither has to be at least one code value to move a
+     * pixel across a quantisation boundary, and anything much more is visible
+     * as noise rather than as smoothness.
+     *
+     * `tokens.md` and `band-glow.md` both require this against `color-bg`
+     * #000000 on the client's OLED, and both require it to be driven by the
+     * existing procedural field rather than by a second dithering system.
+     * **Design against an 8-bit output surface as the baseline** even though the
+     * panel does 10-bit — that is the specs' explicit instruction, and it is
+     * why this is on regardless of what the surface turns out to be.
+     */
+    const val DITHER_GAIN = 1.4f / 255f
+
+    // --- band glow (docs/ux/band-glow.md) ----------------------------------
+
+    /**
+     * Emissive gain on the amber glow colour.
+     *
+     * The curve in `band-glow.md` produces an intensity in 0..0.85, and this
+     * scales it to the additive term. It is capped per-fragment by
+     * [GLOW_CAP_RATIO] regardless.
+     */
+    const val GLOW_GAIN = 1.0f
+
+    /**
+     * The cap that keeps a glowing piece legible as its own hue.
+     *
+     * `band-glow.md`: "Cap the blend so the base hue always contributes at
+     * least ~35% of the final colour... Never let sustained glow fully white-out
+     * a piece — that would erase the identity signal at exactly the moment
+     * multiple differently-hued pieces are sharing a band, which is when
+     * identity matters most."
+     *
+     * Base share >= 0.35 means the added luma may not exceed
+     * `(0.65 / 0.35) = 1.857` times the base luma. Dividing by the glow
+     * colour's own luma (#FFB347 -> 0.744 under Rec.601) folds the whole
+     * constraint into one number the shader applies with a multiply and a min:
+     * `1.857 / 0.744 = 2.50`.
+     *
+     * The 120ms ignition flash is the one moment the spec permits this to be
+     * exceeded, and it is deliberately not implemented — ignition fires on a
+     * settle against a clear threshold, which is Stage 3A. Raising this value
+     * for the duration of the flash is the only change that needs.
+     */
+    const val GLOW_CAP_RATIO = 2.50f
+
+    /** 2.4s breathing period at 70-85% fill, as an angular rate. */
+    const val PULSE_RATE_SLOW = 2.6179939f // 2*PI / 2.4
+
+    /**
+     * 0.9s breathing period at the 85-90% final approach, as an angular rate.
+     *
+     * `accessibility.md` floors this at a 1.2s period under reduced motion —
+     * "brightness ramp logic is unchanged, only the oscillation *rate* is
+     * slowed" — which is a matter of passing 5.236 (2*PI / 1.2) here instead.
+     * Settings do not exist yet, so nothing selects between them today; the
+     * shader reads whichever rate it is given.
+     *
+     * `accessibility.md` also fixes the floor under both: no visual element may
+     * flash faster than 3 times per second (WCAG 2.3.1). 0.9s is ~1.1Hz, well
+     * clear, and that ceiling is why this must not be "tuned" faster later while
+     * chasing more urgency.
+     */
+    const val PULSE_RATE_FAST = 6.9813170f // 2*PI / 0.9
+
+    /** Depth of the breathing pulse, as a fraction of the emissive term. */
+    const val PULSE_AMPLITUDE = 0.22f
+
+    /** Depth of the ember shimmer. Reuses the grain field per `band-glow.md`,
+     *  scrolled in time — the motion is what tells the player the warmth
+     *  belongs to the zone rather than to the piece. */
+    const val SHIMMER_GAIN = 0.30f
+
+    /**
+     * Period, in seconds, at which the shader's clock wraps.
+     *
+     * `uTime` is a `mediump` float in the fragment stage and mediump loses
+     * whole-number resolution above 2048, so an app left running for an hour
+     * would quantise the pulse into steps and then stop it entirely. 60s is a
+     * whole multiple of neither pulse period, so the wrap puts a phase
+     * discontinuity in the breathing once a minute — invisible against a pulse
+     * this slow, and the honest alternative (a highp clock) costs precision in
+     * the stage that can least afford it.
+     */
+    const val SHADER_TIME_WRAP_SECONDS = 60f
+
+    /**
+     * Debug band-fill sweep rate, in bands per second.
+     *
+     * **Stage 3B has no band fill.** `SimState.bandFill` is allocated by the
+     * core and never written — computing it is Stage 3A and was explicitly out
+     * of scope here, and inventing the band logic locally would have produced a
+     * second definition for Stage 3A to collide with. So the renderer drives
+     * the uniform with a travelling wave instead, which sweeps every band
+     * through the whole 0..1 range and therefore exercises every segment of
+     * `band-glow.md`'s curve, the pulse rate change and the identity cap, on
+     * the device, without any of it being real.
+     *
+     * The readout says `band:DEBUG` whenever this is what is driving the glow.
+     * Deleting the sweep is the last step of wiring Stage 3A's real fill in.
+     */
+    const val BAND_DEBUG_SWEEP_RATE = 0.35f
+
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---------
 
     /** World units across the well. Matches `SimConfig.wellWidth`'s default so

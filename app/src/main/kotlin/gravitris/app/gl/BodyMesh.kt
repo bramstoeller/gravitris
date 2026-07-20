@@ -23,18 +23,29 @@ import java.nio.IntBuffer
  * ADR 0007 says "one dynamic vertex buffer for all bodies", interleaved. There
  * are **two** buffers here, split by update frequency rather than by vertex:
  *
- * - **dynamic, interleaved, rewritten every frame** — position and
- *   compression, 12 bytes per particle. This is the buffer the ADR is talking
- *   about, and every varying Stage 3 adds (`vEdge`, `vContact`, `vBodyUv`) is
- *   per-particle and per-frame, so all of them join it here.
+ * - **dynamic, interleaved, rewritten every frame** — position, compression
+ *   and contact, 16 bytes per particle.
  * - **static, rewritten only when the set of bodies changes** — the archetype
- *   index. A body's archetype never changes while that body exists, so
- *   interleaving it would mean re-uploading 1500 integers per frame that are
- *   bit-identical to the ones already there.
+ *   index, and the body UV / free-surface pair.
  *
- * The archetype is the one member of ADR 0007's varying list that was never
- * dynamic, so pulling it out costs one extra buffer binding at setup and
- * nothing per frame, while leaving the ADR's actual structure intact.
+ * Stage 1 predicted that every varying Stage 3 added would be per-frame and
+ * would join the dynamic buffer. **Two of the three turned out not to be**, and
+ * the correction is worth stating because it is most of why Stage 3B's material
+ * inputs are close to free:
+ *
+ * - `vContact` is genuinely dynamic — the solver rewrites it every tick — so it
+ *   joined the interleaved buffer, taking it from 12 to 16 bytes per particle.
+ *   At 24 bodies that is 7.0 KB/frame to 9.4 KB/frame, against the 2 MB/s that
+ *   ADR 0007 measured and explicitly told us not to treat as a bottleneck.
+ * - `vBodyUv` and `vEdge` are **static per particle**. `:core-sim` writes them
+ *   once at body creation and never again, because they describe where a
+ *   particle sits in its own lattice. So they sit with the archetype and cost
+ *   nothing per frame at all.
+ *
+ * Splitting by update frequency rather than by vertex is what makes that
+ * distinction expressible. It costs two extra buffer bindings at setup and
+ * nothing per frame, and leaves ADR 0007's actual structure — one upload, one
+ * draw call — intact.
  *
  * ## Index buffer sizing
  *
@@ -53,14 +64,19 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     private var vao = 0
     private var dynamicVbo = 0
     private var archetypeVbo = 0
+    private var materialVbo = 0
     private var ibo = 0
 
     /**
-     * Interleaved `[x, y, compression]` per particle: position in world units
-     * and already interpolated, compression as current/rest area.
+     * Interleaved `[x, y, compression, contact]` per particle: position in
+     * world units and already interpolated, compression as current/rest area,
+     * contact as the solver's occlusion accumulator.
      */
     private val vertexScratch = FloatArray(maxParticles * FLOATS_PER_VERTEX)
     private val archetypeScratch = IntArray(maxParticles)
+
+    /** Interleaved `[u, v, edge]` per particle — static, see the class note. */
+    private val materialScratch = FloatArray(maxParticles * FLOATS_PER_MATERIAL_VERTEX)
 
     private val vertexBuffer: FloatBuffer = ByteBuffer
         .allocateDirect(vertexScratch.size * Float.SIZE_BYTES)
@@ -71,6 +87,11 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         .allocateDirect(archetypeScratch.size * Int.SIZE_BYTES)
         .order(ByteOrder.nativeOrder())
         .asIntBuffer()
+
+    private val materialBuffer: FloatBuffer = ByteBuffer
+        .allocateDirect(materialScratch.size * Float.SIZE_BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
 
     /** Bodies whose archetypes are currently uploaded, so the static buffer is
      *  only rewritten when the set of bodies actually changes. */
@@ -88,11 +109,12 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
 
     /** Creates every GL object. Safe to call again after context loss. */
     fun create() {
-        val names = IntArray(3)
-        GLES30.glGenBuffers(3, names, 0)
+        val names = IntArray(4)
+        GLES30.glGenBuffers(4, names, 0)
         dynamicVbo = names[0]
         archetypeVbo = names[1]
-        ibo = names[2]
+        materialVbo = names[2]
+        ibo = names[3]
 
         val vaos = IntArray(1)
         GLES30.glGenVertexArrays(1, vaos, 0)
@@ -115,6 +137,28 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         GLES30.glVertexAttribPointer(
             ATTRIB_COMPRESSION, 1, GLES30.GL_FLOAT, false,
             VERTEX_STRIDE_BYTES, 2 * Float.SIZE_BYTES,
+        )
+        GLES30.glEnableVertexAttribArray(ATTRIB_CONTACT)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_CONTACT, 1, GLES30.GL_FLOAT, false,
+            VERTEX_STRIDE_BYTES, 3 * Float.SIZE_BYTES,
+        )
+
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, materialVbo)
+        GLES30.glBufferData(
+            GLES30.GL_ARRAY_BUFFER,
+            materialScratch.size * Float.SIZE_BYTES,
+            null,
+            GLES30.GL_DYNAMIC_DRAW,
+        )
+        GLES30.glEnableVertexAttribArray(ATTRIB_BODY_UV)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_BODY_UV, 2, GLES30.GL_FLOAT, false, MATERIAL_STRIDE_BYTES, 0,
+        )
+        GLES30.glEnableVertexAttribArray(ATTRIB_EDGE)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_EDGE, 1, GLES30.GL_FLOAT, false,
+            MATERIAL_STRIDE_BYTES, 2 * Float.SIZE_BYTES,
         )
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, archetypeVbo)
@@ -195,9 +239,19 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         // Buffer orphaning (ADR 0007 §1): hand the driver a fresh allocation
         // before writing, so it never has to stall waiting for the previous
         // frame's draw to finish reading the old contents.
+        //
+        // Orphaned at the LIVE size, not the buffer's capacity. This used to
+        // pass `vertexScratch.size`, which is `maxBodies` — 40 bodies x 25
+        // particles x 16 bytes = 16 KB reallocated every frame no matter how
+        // few bodies were in the well, against the 7-10 KB a typical stack
+        // actually writes. The driver's allocator is precisely the kind of
+        // place multi-millisecond frame-time outliers come from, and this was
+        // asking it to do roughly twice the work for nothing. Found while
+        // auditing the render path for per-frame allocation after the backend
+        // engineer showed the device's jank is not the solver.
         GLES30.glBufferData(
             GLES30.GL_ARRAY_BUFFER,
-            vertexScratch.size * Float.SIZE_BYTES,
+            cursor * Float.SIZE_BYTES,
             null,
             GLES30.GL_STREAM_DRAW,
         )
@@ -209,7 +263,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         )
 
         if (state.bodyCount != uploadedBodies) {
-            uploadArchetypes(state, particles)
+            uploadStatics(state, particles)
             uploadedBodies = state.bodyCount
         }
 
@@ -219,7 +273,10 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     }
 
     /**
-     * Archetypes are clamped into the palette's range on the way to the GPU.
+     * Upload everything that is constant for as long as the current set of
+     * bodies exists: the archetype index, and the body UV / free-surface pair.
+     *
+     * ## Archetypes are clamped into the palette's range on the way to the GPU
      *
      * `uPalette` is a fixed-size array in GLSL and indexing it out of bounds is
      * undefined behaviour — not a wrong colour but anything the driver likes,
@@ -233,7 +290,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
      * prevents is undebuggable from this container and would arrive the first
      * time Stage 3 introduces a seventh piece.
      */
-    private fun uploadArchetypes(state: SimState, particles: Int) {
+    private fun uploadStatics(state: SimState, particles: Int) {
         val particleBody = state.particleBody
         val bodyArchetype = state.bodyArchetype
         for (i in 0 until particles) {
@@ -250,6 +307,19 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
             0,
             particles * Int.SIZE_BYTES,
             archetypeBuffer,
+        )
+
+        val materialFloats = VertexFill.fillStatics(state, materialScratch)
+        materialBuffer.position(0)
+        materialBuffer.put(materialScratch, 0, materialFloats)
+        materialBuffer.position(0)
+
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, materialVbo)
+        GLES30.glBufferSubData(
+            GLES30.GL_ARRAY_BUFFER,
+            0,
+            materialFloats * Float.SIZE_BYTES,
+            materialBuffer,
         )
     }
 
@@ -287,9 +357,16 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         const val ATTRIB_POSITION = 0
         const val ATTRIB_ARCHETYPE = 1
         const val ATTRIB_COMPRESSION = 2
+        const val ATTRIB_CONTACT = 3
+        const val ATTRIB_BODY_UV = 4
+        const val ATTRIB_EDGE = 5
 
-        /** `[x, y, compression]` — the dynamic, per-frame vertex. */
-        const val FLOATS_PER_VERTEX = 3
+        /** `[x, y, compression, contact]` — the dynamic, per-frame vertex. */
+        const val FLOATS_PER_VERTEX = 4
         const val VERTEX_STRIDE_BYTES = FLOATS_PER_VERTEX * Float.SIZE_BYTES
+
+        /** `[u, v, edge]` — uploaded only when the set of bodies changes. */
+        const val FLOATS_PER_MATERIAL_VERTEX = 3
+        const val MATERIAL_STRIDE_BYTES = FLOATS_PER_MATERIAL_VERTEX * Float.SIZE_BYTES
     }
 }

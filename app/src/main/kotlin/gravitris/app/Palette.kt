@@ -50,6 +50,29 @@ object Palette {
         0x1B / 255f, 0x1E / 255f, 0x29 / 255f,
     )
 
+    /**
+     * Per-archetype grain frequency multiplier — `piece-identity.md`'s
+     * **tertiary** identity cue, the one that survives full colour blindness or
+     * a monochrome screenshot.
+     *
+     * Values are the spec's table verbatim: 0.8x through 1.8x in even steps,
+     * paired with the hue on the same row. It costs nothing to carry — the gel
+     * shader already needs a noise field for the material itself, so giving
+     * each piece its own frequency is a multiply, not a second pass.
+     *
+     * **Do not promote this to a primary cue.** `piece-identity.md` is blunt
+     * that on the client's 6.31" panel it is "the most at-risk cue, not the
+     * most reliable one": a heavily-squashed sliver a few millimetres tall may
+     * not have the physical pixels to resolve a frequency difference at all.
+     * The boundary seam and the lightness ladder are what legibility actually
+     * rests on. This is available if both of those fail a given viewer.
+     *
+     * The surface slot carries 1.0 and is never read — the well frame draws
+     * with a body UV of (0, 0), where the grain term evaluates to zero. It is
+     * present only so this array and [RGB] index identically.
+     */
+    private val GRAIN = floatArrayOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 1.8f, 1.0f)
+
     /** Number of piece archetypes. */
     const val PIECE_COUNT = 6
 
@@ -62,4 +85,8 @@ object Palette {
     /** The flat `vec3` array for `glUniform3fv`. Returned directly rather than
      *  copied: it is read-only by convention, exactly like `SimState`'s arrays. */
     fun asVec3Array(): FloatArray = RGB
+
+    /** The flat grain-scale array for `glUniform1fv`, indexed identically to
+     *  [asVec3Array]. Read-only by the same convention. */
+    fun grainScales(): FloatArray = GRAIN
 }

@@ -72,21 +72,55 @@ class GameRenderer(
     private var program = 0
     private var scaleUniform = -1
     private var offsetUniform = -1
-    private var paletteUniform = -1
     private var compressionGainUniform = -1
-    private var compressionMaxUniform = -1
+    private var shadeTierUniform = -1
+    private var timeUniform = -1
+    private var bandFillUniform = -1
+    private var bandBottomYUniform = -1
+    private var bandInvHeightUniform = -1
 
     /**
-     * Whether compressed material darkens. Toggled at runtime so the same
-     * device, in the same session, can be measured with and without the one
-     * shading term Stage 1 carries — Stage 3's frame time minus Stage 1's is
-     * only the true price of the art direction if we know what this already
-     * costs. Off restores the true floor: one flat varying, one uniform
-     * lookup, one write.
+     * How much of the art direction is running, 0..4. **The measurement dial.**
+     *
+     * Stage 3B's whole risk is fragment cost — the client's device measures
+     * 15.0 ms mean at 17 bodies against a 16.67 ms budget with a nearly-flat
+     * shader — and the only honest way to price the art direction is to walk
+     * down it on that device, in one session, on one stack, and read the frame
+     * time at each step.
+     *
+     * So this is one control with five positions rather than a set of
+     * independent toggles. Independent toggles would give 16 combinations, most
+     * of them meaningless, and no ordering; this gives a monotone ladder where
+     * each step removes exactly one group of terms and every reading is
+     * comparable to the one above it.
+     *
+     * | level | what runs | what it prices |
+     * | ----- | --------- | -------------- |
+     * | 4 | tier 3 — everything | the shipped look |
+     * | 3 | tier 2 — no band glow | the cost of the glow, incl. its two dynamic uniform-array reads |
+     * | 2 | tier 1 — no grain | the cost of the grain's two sines |
+     * | 1 | tier 0 — flat + compression | Stage 1's `shade:on`, unchanged |
+     * | 0 | tier 0, compression gain 0 | the true floor: one flat lookup, one write |
+     *
+     * **Levels 4 down to 1 are also the cut list**, in the order things get
+     * cut. If the measurement overruns, the response is to lower the default,
+     * not to invent a new plan under time pressure — and levels 1 and 0 are the
+     * same two baselines Stage 1 built for exactly this subtraction.
      */
     @Volatile
-    var compressionDarkening = true
+    var shadeLevel = SHADE_LEVEL_MAX
         private set
+
+    /** Wall-clock origin for the shader's animation clock. Set on the first
+     *  frame rather than at construction, so time does not start accumulating
+     *  while the surface is still being created. */
+    private var shaderClockOriginNanos = 0L
+
+    /**
+     * The debug band-fill sweep. See [Tunables.BAND_DEBUG_SWEEP_RATE] — Stage
+     * 3A owns the real fill and does not exist yet, so this stands in for it.
+     */
+    private val bandFill = FloatArray(BAND_COUNT)
 
     private val scale = FloatArray(2)
     private val offset = FloatArray(2)
@@ -120,15 +154,74 @@ class GameRenderer(
     }
 
     /**
-     * Flip the compression term and discard the frame history, so the readout
-     * starts measuring the new configuration immediately instead of averaging
-     * across the change. Without the reset the first second after a toggle
-     * would report a blend of both, which is the one reading that means
-     * nothing.
+     * Step the shading dial down one level, wrapping back to the top, and
+     * discard the frame history.
+     *
+     * **Downward**, so one repeated key press walks the cut list in the order
+     * things would actually be cut, and the client reads five decreasing frame
+     * times in sequence rather than having to remember which way the numbers
+     * should move.
+     *
+     * The history reset is the same reason Stage 1 reset it: without it the
+     * first second after a change reports a blend of both configurations, which
+     * is the one reading that means nothing.
      */
-    fun toggleCompressionDarkening() {
-        compressionDarkening = !compressionDarkening
+    fun cycleShadeLevel() {
+        shadeLevel = if (shadeLevel == 0) SHADE_LEVEL_MAX else shadeLevel - 1
         stats.reset()
+    }
+
+    /** Levels 0 and 1 are both shader tier 0; they differ only in whether the
+     *  compression gain is zeroed. Above that, level and tier move together. */
+    private fun shadeTier(): Int = (shadeLevel - 1).coerceAtLeast(0)
+
+    /**
+     * Seconds since the first frame, wrapped at
+     * [Tunables.SHADER_TIME_WRAP_SECONDS].
+     *
+     * The wrap is not cosmetic. `uTime` is read by a `mediump` fragment shader,
+     * and mediump cannot represent consecutive integers above 2048 — a session
+     * left running would first quantise the pulse into visible steps and then
+     * freeze it outright. Wrapping keeps the value small enough that its
+     * fractional resolution stays far finer than a frame.
+     */
+    private fun shaderClock(nowNanos: Long): Float {
+        if (shaderClockOriginNanos == 0L) shaderClockOriginNanos = nowNanos
+        val elapsed = (nowNanos - shaderClockOriginNanos) / 1_000_000_000.0
+        return (elapsed % Tunables.SHADER_TIME_WRAP_SECONDS).toFloat()
+    }
+
+    /**
+     * A travelling wave standing in for the band fill Stage 3A will compute.
+     *
+     * `SimState.bandFill` exists in the contract and is allocated by the core,
+     * but nothing writes it — coverage bands are Stage 3A. Reading it here would
+     * upload twenty zeros and the glow would be dead on the device, so the one
+     * term whose cost we most need to measure would measure nothing.
+     *
+     * **This is deliberately not an attempt at the real thing.** Inventing band
+     * logic in the renderer would put a second, wrong definition of coverage in
+     * the codebase for Stage 3A to collide with. A sweep is honest about being
+     * a stand-in, and it is strictly better for the two jobs it has to do:
+     *
+     * - every band passes through the entire 0..1 range, so a single device
+     *   session exercises the whole `band-glow.md` curve — the dead zone below
+     *   40%, both ramps, the pulse-rate change at 85%, and the identity cap —
+     *   rather than whatever fills happen to arise from play;
+     * - adjacent bands hold different values at every instant, so the
+     *   interpolated feather between band centres is visible and can be judged.
+     *
+     * The phase offset per band is what tilts the wave across the well; without
+     * it every band would glow in unison and the feather would never be
+     * exercised.
+     */
+    private fun debugBandFill(nowNanos: Long): FloatArray {
+        val t = shaderClock(nowNanos) * Tunables.BAND_DEBUG_SWEEP_RATE
+        for (i in bandFill.indices) {
+            val phase = (t + i * 0.30f) * TWO_PI
+            bandFill[i] = 0.5f + 0.5f * kotlin.math.sin(phase)
+        }
+        return bandFill
     }
 
     /**
@@ -168,12 +261,19 @@ class GameRenderer(
         // Reached on first start AND after context loss, so everything GL is
         // built from scratch here — ADR 0010 §6. There are no texture assets
         // to reload, which is what makes that cheap.
-        program = GlProgram.build(Shaders.VERTEX, Shaders.fragment(Palette.SIZE))
+        program = GlProgram.build(
+            Shaders.VERTEX,
+            Shaders.fragment(Palette.SIZE, Palette.PIECE_COUNT, BAND_COUNT),
+        )
         scaleUniform = GLES30.glGetUniformLocation(program, "uScale")
         offsetUniform = GLES30.glGetUniformLocation(program, "uOffset")
-        paletteUniform = GLES30.glGetUniformLocation(program, "uPalette")
         compressionGainUniform = GLES30.glGetUniformLocation(program, "uCompressionGain")
-        compressionMaxUniform = GLES30.glGetUniformLocation(program, "uCompressionMax")
+        shadeTierUniform = GLES30.glGetUniformLocation(program, "uShadeTier")
+        timeUniform = GLES30.glGetUniformLocation(program, "uTime")
+        bandFillUniform = GLES30.glGetUniformLocation(program, "uBandFill")
+        bandBottomYUniform = GLES30.glGetUniformLocation(program, "uBandBottomY")
+        bandInvHeightUniform = GLES30.glGetUniformLocation(program, "uBandInvHeight")
+        uploadConstantUniforms()
 
         mesh.create()
         wellFrame.create()
@@ -193,7 +293,51 @@ class GameRenderer(
         layoutDirty = true
         lastFrameNanos = 0L
         accumulatorNanos = 0L
+        shaderClockOriginNanos = 0L
         stats.reset()
+    }
+
+    /**
+     * Push the uniforms that never change after the program is built.
+     *
+     * They are set here rather than in [onDrawFrame] because a uniform's value
+     * lives in the program object and survives until the program is relinked,
+     * so re-uploading the palette and eleven shading constants every frame
+     * would be sixty driver calls a second that write values already there.
+     * Everything left in the draw path genuinely varies per frame.
+     *
+     * Reached on first start and after context loss, and correct in both cases:
+     * context loss destroys the program, and this runs immediately after the
+     * new one is built.
+     */
+    private fun uploadConstantUniforms() {
+        GLES30.glUseProgram(program)
+        GLES30.glUniform3fv(
+            GLES30.glGetUniformLocation(program, "uPalette"),
+            Palette.SIZE, Palette.asVec3Array(), 0,
+        )
+        GLES30.glUniform1fv(
+            GLES30.glGetUniformLocation(program, "uGrainScale"),
+            Palette.SIZE, Palette.grainScales(), 0,
+        )
+        fun set(name: String, value: Float) =
+            GLES30.glUniform1f(GLES30.glGetUniformLocation(program, name), value)
+
+        set("uCompressionMax", Tunables.COMPRESSION_MAX_DARKEN)
+        set("uSubsurfaceGain", Tunables.SUBSURFACE_GAIN)
+        set("uSubsurfaceSaturate", Tunables.SUBSURFACE_SATURATE)
+        set("uSubsurfaceDarken", Tunables.SUBSURFACE_DARKEN)
+        set("uContactGain", Tunables.CONTACT_GAIN)
+        set("uRimGain", Tunables.RIM_GAIN)
+        set("uGrainGain", Tunables.GRAIN_GAIN)
+        set("uGrainFrequency", Tunables.GRAIN_FREQUENCY)
+        set("uDitherGain", Tunables.DITHER_GAIN)
+        set("uGlowGain", Tunables.GLOW_GAIN)
+        set("uGlowCapRatio", Tunables.GLOW_CAP_RATIO)
+        set("uPulseRateSlow", Tunables.PULSE_RATE_SLOW)
+        set("uPulseRateFast", Tunables.PULSE_RATE_FAST)
+        set("uPulseAmplitude", Tunables.PULSE_AMPLITUDE)
+        set("uShimmerGain", Tunables.SHIMMER_GAIN)
     }
 
     override fun onSurfaceChanged(unused: GL10?, width: Int, height: Int) {
@@ -250,12 +394,22 @@ class GameRenderer(
         layout.clipOffset(offset)
         GLES30.glUniform2f(scaleUniform, scale[0], scale[1])
         GLES30.glUniform2f(offsetUniform, offset[0], offset[1])
-        GLES30.glUniform3fv(paletteUniform, Palette.SIZE, Palette.asVec3Array(), 0)
+
+        // Level 0 is the only one that zeroes the gain; every level above it
+        // carries the compression term at its tuned strength. The term is the
+        // client-approved weight cue, so it survives every cut except the one
+        // whose entire purpose is to measure the floor without it.
         GLES30.glUniform1f(
             compressionGainUniform,
-            if (compressionDarkening) Tunables.COMPRESSION_GAIN else 0f,
+            if (shadeLevel > 0) Tunables.COMPRESSION_GAIN else 0f,
         )
-        GLES30.glUniform1f(compressionMaxUniform, Tunables.COMPRESSION_MAX_DARKEN)
+        GLES30.glUniform1f(timeUniform, shaderClock(frameStart))
+        GLES30.glUniform1i(shadeTierUniform, shadeTier())
+
+        val state = toy.state
+        GLES30.glUniform1f(bandBottomYUniform, state.bandBottomY)
+        GLES30.glUniform1f(bandInvHeightUniform, 1f / state.bandHeight)
+        GLES30.glUniform1fv(bandFillUniform, BAND_COUNT, debugBandFill(frameStart), 0)
 
         wellFrame.draw()
         mesh.draw()
@@ -322,6 +476,16 @@ class GameRenderer(
             wellWidth = layout.widthWorld,
             wellHeight = layout.heightWorld,
         )
+        // The fragment shader was compiled with BAND_COUNT baked in as an array
+        // bound, before any simulation existed. If a future config changed the
+        // band count, uBandFill would be uploaded at the wrong length and the
+        // shader would index out of range — undefined behaviour, which on a
+        // real driver is not a wrong colour but whatever that GPU does.
+        check(config.bandCount == BAND_COUNT) {
+            "the shader was compiled for $BAND_COUNT bands but SimConfig asks for " +
+                "${config.bandCount}; recompile the fragment shader or stop overriding bandCount"
+        }
+
         if (config == toyConfig) return
 
         toyConfig = config
@@ -358,9 +522,28 @@ class GameRenderer(
     fun dynamicBytesPerFrame(): Int =
         (toy?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
 
-    private companion object {
+    companion object {
         /** ~4Hz. Fast enough to watch a number move, slow enough not to
          *  pollute the measurement. */
-        const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L
+        private const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L
+
+        private const val TWO_PI = 6.2831855f
+
+        /** Top of the shading dial — the full art direction. See [shadeLevel]. */
+        const val SHADE_LEVEL_MAX = 4
+
+        /**
+         * Bands the shader is compiled for, taken from the core's own default
+         * rather than restated as a shell constant.
+         *
+         * The shader declares `uBandFill` as a fixed-size array and indexing it
+         * out of range is undefined behaviour, so this figure has to be the one
+         * the simulation actually uses. The shell never overrides
+         * `SimConfig.bandCount`, and [rebuildSimulationIfWellChanged] asserts
+         * that rather than trusting it — the shader is compiled once, before
+         * any simulation exists, so a config that disagreed would be discovered
+         * as corrupted glow rather than as an error.
+         */
+        val BAND_COUNT = SimConfig().bandCount
     }
 }

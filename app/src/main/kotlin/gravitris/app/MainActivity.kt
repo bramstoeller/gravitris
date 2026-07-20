@@ -80,7 +80,7 @@ class MainActivity : Activity() {
                 renderContext.lastImpactEnergy = haptics.lastEnergy
                 renderContext.masterVibrateOn = haptics.masterVibrateOn
                 renderContext.touchFeedbackOn = haptics.touchFeedbackOn
-                renderContext.compressionDarkening = renderer.compressionDarkening
+                renderContext.shadeLevel = renderer.shadeLevel
                 readout.view.post { readout.update(snapshot, renderContext) }
             },
             onLayout = { worldPerDp ->
@@ -313,8 +313,16 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Volume-up toggles the compression darkening term; volume-down runs the
+     * Volume-up steps the shading dial down one level; volume-down runs the
      * hidden solver benchmark.
+     *
+     * At Stage 1 volume-up was a two-state toggle on the compression term. It
+     * is now a five-position ladder — full art direction down to a flat colour
+     * — because fragment cost is the remaining performance risk and the only
+     * way to price the art direction is to walk it down on the client's own
+     * device, on one stack, in one session. Five presses, five frame times,
+     * and the difference between consecutive readings is the price of exactly
+     * one group of shading terms. See `GameRenderer.shadeLevel`.
      *
      * A hardware key rather than a screen control, deliberately. The brief's
      * control scheme is drag-anywhere, so any on-screen toggle would carve a
@@ -331,7 +339,7 @@ class MainActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> {
-                gameView.queueEvent { renderer.toggleCompressionDarkening() }
+                gameView.queueEvent { renderer.cycleShadeLevel() }
                 true
             }
 
