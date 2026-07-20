@@ -872,3 +872,797 @@ staffing. Three blockers raised. Branch chore/architecture, not merged.
 - **2026-07-20 10:42:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
 
 - **2026-07-20 10:42:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:43:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:43:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:43:11Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:43:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:43:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:44:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:44:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:45:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:45:26Z** `product-lead` — stage 1 complete both tracks; dispatched squish toy integration (milestone 1)
+
+- **2026-07-20 10:45:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:45:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:46:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:46:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:46:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:46:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:47:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:47:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:48:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:48:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:48:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:49:03Z** `frontend-engineer` — Stage 2 M1 squish-toy: branched feat/squish-toy from feat/app-shell, merged feat/core-sim, one expected MainActivity conflict resolved to frontend version
+
+- **2026-07-20 10:49:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:50:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:50:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:50:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:51:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:52:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:52:38Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:52:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:53:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:53:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:53:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:54:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:54:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:55:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:55:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:56:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:57:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:57:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:57:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:58:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:58:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:58:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:59:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:59:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 10:59:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:00:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:00:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:00:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:00:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:01:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:01:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:02:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:02:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:03:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:03:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:03:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:04:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:04:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:05:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:06:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:06:33Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:07:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:07:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:08:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:08:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:09:13Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:09:45Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:10:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:10:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:11:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:11:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:13:07Z** `frontend-engineer` — Milestone 1 squish toy complete on feat/squish-toy: core-sim integrated, benchmark on volume-down, COMPRESSION_GAIN retuned 1.2->4.0 against measured solver range, 227 tests green, handoff 0009 written
+
+- **2026-07-20 11:13:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:13:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:13:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:15:43Z** `product-lead` — GATE 3 REQUESTED: squish toy apk built and with the client
+
+- **2026-07-20 11:16:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:17:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:18:13Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:21:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:23:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:24:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:25:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:26:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:26:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:29:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:29:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:32:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:33:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:33:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:34:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:35:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:35:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:37:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:37:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:37:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:37:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:41:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:44:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:48:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:48:39Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:48:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:49:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:49:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:49:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:49:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:50:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:50:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:50:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:50:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:51:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:51:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:51:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:52:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:52:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:52:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:52:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:53:07Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:53:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:53:38Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:54:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:54:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:54:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:55:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:55:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:55:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:55:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:56:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:56:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:56:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:57:13Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:57:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:57:45Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:57:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:58:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:58:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:58:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:59:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:59:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:59:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 11:59:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:00:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:00:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:00:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:00:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:01:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:01:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:01:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:02:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:02:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:02:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:02:33Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:02:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:03:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:03:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:03:39Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:03:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:04:11Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:04:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:04:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:04:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:05:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:05:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:05:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:05:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:06:20Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:06:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:06:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:06:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:07:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:07:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:07:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:07:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:08:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:08:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:09:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:09:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:10:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:10:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:10:10Z** `frontend-engineer` — Milestone 1 haptics: found three independent defects each sufficient to produce zero vibration (USAGE_TOUCH classification suppressed by client's disabled touch feedback; performHapticFeedback called on the GL thread; null-vibrator early return skipping the fallback). All fixed on fix/haptics-amplitude. Readout now reports the reason for any fallback plus imp/puls counters and the user's vibration settings. Impact energy refuted as a cause by measurement (0.075-0.62, 72 of 137 clear the floor). 90Hz was touch boost outvoting setFrameRate, not an ignored request. shade defaulted ON all along - volume-up turned it off. Nothing verified on hardware.
+
+- **2026-07-20 12:10:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:10:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:10:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:11:03Z** `backend-engineer` — Squash fix: distanceCompliance 1e-6 -> 1e-4 on feat/squish-softness. Landing aspect ratio 1.17 -> 1.41, under-stack height 0.992 -> 0.936. Cost +3% solver, not zero. Ceiling is stability not budget: above ~2e-4 deep piles and heavy mass diverge, and substeps do not buy it back (6 measured worse than 8). Handoff 0010. Recommend pulling backlog 10 (tuning panel) forward.
+
+- **2026-07-20 12:11:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:11:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:15:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:28:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:29:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:29:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:30:20Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:30:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:31:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:31:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:32:09Z** `backend-engineer` — Contact-gap investigation: measured settled piles at lattice 4/5/6. Physical surface gap between touching bodies is -6e-7..-1.9e-4 well units, i.e. exactly zero. Bodies DO touch. The visible margin is a rendering inset: the mesh is drawn to particle centres, so each body is drawn one particle radius small on every side and two touching bodies show a gap of 2r = one full lattice spacing. Cause is rendering, not physics.
+
+- **2026-07-20 12:32:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:32:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:33:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:34:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:34:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:35:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:36:07Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:36:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:36:47Z** `backend-engineer` — Handoff 0011: contact gap is a RENDERING inset, not physics. Bodies touch (surface gap ~0 at all tiers). Published SimState.particleRadius + ContactGapTest so the frontend can extrude the outline. Second finding: piece material size varies 11% across quality tiers - performance dial changes gameplay, needs architect.
+
+- **2026-07-20 12:37:07Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:38:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:38:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:38:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:39:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:39:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:39:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:40:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:40:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:40:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:41:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:41:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:41:33Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:41:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:42:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:42:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:42:38Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:43:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:43:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:43:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:44:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:44:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:44:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:44:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:45:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:45:19Z** `architect` — ADR 0011 (piece geometry + lattice pinned at 4, tiers superseded) and ADR 0012 (explicit restitution, rejected compliance-with-mass). Corrected 3 wrong claims: cost-vs-compliance +3% not 0, derating 12.06x not 3-7x, 8->6 substep lever withdrawn. Derating blocker closed. Handoff 0012, pushed.
+
+- **2026-07-20 12:45:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:45:38Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:45:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:46:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:46:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:47:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:47:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:48:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:48:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:49:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:49:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:50:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:51:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:51:29Z** `frontend-engineer` — fix/render-footprint: bodies now drawn at their material surface (boundary extruded by particleRadius). Settled-pile outline gap 0.38 -> 0.0001 world units at lattice 5. Costs 0.049% of a frame, no extra bandwidth. ADR 0011 records where the silhouette is. Handoff 0012.
+
+- **2026-07-20 12:51:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:51:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:52:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:52:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:52:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:53:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:54:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:55:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:55:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:55:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:56:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:56:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:57:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:57:34Z** `architect` — ADR 0013: frame overrun never dilates wall-clock time (client requirement). ADR 0006's accumulator clamp WAS the slow motion - superseded. Catch-up cannot destabilise solver (h invariant). Replay is fixed-tick-sequence, not real-time - QA fixtures must be tick-indexed. Handoff 0013 pushed.
+
+- **2026-07-20 12:57:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:57:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:57:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:58:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:58:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:59:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 12:59:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:00:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:00:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:01:07Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:01:39Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:02:11Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:02:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:03:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:03:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:04:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:04:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:05:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:05:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:06:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:07:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:07:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:08:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:08:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:09:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:09:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:10:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:10:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:10:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:10:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:11:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:11:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:11:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:11:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:12:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:13:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:13:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:13:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:14:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:14:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:14:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:14:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:15:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:15:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:15:42Z** `frontend-engineer` — Stage 3B gel shading: branched feat/gel-shading off fix/render-footprint (d771689), NOT feat/squish-toy — the latter predates the contact-gap fix, the softening and ADR 0011 extrusion, all of which the brief says to preserve. Deviation recorded for handoff 0016.
+
+- **2026-07-20 13:15:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:16:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:16:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:16:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:17:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:17:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:17:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:18:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:18:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:18:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:19:02Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:19:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:19:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:19:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:20:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:20:30Z** `backend-engineer` — Interlock/jitter verdict: not compliance, not the renderer. Two energy-injection defects fixed on fix/interlock-jitter (855243c..193dfd4): drag was a per-tick teleport amplified by substep count (745 -> 27 tremor reversals), and the broadphase under-reached so pairs closing >35 units/s were never tested (0.393 -> 0.000 penetration). Compliance exonerated and untouched: tremble is WORSE on stiffer material. Solver step cost independent of contact count, so the 43.9ms frame is not the solver. Handoff 0013.
+
+- **2026-07-20 13:20:38Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:20:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:20:57Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:21:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:22:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:22:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:22:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:22:43Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:22:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:04Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:23:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:24:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:13Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:45Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:25:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:26:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:26:18Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:26:51Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:27:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:27:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:27:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:27:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:28:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:28:26Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:28:36Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:28:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:29:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:29:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:29:40Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:30:03Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:30:14Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:30:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:30:46Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:31:13Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:31:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:31:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:32:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:32:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:32:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:32:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:33:24Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:33:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:33:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:34:29Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:34:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:35:01Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:35:06Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:35:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:35:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:36:07Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:36:16Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:36:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:36:50Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:37:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:37:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:37:48Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:37:55Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:38:21Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:38:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:38:53Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:39:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:39:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:40:08Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 13:40:08Z** `frontend-engineer` — Stage 3B gel shading complete on feat/gel-shading (3730077..4c470b8): subsurface, contact seam, rim, grain, dither, band glow, ignition flash, dissolve — all fragment-shader colour math, no texture assets. Compression darkening preserved at gain 4.0. Five-position shading dial on volume-up is the executable cut list. Frame cost ESTIMATED at 2-4ms, not measured — no GPU here. Found: the lightness ladder in piece-identity.md is absent from its own hex values (Jade/Teal step is 1.8%, not 10-15%) — UX decision. GL thread confirmed allocation-free; jank is not GC; best suspect is the synchronous vibrator binder call from the GL thread. Agreed the band contract directly with the Backend Engineer — two of my implementations were wrong and their numbers caught both. Handoff 0016.
+
+- **2026-07-20 13:45:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
