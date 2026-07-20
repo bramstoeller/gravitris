@@ -1,4 +1,4 @@
-# Threat model — Squish
+# Threat model — Gravitris
 
 Status: draft for Gate 2
 Date: 2026-07-20
@@ -7,7 +7,7 @@ Author: Security Engineer
 ## Summary
 
 **The application-level attack surface is genuinely empty, and that is the
-finding.** Squish is an offline, single-player Android game with no network
+finding.** Gravitris is an offline, single-player Android game with no network
 permission, no accounts, no user data beyond a high score and two settings, no
 server, no third-party SDKs and no content pipeline. There is no authentication,
 no authorization, no untrusted input parser, no output encoding, no transport

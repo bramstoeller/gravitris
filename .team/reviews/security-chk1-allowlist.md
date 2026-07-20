@@ -223,7 +223,7 @@ correct.
 | 2 | Unit tests for `CheckMergedManifest` — `buildSrc` has no test source set, so the fail-closed property is asserted by comment and by my manual runs, not by CI. The eight cases in the table above are the suite. | DevOps | High |
 | 3 | CODEOWNERS over `buildSrc` + branch protection, once merges move to PRs | DevOps | Medium |
 | 4 | `aapt2 dump permissions` assertion on the release artifact (CHK-1's release backstop) — the merged-manifest gate is in place, the artifact gate is not | DevOps | Medium |
-| 5 | Product name: these documents say **Squish**; the code, `applicationId` and ADRs say **Gravitris**. A client-facing document naming a different product than the app is a handover defect. Not mine to resolve. | Product Lead | Medium |
+| 5 | Product name: these documents say **Gravitris**; the code, `applicationId` and ADRs say **Gravitris**. A client-facing document naming a different product than the app is a handover defect. Not mine to resolve. | Product Lead | Medium |
 
 Follow-up 2 is the one I am least comfortable leaving. The check that guards the
 product's headline guarantee has no automated test of its own, and this review

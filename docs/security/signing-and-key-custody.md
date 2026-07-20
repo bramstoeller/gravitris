@@ -17,7 +17,7 @@ that cannot be undone.
 
 ## 1. What signing is, in one paragraph
 
-Android has no central authority that says "this app is really Squish". Every
+Android has no central authority that says "this app is really Gravitris". Every
 app is **signed** with a cryptographic key, and Android enforces one rule:
 
 > An update can only be installed over an existing app if it is signed with the
@@ -29,7 +29,7 @@ key irreplaceable.
 ## 2. The one unrecoverable failure mode — read this twice
 
 **If you lose the keystore file, or forget its password, you can never update
-Squish again.**
+Gravitris again.**
 
 Not "difficult". Not "contact support". Cryptographically impossible. Android
 will refuse the install, and there is no appeal, because there is no longer
@@ -220,7 +220,7 @@ apksigner sign \
 It prompts for the password. **Do not pass the password as a command-line
 argument** — it lands in your shell history.
 
-Squish targets Android 10 (API 29) and above, so the modern v2/v3 signature
+Gravitris targets Android 10 (API 29) and above, so the modern v2/v3 signature
 schemes apply and legacy v1 JAR signing is unnecessary. The defaults are
 correct; you do not need extra flags.
 

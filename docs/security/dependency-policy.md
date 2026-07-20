@@ -1,4 +1,4 @@
-# Dependency and supply-chain policy — Squish
+# Dependency and supply-chain policy — Gravitris
 
 Status: draft for Gate 2
 Date: 2026-07-20
@@ -7,7 +7,7 @@ Audience: the team. Binding on anyone who adds or updates a dependency.
 
 ## Why this is the only security document that constrains day-to-day work
 
-Squish has no network, no accounts and no user data. The one way an attacker
+Gravitris has no network, no accounts and no user data. The one way an attacker
 reaches a player's phone is by getting code into our build — through a Gradle
 plugin, a Kotlin/AndroidX library, or the Gradle distribution itself — and
 having us sign it for them. A Gradle plugin executes arbitrary code as root in
