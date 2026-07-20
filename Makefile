@@ -12,6 +12,11 @@
 SHELL := /bin/bash
 ANDROID_HOME ?= $(HOME)/android-sdk
 export ANDROID_HOME
+# Some machines (and the GitHub-hosted CI runner image) already export
+# ANDROID_SDK_ROOT for a different, pre-installed SDK. AGP refuses to guess
+# which one you meant when the two disagree, so pin it to the one we just
+# pinned rather than leaving it to whatever the environment happens to have.
+export ANDROID_SDK_ROOT := $(ANDROID_HOME)
 
 .DEFAULT_GOAL := help
 

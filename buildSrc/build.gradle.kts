@@ -1,4 +1,14 @@
 plugins {
+    // Pulls in `java-gradle-plugin` under the hood, which is where the
+    // build-time "No valid plugin descriptors were found in
+    // META-INF/gradle-plugins" message comes from (:buildSrc:jar). It is
+    // expected and harmless here: this buildSrc exposes plain Task classes
+    // (CheckMergedManifest, CheckNoAndroidDependency) referenced directly by
+    // app/build.gradle.kts, not registered Gradle plugins with an id, so
+    // there is nothing for `java-gradle-plugin`'s plugin-descriptor
+    // machinery to find. `kotlin-dsl` is applied for the type-safe Kotlin
+    // DSL accessors and `gradleApi()`/`gradleKotlinDsl()`, not to publish a
+    // plugin.
     `kotlin-dsl`
 }
 
