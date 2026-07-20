@@ -384,3 +384,5 @@ staffing. Three blockers raised. Branch chore/architecture, not merged.
 - **2026-07-20 09:35:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
 
 - **2026-07-20 09:36:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:37:41Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`

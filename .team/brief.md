@@ -255,8 +255,13 @@ In scope from the start, not retrofitted:
 
 ## Success criteria
 
-1. Installs and runs on a mid-range Android 10 device, holding 60fps with a full
-   stack of soft bodies in play.
+1. Installs and runs on the **reference device** (Fairphone Gen. 6, Android 16),
+   holding 60fps with a full stack of soft bodies in play, measured on-device.
+   The original "2020-era mid-range" floor is **not** a success criterion — it is
+   unverifiable with any hardware this team or the client can reach, and a
+   criterion nobody can check is one that gets quietly claimed on no evidence.
+   Broad low-end compatibility is pursued through startup quality calibration
+   (ADR 0009), not by hand-tuning for a device nobody has.
 2. The squish reads as *heavy* — players describe the blocks as weighty and
    physical without being prompted.
 3. A player understands coverage-band clearing within one session, without a
