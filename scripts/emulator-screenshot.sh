@@ -268,11 +268,66 @@ if ! echo "$start_output" | grep -q "^Status: ok"; then
   exit 1
 fi
 
-# "Waits for first frame": am start -W blocks until the activity reports
-# drawn, but the very first GL frame can still land a beat after that for a
-# GLSurfaceView. A short, fixed settle is simpler and more honest than
-# guessing from logcat for a marker this project doesn't emit.
-sleep 2
+# Wait for the *specific window* to actually be composited, not a fixed
+# sleep. `am start -W`'s Status/TotalTime measures the activity reaching
+# top-resumed, which is not the same moment as pixels landing on screen —
+# there is a real gap between them (a launch splash-screen window is shown
+# and torn down in between, and the activity's own window goes through
+# DRAW_PENDING before HAS_DRAWN). A fixed sleep guessed short enough to be
+# fast enough to be worth having can and did land inside that gap: the
+# first `make screenshot` run against the integrated build captured the
+# launch-transition wallpaper instead of the app, on a perfectly healthy
+# build - a false negative for the one thing this tool exists to check.
+#
+# What actually tracks the real, on-screen state: WindowManager's own
+# per-window draw state, from `dumpsys window windows`. The activity's
+# window entry reaching `shown=true` and `mDrawState=HAS_DRAWN` is
+# WindowManagerService's own record of "this window's surface has been
+# drawn and is being shown", independent of screenshot pixel content
+# (screencap's PNG bytes are not stable frame-to-frame even for a static
+# screen - checked directly: two captures one second apart of the same
+# unchanged launcher screen produced different checksums - so diffing
+# screenshots against a pre-launch baseline was tried and rejected as the
+# detection mechanism, though it's mentioned as an option in the backlog
+# item this responds to) and independent of the app's own render-thread
+# frame count (`dumpsys gfxinfo`, which can be nonzero before the
+# compositor has actually swapped the buffer visible on screen).
+#
+# A build that never reaches HAS_DRAWN (a crash before first frame, a
+# shader that fails to compile and never produces a frame) times out here
+# and fails loudly instead - verified by deliberately breaking MainActivity
+# and confirming this reports FAIL rather than screenshotting whatever was
+# on screen before the crash (see handoff).
+# Matches the `WindowStateAnimator{<hash> <package>/<activity>}:` header
+# line for this specific activity (not any other window — a "Splash
+# Screen" window for the same package exists transiently too, and must not
+# satisfy this check) and looks at the two lines after it, where the
+# `Surface: shown=<bool> mDrawState=<state>` line for that window lives.
+wait_for_first_frame() {
+  local timeout="${1:-15}"
+  local waited=0
+  while [ "$waited" -lt "$timeout" ]; do
+    if adb -s "$SERIAL" shell dumpsys window windows 2>/dev/null \
+        | grep -A2 -F "${ACTIVITY}}:" \
+        | grep -q "shown=true.*mDrawState=HAS_DRAWN"; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+if ! wait_for_first_frame 15; then
+  echo "FAIL: $ACTIVITY never reached shown=true/HAS_DRAWN within 15s — the app did not render a first frame (crash before draw, or a shader/compile failure). Not capturing a screenshot of whatever was on screen before this." >&2
+  exit 1
+fi
+# One more beat past the first HAS_DRAWN sighting: the window state can
+# legitimately flip DRAW_PENDING -> HAS_DRAWN -> (a resize/inset pass) ->
+# DRAW_PENDING -> HAS_DRAWN again in the first moment after launch: this
+# settles on the frame actually worth screenshotting rather than the
+# earliest possible one.
+sleep 1
 
 echo "==> Capturing screenshot"
 adb -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
