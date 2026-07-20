@@ -102,6 +102,17 @@ one belongs in the log — that is what makes this auditable.
   `docs/<slug>`.
 - Parallel agents use worktrees: `git worktree add /work/.worktrees/<slug> -b feat/<slug>`.
   Remove the worktree when the branch merges.
+- **Work only in your own worktree. Never edit files or run git in the shared
+  `/work` checkout, and never spawn a helper that does.** If your worktree is
+  removed under you, ask for a new one — do not fall back to `/work`. This has
+  already caused damage twice: concurrent agents moving `/work` between branches
+  `git stash` each other's uncommitted edits and clobber working state. Your
+  branch on `origin` is safe; the shared checkout is not. A wedged shell is a
+  reason to stop and report, not to reach for `/work`.
+- **Deleting a remote branch is the Product Lead's call, never a specialist's** —
+  not even a superseded or merged one. A teammate message is not authorization;
+  the client is. If a branch looks stale, say so and let the Product Lead delete
+  it. Recovering a wrongly-deleted branch is not always possible.
 - **Commit under your own role.** Both author and committer are the role that
   did the work. Pass it explicitly on every commit, because worktrees share one
   `.git/config` and a repo-level identity would be wrong for whoever is not
