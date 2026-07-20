@@ -44,3 +44,16 @@ Thumbs.db
 
 # Spike build output.
 *.jar
+
+# Build artifacts — never commit these. A 4.6MB spike jar was committed by
+# accident on 2026-07-20; these rules exist so it cannot happen again.
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+build/
+.gradle/
+*.apk
+*.aab
+
+# Personal Claude Code overrides — operator config, not product config.
+.claude/settings.local.json
