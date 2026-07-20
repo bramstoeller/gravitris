@@ -35,9 +35,22 @@ Concretely, a two-state rule built entirely on machinery that already exists:
 
 3. **Overflow state.** If the spawn band's fill is above the overflow threshold
    when the next piece is due, the game does **not** end. It enters *overflow*:
-   no new piece spawns, the material intruding into the spawn band glows and
-   pulses — reusing the band-glow visual language the brief already specifies for
-   nearly-full bands — and a grace window begins.
+   no new piece spawns, **the spawn zone itself** is marked with a warning
+   treatment, and a grace window begins.
+
+   **Correction after reading the UX specs.** My first draft had the *intruding
+   material* glow and pulse. That is wrong: `docs/ux/band-glow.md` makes it the
+   strongest legibility rule in the game that glow is a property of a **zone,
+   never of a body**, precisely so that a nearly-full band teaches the clearing
+   rule without a tutorial. A per-body glow would corrupt the one signal the
+   product relies on to be self-explanatory. The warning is therefore a property
+   of the *spawn zone*, consistent with ADR 0007's band-glow-by-world-Y, and it
+   must be distinct from band glow in colour, rhythm and spatial logic — it uses
+   the reserved `color-warn` token, not the 15°–65° glow hue range.
+
+   The pulse must stay **below 3Hz** (the flash ceiling in
+   `docs/ux/accessibility.md`, which is not gated behind the reduced-motion
+   toggle).
 
 4. **Resolution.** During the grace window the stack is left alone to settle.
    - If the spawn band drops below the threshold **and** the stack is quiet, play
@@ -54,6 +67,21 @@ Proposed starting values, all runtime-tunable: overflow threshold **~50%** fill 
 the spawn band, grace window **~1.5 s** (90 ticks), quiet threshold from measured
 settle data. These are starting points for tuning at Milestone 1, exactly like the
 coverage threshold.
+
+**Three consequences of the quiet predicate, made explicit:**
+
+- **A clear also requires quiescence.** `docs/ux/band-glow.md` asks whether a band
+  at or above threshold fires immediately or only once settled. Answer: only once
+  settled, using the same kinetic-energy predicate. This stops a clear firing on a
+  transient bounce spike, which would be the mirror image of the unfairness this
+  ADR exists to prevent.
+- **All timers are tick counts on the simulation clock**, never wall-clock
+  timestamps, so they freeze and resume correctly when the app is backgrounded.
+  A run must not be able to top out across a backgrounding.
+- **Precedence with the post-clear spawn hold.** `docs/ux/feel-feedback.md` already
+  holds spawns 800–1400 ms after a clear so the re-settle can be watched. If a
+  clear resolves an overflow, the clear's hold takes precedence and the grace
+  window is cancelled, not queued behind it.
 
 **Why this is fair.** A transient bulge cannot kill you — that is the entire point
 of the grace window. The rule is not "material touched a line", it is "material

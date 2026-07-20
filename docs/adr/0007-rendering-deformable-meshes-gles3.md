@@ -50,9 +50,27 @@ authored as a fragment function consuming only those:
 | ------- | ------- |
 | `vBodyUv` | position within the body's own lattice, 0..1 — the material coordinate for noise and subsurface depth |
 | `vWorldPos` | world position — for band glow lookup and lighting |
-| `vHue` | the piece's identity hue |
+| `vBodyIndex` (flat) | piece archetype index into the palette uniform block |
 | `vCompression` | current cell area / rest area — how squashed this part of the body is |
-| `vEdge` | 0 in the interior, 1 at the body boundary — drives rim lighting without a normal buffer |
+| `vEdge` | free surface, 0 interior → 1 boundary — the **brightening** rim light |
+| `vContact` | contact with neighbouring material, 0..1 — the **darkening** seam, ambient occlusion, and deep colour seen through overlapping translucent material |
+
+**Two corrections after reading the UX specs**, both of which would have caused
+rework:
+
+- **A single `vHue` float is not enough.** The palette varies saturation,
+  lightness *and* grain scale independently per piece, and the alternating
+  lightness is the colour-vision-deficiency backup cue — not decoration. Passing
+  a hue would force a hue→(S,L,grain) lookup table in the shader that breaks
+  the moment a seventh piece is added. Passing an **archetype index** into a
+  palette uniform block costs the same and extends without a shader change.
+- **One `vEdge` cannot serve both edge treatments.** A free surface against empty
+  space *brightens* (rim light); a contact surface against a neighbour *darkens*
+  (seam/crease), and that seam is ranked above the lightness ladder as the primary
+  small-screen legibility cue. They must be separate terms. `vContact` comes free
+  from the contact solve, which already knows neighbour count and penetration
+  depth, and it doubles as the overlap-thickness term for subsurface depth —
+  something `vCompression` (a body's own local area ratio) cannot express.
 
 `vCompression` is the one worth arguing for: the area constraints (ADR 0001)
 already compute it, it costs nothing to pass, and it lets the shader darken and
@@ -61,18 +79,39 @@ requirement that the blocks read as *heavy*, and it is a rendering response to a
 physical quantity rather than an animation.
 
 **5. Band glow.** The band fill array from ADR 0004 is uploaded as a 20-float
-uniform array each frame. The fragment shader maps `vWorldPos.y` to a band index
+uniform array each frame, **alongside a per-band clear-envelope progress array** —
+fill alone cannot drive the clear animation, because a band at fill 1.0 is
+indistinguishable from a band mid-dissolve, and the shader must know when it is
+inside the ~120ms ignition flash since that is the one moment the emissive blend
+may exceed its normal cap. The fragment shader maps `vWorldPos.y` to a band index
 and modulates emissive output by fill. This keeps the glow a property of *space*
 rather than of bodies, which is what the mechanic means: a band glows because that
 region is nearly full, regardless of which pieces occupy it. It also means a body
 straddling two bands glows correctly across its own height, with no per-body
 bookkeeping.
 
-**6. Screen shake and reduced motion** are a view-matrix offset, so "reduced
-motion" disables shake by zeroing one vector and damps jiggle via a solver
-parameter. Accessibility here is a configuration value, not a code path.
+**6. Accessibility is a render-layer concern.** Screen shake is a view-matrix
+offset, so "reduced motion" disables it by zeroing one vector.
 
-**7. Surface.** `GLSurfaceView` with `RENDERMODE_CONTINUOUSLY` and
+**Correction: reduced motion must NOT damp the solver**, which is what I first
+specified. Two reasons, both serious. The primary squash on impact is explicitly
+*unchanged* under reduced motion — it is the core weight cue, not the repetitive
+motion the setting exists to remove, and damping it would silently break the
+brief's success criterion about reading as heavy. And a solver-level toggle would
+make physics, game outcomes and replay tests differ per user setting: **an
+accessibility preference must never change what happens, only how it is drawn.**
+
+Jiggle is therefore damped as a temporal low-pass on each particle's deviation
+from its body centroid, applied during render interpolation. High-frequency
+ringing is suppressed; the low-frequency squash survives; the simulation is
+untouched and `SimConfig` carries no accessibility fields.
+
+**7. No screen-space bloom and no HDR post-process** — confirmed to the UX
+Designer, since it changes how celebratory the ignition flash can read. The flash
+comes from the emissive blend alone. Dither noise reuses the gel-grain procedural
+field and must not be baked into a texture asset.
+
+**8. Surface.** `GLSurfaceView` with `RENDERMODE_CONTINUOUSLY` and
 `preserveEGLContextOnPause`. It is the boring choice and it paces on
 `eglSwapBuffers`, which is adequate for the accumulator in ADR 0006. **Trigger to
 revisit:** if frame pacing proves uneven at Milestone 1, move to a plain

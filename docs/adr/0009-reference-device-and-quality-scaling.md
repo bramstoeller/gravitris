@@ -126,10 +126,25 @@ calibration reuses the spike's reference configuration, so the first on-device r
 immediately yields the true derating factor and retires the project's largest
 unknown.
 
-**Hard.** Three tiers means three lattice sizes, so index buffers, tuned
-compliance values and possibly tuned coverage thresholds exist per tier. That is
-real tuning surface. Mitigation: tune medium properly, derive the others, and
-accept that low and high are approximations until someone complains.
+**Hard — and this is the sharpest cost of tiering.** Coarser lattices stamp
+larger particle disks into the coverage bitmap (ADR 0004), so **the same pile
+reads as a different fill percentage at each tier.** Left unaddressed, the
+startup performance tier would silently become a *gameplay* difference: the ~90%
+clear threshold and the final-approach glow ramp would mean different things on
+different hardware. That is unacceptable for a rule the player is supposed to
+learn by watching.
+
+The mitigation is to make `clearThreshold` (and the overflow threshold)
+**per-tier calibrated values**, not one shared constant — recorded in
+`SimConfig`. Tune medium properly against play, then calibrate low and high to
+match its behaviour on the same pile rather than to the same number. QA should
+have a test that asserts a fixed reference pile produces equivalent clear
+decisions across all three tiers; that is exactly the kind of thing the
+deterministic JVM core makes cheap.
+
+Three tiers also means three index buffers and possibly three tuned compliance
+values. That is real tuning surface, and it is the strongest argument for
+keeping the tier count at three rather than growing it.
 
 **Live with.** We will ship without knowing how the game runs on a 2020 device,
 and we should say so plainly rather than imply otherwise. The estimated 3–7x

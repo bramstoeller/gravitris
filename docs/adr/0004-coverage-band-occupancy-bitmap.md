@@ -107,3 +107,9 @@ so it systematically *over*-reports fill at coarse resolutions. The tuned
 threshold absorbs this, but it means the tuned number is tied to the chosen cell
 resolution: **changing band resolution invalidates the tuned threshold.** That
 coupling must be written next to both settings.
+
+**The same coupling applies to the quality tier**, and it is easier to miss:
+coarser lattices have larger particles, which stamp larger disks, which read as a
+higher fill for the same material. **The clear threshold must therefore be
+calibrated per tier**, or the startup performance tier silently changes the game
+rules. See ADR 0009.

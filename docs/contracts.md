@@ -39,6 +39,13 @@ data class SimConfig(
     val bandCount: Int = 20,
     val bandColumns: Int = 40,          // changing resolution invalidates the
     val bandRows: Int = 4,              // tuned threshold below — see ADR 0004
+    /**
+     * PER-TIER. Coarser lattices stamp larger particle disks, so the same pile
+     * reads as a different fill percentage at each quality tier. Left as one
+     * shared constant, the startup quality tier would silently become a
+     * gameplay difference. Calibrate medium properly and derive the others.
+     * See ADR 0004 and ADR 0009.
+     */
     val clearThreshold: Float = 0.90f,
 
     // --- losing condition (ADR 0005) ---
@@ -85,6 +92,14 @@ class InputFrame {
     var dragX: Float = 0f       // horizontal drag delta this tick, well units
     var rotate: Boolean = false // tap — consumed on the tick it is read
     var hardDrop: Boolean = false
+    /**
+     * Flick speed for the hard-drop, well units/sec. Computed by :app from a
+     * trailing ~60ms window of TIMESTAMPED touch samples (including
+     * MotionEvent historical samples), NOT from a per-frame delta — Android
+     * samples touch above the refresh rate and the core must not lose that
+     * resolution to a 60Hz tick. See docs/ux/gestures.md.
+     */
+    var hardDropVelocity: Float = 0f
 }
 ```
 
@@ -113,12 +128,36 @@ interface SimState {
     val particleBody: IntArray      // index into body arrays
     val particleU: FloatArray       // body-local lattice coord, 0..1  → vBodyUv
     val particleV: FloatArray
-    val particleCompression: FloatArray  // current/rest area → vCompression
-    val particleEdge: FloatArray    // 0 interior, 1 boundary → vEdge
+    val particleCompression: FloatArray  // own current/rest area → vCompression
+    /**
+     * Free-surface boundary: 0 interior, 1 on the body's outer edge.
+     * Drives the BRIGHTENING rim light. → vEdge
+     */
+    val particleEdge: FloatArray
+    /**
+     * Contact occlusion: 0 = no neighbour, 1 = fully pressed against other
+     * material. Derived from the contact solve (neighbour count and depth).
+     * Drives the DARKENING seam/crease between touching pieces, and the
+     * subsurface "deep colour where pieces overlap or squash thin".
+     *
+     * This is separate from particleEdge on purpose: a free surface against
+     * empty space and a contact surface against a neighbour render OPPOSITELY
+     * (one brightens, one darkens), and docs/ux/piece-identity.md ranks the
+     * contact seam above the lightness ladder as a small-screen legibility cue.
+     * → vContact
+     */
+    val particleContact: FloatArray
 
     // --- bodies ---
     val bodyCount: Int
-    val bodyHue: FloatArray         // colourblind-safe palette, set by :app config
+    /**
+     * Piece archetype index, NOT a hue. The palette varies saturation,
+     * lightness and grain scale per piece independently (docs/ux/
+     * piece-identity.md), and the alternating lightness is the colour-vision-
+     * deficiency backup cue. An index lets :app own the full palette in a
+     * uniform block and extend it without a shader change. → vBodyIndex (flat)
+     */
+    val bodyArchetype: IntArray
     val bodyLattice: Int            // same for all bodies in a run
 
     // --- rendering topology (static per tier, ADR 0007) ---
@@ -127,14 +166,25 @@ interface SimState {
     // --- coverage (ADR 0004, 0007) ---
     val bandFill: FloatArray        // size bandCount, 0..1 — drives glow + clears
     val bandBottomY: Float
-    val bandHeight: Float
+    val bandHeight: Float           // = wellHeight / bandCount
+    /**
+     * Progress through the clear envelope for each band: -1 = not clearing,
+     * else 0..1 across ignition flash → hold → dissolve.
+     *
+     * Fill alone cannot drive the clear animation: a band at fill 1.0 is
+     * indistinguishable from a band mid-dissolve, and the shader must know it
+     * is inside the ~120ms ignition flash because that is the one moment the
+     * emissive blend is allowed past its normal cap.
+     * See docs/ux/feel-feedback.md and docs/ux/band-glow.md.
+     */
+    val bandClearProgress: FloatArray
 
     // --- game ---
     val phase: Phase
     val score: Int
     val level: Int
     val activePieceBody: Int        // -1 when none (during overflow / clear)
-    val landingSilhouetteY: Float   // projected settle height for the active piece
+    val landing: LandingEstimate
 
     // --- feedback, drained by the shell each frame ---
     val impacts: ImpactList         // for haptics, shake, audio
@@ -148,6 +198,31 @@ sealed interface Phase {
     /** A band cleared; the stack is dropping and re-settling. */
     data class Clearing(val bands: IntArray, val remainingTicks: Int) : Phase
     object GameOver : Phase
+}
+
+/**
+ * Projected settle position for the active piece. A single Y is not enough:
+ * the silhouette draws a top-surface line across the piece's projected
+ * HORIZONTAL extent, and that extent must come from the same clamp logic the
+ * real piece obeys — otherwise the silhouette claims a position the piece
+ * cannot reach.
+ *
+ * yLow/yHigh express the estimate as a range. If the single-line form proves
+ * overconfident (the documented risk — this is the element most likely to
+ * fight the physics), the range band is the fallback and needs no interface
+ * change. When confident, yLow == yHigh.
+ *
+ * Updating at 15-20Hz with render-side interpolation is explicitly fine; a
+ * full soft-body pre-simulation is explicitly rejected.
+ */
+interface LandingEstimate {
+    val yLow: Float
+    val yHigh: Float
+    val xMin: Float
+    val xMax: Float
+    /** False when no usable estimate this tick. :app holds the last valid
+     *  value briefly, then fades out rather than showing stale data. */
+    val valid: Boolean
 }
 
 /** Fixed-capacity, no allocation. Cleared by the core at the start of each tick. */
@@ -170,16 +245,61 @@ look is authored as a fragment function consuming only them.
 | ------- | ------ | ------- |
 | `vBodyUv` | `particleU/V` | material coordinate for noise and subsurface depth |
 | `vWorldPos` | interpolated position | lighting, and band-glow lookup by `y` |
-| `vHue` | `bodyHue[particleBody[i]]` | piece identity — the primary cue |
+| `vBodyIndex` (flat) | `bodyArchetype[particleBody[i]]` | indexes the palette UBO — hue, saturation, lightness, grain scale |
 | `vCompression` | `particleCompression` | how squashed this material is; drives "heavy" |
-| `vEdge` | `particleEdge` | rim lighting without a normal buffer |
+| `vEdge` | `particleEdge` | free surface → **brightening** rim light |
+| `vContact` | `particleContact` | contact with neighbour → **darkening** seam / AO / deep colour through overlap |
 
-Plus uniforms: `uBandFill[20]`, `uBandBottomY`, `uBandHeight`, `uTime`, and the
-UX Designer's named look parameters.
+Uniforms:
+
+| uniform | meaning |
+| ------- | ------- |
+| `uPalette[N]` | per-archetype `{hue, sat, light, grainScale}` — owned by `:app`, extensible without a shader change |
+| `uBandFill[20]` | per-band fill 0..1 |
+| `uBandClear[20]` | per-band clear-envelope progress, -1 when not clearing |
+| `uBandBottomY`, `uBandHeight` | band geometry for world-Y lookup |
+| `uOverflow` | spawn-zone warning intensity 0..1 (ADR 0005) |
+| `uTime` | seconds |
+| *look parameters* | the UX Designer's named tunables |
+
+**Confirmed to UX:** no screen-space bloom and no HDR post-process — the ignition
+flash must read from the emissive blend alone. Band height is `wellHeight / 20`.
+The dither noise reuses the gel-grain procedural field; **it is not a baked
+texture** and must not become one.
+
+**Open, for UX to answer:** whether the solver's own impact propagation reads
+legibly down the stack, or whether a shader-side impact wave is needed. If the
+latter, `:app` sets an impact origin/time uniform from `SimState.impacts` — no
+new simulation output required.
 
 **Adding a varying later means touching the vertex format, the buffer fill and
-both shaders. Confirm this list covers the intended look before frontend work
-starts.**
+both shaders. Confirm this list before frontend work starts.**
+
+---
+
+## 4b. Accessibility is a render-layer concern — not a solver one
+
+**Reduced motion must not touch the simulation.** This is a correction to my
+earlier position and it matters twice over:
+
+- **Correctness.** Damping the solver would damp the *primary squash on impact*,
+  which UX specifies as Unchanged under reduced motion because it is the core
+  weight cue, not the repetitive motion the setting exists to remove. Cutting it
+  would silently break success criterion 2.
+- **Determinism.** A solver-level accessibility toggle would make the physics —
+  and therefore game outcomes and replay tests — differ per user setting. An
+  accessibility preference must never change what happens in the game, only how
+  it is drawn.
+
+| Setting | Implemented as |
+| ------- | -------------- |
+| Screen shake off | zero the view-matrix shake vector |
+| Jiggle scaled to 0.3 | temporal low-pass on per-particle deviation from body centroid, applied at the **render interpolation** layer — high-frequency ringing is damped, low-frequency squash survives |
+| Primary squash | **unchanged** |
+| Colourblind-safe hues | palette UBO contents |
+| Flash ceiling | no periodic signal above 3Hz, including the overflow pulse, and **not** gated behind the reduced-motion toggle |
+
+`SimConfig` therefore carries **no accessibility fields**.
 
 ---
 
@@ -187,7 +307,8 @@ starts.**
 
 | Contract | Owner | Consumers |
 | -------- | ----- | --------- |
-| `SimConfig`, `Simulation`, `SimState`, `Phase` | backend-engineer | frontend, QA |
+| `SimConfig`, `Simulation`, `SimState`, `Phase`, `LandingEstimate` | backend-engineer | frontend, QA |
+| Palette contents (hue/sat/light/grain per archetype) | ux-designer | frontend |
 | `InputFrame` | backend-engineer (shape), frontend (population) | both |
 | Varyings + uniforms | frontend-engineer | UX Designer |
 | Well geometry from insets | frontend-engineer | backend (via `SimConfig`) |
