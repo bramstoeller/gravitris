@@ -23,20 +23,26 @@ against real CI runs, not a simulated cold cache, per instruction. Commits on
      own stray `ANDROID_SDK_ROOT` can't cause the same failure locally).
    - `org.jetbrains.kotlinx:kotlinx-coroutines-{bom,core-jvm}`: **the root
      project's plugin classpath resolves this to a different version
-     (1.6.4 or 1.8.0) across otherwise-identical cold builds**, with no
-     version range of ours involved anywhere (AGP 8.9.3, Kotlin 2.1.21 are
-     both exact-pinned). Reproduced repeatedly against fresh
-     `GRADLE_USER_HOME`s, including the *same command twice in the same
-     session* resolving differently. **Not fully root-caused** — I suspect
-     Gradle's own embedded Kotlin DSL tooling and AGP/KGP each wanting a
-     different exact version of this transitive dependency, with which one
-     "wins" depending on how much of the classpath graph a given invocation
-     realizes, but I did not chase it further than that. Both versions'
-     checksums are now recorded (see the comment in
-     `gradle/verification-metadata.xml` right above them) so verification
-     passes either way, but a third version showing up on some future
-     machine/day is not ruled out. Flagging this plainly rather than
-     claiming it's solved.
+     (1.6.4 or 1.8.0) across otherwise-identical cold builds.** Root-caused
+     in a follow-up commit (`3880a94`), after the coordinator asked me not
+     to leave it merely documented: two different things depend on this
+     artifact at two different exact versions (no ranges) — Gradle 8.11.1's
+     own *bundled* Kotlin (`kotlin-compiler-embeddable`/`-runner:2.0.20`,
+     used internally to compile this project's `.gradle.kts` scripts) wants
+     1.6.4; this project's declared Kotlin Gradle Plugin
+     (`kotlin-compiler-embeddable`/`-runner:2.1.21`, used to compile this
+     project's own `.kt` sources) wants 1.8.0 — confirmed from both
+     versions' published POMs. `./gradlew buildEnvironment` against a fresh
+     cold cache only ever showed *one* of these two subtrees present per
+     invocation, never both, which is why conflict resolution doesn't just
+     deterministically pick 1.8.0 every time: it never sees both requesters
+     at once to have to choose between them. Did not force a single
+     resolution — the root project's plugin classpath (`plugins{}`'s own
+     synthesized one) has no documented `resolutionStrategy` hook for this,
+     and forcing it blind risked trading a well-understood, fully-
+     checksummed two-outcome situation for a worse, less-understood one.
+     Both versions' checksums are recorded (see the comment in
+     `gradle/verification-metadata.xml`) so verification passes either way.
    - `buildSrc`'s `:jar` step prints "No valid plugin descriptors were found
      in META-INF/gradle-plugins" — confirmed harmless (buildSrc exposes
      plain Task classes, not registered plugin ids) and documented in place.
@@ -64,13 +70,10 @@ usually recomputes this fresh at merge time regardless of what the UI shows.
 
 ## What I deliberately did not do
 
-- Did not fully root-cause the kotlinx-coroutines nondeterminism. Chasing it
-  further (a real fix would likely mean forcing a resolution strategy on the
-  plugin classpath, which I didn't find a clean way to do from user code
-  given it's the `plugins {}` block's own synthesized classpath, not a normal
-  `dependencies {}` block) felt like it was heading toward a much larger time
-  sink than the immediate goal (unblock the pipeline) justified. Recorded as
-  a comment in the metadata file and here so it isn't silently re-discovered.
+- Did not force a single resolution for the kotlinx-coroutines version split
+  once root-caused (see above) — no supported hook to do so on this specific
+  classpath, and an untested hack risked a worse, harder-to-diagnose failure
+  in exchange for tidiness on something already fully checksummed either way.
 - Did not review PR #3 beyond the buildSrc/CHK-1 scan, as they specifically
   asked (comment posted on the PR).
 - Did not chase the byte-for-byte reproducibility CI job — it already
@@ -107,7 +110,9 @@ usually recomputes this fresh at merge time regardless of what the UI shows.
 
 ## Open questions
 
-- Should the kotlinx-coroutines nondeterminism be escalated as its own
-  backlog item (a build reproducibility gap, docs/security/dependency-policy
-  R2/R3 territory) rather than living only as a code comment? I lean yes,
-  but didn't want to create backlog items unilaterally.
+- Now that the kotlinx-coroutines split is root-caused rather than mysterious
+  (two legitimate, exact-pinned requesters at different versions, both
+  checksummed), is it still worth a backlog item, or does the code comment
+  in `gradle/verification-metadata.xml` suffice? I lean the comment is
+  enough now — it's understood and bounded, not an open gap — but didn't
+  want to unilaterally decide it needs no further tracking either.
