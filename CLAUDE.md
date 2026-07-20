@@ -121,6 +121,23 @@ one belongs in the log — that is what makes this auditable.
 
   This applies to review verdicts, replies, and anything else posted to GitHub.
   Amend an existing PR you own if it predates this rule.
+- **Watch your own pull request until it is merged.** Opening it is not the end
+  of the task. Client instruction, 2026-07-20.
+
+  After every push, and before you consider yourself finished:
+
+  ```
+  gh pr checks <n>    # did the pipeline pass?
+  gh pr view <n> --comments
+  ```
+
+  A red pipeline is yours, immediately — do not leave it red and move on, and do
+  not assume someone else has seen it. If a review comment arrives, answer it:
+  fix it, or say why you disagree. Silence on a review is not a position.
+
+  Do not report a task as done while your PR is red or has unanswered comments.
+  If you cannot fix it, say so explicitly and hand it over — that is a different
+  thing from leaving it.
 - **Conventional commits**, enforced by a `commit-msg` hook:
   `type(scope): subject` — types `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
   Subject in the imperative, lower case, no trailing period, under 72 characters.
