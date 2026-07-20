@@ -3,6 +3,7 @@ package gravitris.app
 import android.app.Activity
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
+import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
@@ -81,6 +82,9 @@ class MainActivity : Activity() {
             },
         )
         gameView.setRenderer(renderer)
+        // Must follow setRenderer(): that is what creates the GLThread this
+        // dereferences. See the note in GameView's init block.
+        gameView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
         // playing.md: the canvas is exposed to TalkBack as one static-labelled
         // element. That is a stated limitation of a physics canvas, not a gap

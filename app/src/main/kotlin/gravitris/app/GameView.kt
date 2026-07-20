@@ -40,7 +40,12 @@ class GameView(
         // ADR 0010 §6: keep the context across a pause where the device allows
         // it, so returning from the home screen does not rebuild every buffer.
         preserveEGLContextOnPause = true
-        renderMode = RENDERMODE_CONTINUOUSLY
+        // NOTE: renderMode is deliberately NOT set here. GLSurfaceView creates
+        // its GLThread inside setRenderer(), and setRenderMode() dereferences
+        // that thread — so touching it from this constructor throws NPE and the
+        // activity never starts. It is set in MainActivity immediately after
+        // setRenderer(). Found on a real device, not by review: nothing in this
+        // project could render a frame until the client installed the APK.
 
         holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
