@@ -185,6 +185,86 @@ class ShadersTest {
     }
 
     /**
+     * The ignition flash is the single point where the identity cap is allowed
+     * to be exceeded, so the two caps must stay in the right relationship and
+     * the flash must stay genuinely momentary.
+     *
+     * The envelope it rides on was agreed with the Backend Engineer for Stage
+     * 3A: `bandClearProgress` runs 0 to 1 over 24 ticks (400ms) with material
+     * still present, and `feel-feedback.md`'s 120ms flash therefore occupies
+     * the first 0.30 of it. The shader peaks the flash at 0.15 — the midpoint
+     * of that window — and returns to zero at both ends.
+     */
+    @Test
+    fun `the ignition cap lifts above the identity cap but stays bounded`() {
+        assertTrue(
+            Tunables.IGNITION_CAP_RATIO > Tunables.GLOW_CAP_RATIO,
+            "the ignition flash must be able to exceed the sustained cap, or there is " +
+                "no flash",
+        )
+
+        // The flash's shape, as the shader computes it, at the envelope
+        // positions that matter.
+        fun flashAt(progress: Float) =
+            if (progress < 0f) 0f else maxOf(0f, 1f - kotlin.math.abs(progress - 0.15f) / 0.15f)
+
+        assertEquals(0f, flashAt(-1f), 0f, "a band that is not clearing must not flash")
+        assertEquals(0f, flashAt(0f), 1e-6f, "the flash starts from nothing")
+        assertEquals(1f, flashAt(0.15f), 1e-6f, "the flash peaks mid-window")
+        assertEquals(0f, flashAt(0.30f), 1e-6f, "the flash is over by the end of the 120ms")
+        assertEquals(
+            0f, flashAt(0.75f), 0f,
+            "the flash must be zero through the dissolve, or the cap stays lifted for " +
+                "the whole 400ms envelope and the white-hot core stops being momentary",
+        )
+
+        // At the peak the base hue keeps a trace rather than being erased.
+        val palette = Palette.asVec3Array()
+        val baseLuma = 0.299f * palette[0] + 0.587f * palette[1] + 0.114f * palette[2]
+        val glowLuma = 0.299f * 1.0f + 0.587f * 0.957f + 0.114f * 0.878f // #FFF4E0
+        val added = Tunables.IGNITION_CAP_RATIO * baseLuma * Tunables.GLOW_GAIN * glowLuma
+        val baseShare = baseLuma / (baseLuma + added)
+        assertTrue(
+            baseShare in 0.10f..0.30f,
+            "at the flash's peak the base hue keeps ${baseShare * 100}%; below ~10% the " +
+                "flash clips to flat white on a 1400-nit OLED, above ~30% it is not a " +
+                "white-hot core at all",
+        )
+    }
+
+    /**
+     * The band feather. `band-glow.md` wants the emissive mask softened at band
+     * boundaries "by roughly 10-15% of band height (soft falloff, not a hard
+     * cutoff)" — a hard edge "reads as a debug overlay or a HUD line", which the
+     * client rejected.
+     *
+     * The first implementation lerped between band centres, feathering across a
+     * whole band height. That is ~7x the spec and it matters more than it
+     * sounds: a piece is 2.40 world units tall against a 1.0-unit band, so an
+     * over-feathered mask blurs three bands' values into one gradient across a
+     * single piece and the horizontal zone stops reading as a zone.
+     */
+    @Test
+    fun `the band boundary feather stays inside the specified width`() {
+        val source = fragment()
+        val feather = Regex("const float BAND_FEATHER = ([0-9.]+);")
+            .find(source)
+            ?.groupValues
+            ?.get(1)
+            ?.toFloat()
+        assertTrue(feather != null, "BAND_FEATHER is no longer declared in the shader")
+
+        // Declared as a half-width either side of the boundary.
+        val total = feather!! * 2f
+        assertTrue(
+            total in 0.10f..0.15f,
+            "the band feather spans ${total * 100}% of band height; band-glow.md asks for " +
+                "roughly 10-15%, and a full-band feather smears the horizontal banding that " +
+                "is the entire coverage signal",
+        )
+    }
+
+    /**
      * The tier ladder must stay monotone and reach the flat baseline, because
      * it is the cut list: if the top tier does not run everything, or the
      * bottom does not restore Stage 1's shader, the five frame times the client

@@ -285,6 +285,23 @@ object Tunables {
      */
     const val GLOW_CAP_RATIO = 2.50f
 
+    /**
+     * The lifted cap during the 120ms ignition flash.
+     *
+     * `band-glow.md` grants exactly one exception to [GLOW_CAP_RATIO]: "except
+     * during the 120ms ignition flash where a genuine white-hot flash is
+     * intentional and momentary." So the cap lifts rather than disappearing —
+     * an uncapped flash would clip to white and, on a 1400-nit OLED, do it
+     * hard.
+     *
+     * 6.0 puts the base hue at roughly 18% of the final colour at the flash's
+     * peak, which is a white-hot core that still carries a trace of the piece
+     * underneath it, against 35% for sustained glow. It is momentary by
+     * construction: the shader drives it from the clear envelope's first 120ms
+     * and the term is identically zero outside it.
+     */
+    const val IGNITION_CAP_RATIO = 6.0f
+
     /** 2.4s breathing period at 70-85% fill, as an angular rate. */
     const val PULSE_RATE_SLOW = 2.6179939f // 2*PI / 2.4
 

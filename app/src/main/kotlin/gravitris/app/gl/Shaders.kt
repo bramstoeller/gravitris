@@ -167,10 +167,16 @@ uniform float uDitherGain;
 
 // --- band glow (docs/ux/band-glow.md) ------------------------------------
 uniform float uBandFill[BAND_COUNT];
+// -1 = not clearing, else 0..1 progress through the clear envelope. Separate
+// from the fill because a band at fill 1.0 and a band mid-dissolve are
+// indistinguishable from fill alone (ADR 0007 §5).
+uniform float uBandClearProgress[BAND_COUNT];
 uniform float uBandBottomY;
 uniform float uBandInvHeight;
 uniform float uGlowGain;
 uniform float uGlowCapRatio;
+uniform float uIgnitionCapRatio;
+uniform vec3 uIgnitionColor;
 uniform float uPulseRateSlow;
 uniform float uPulseRateFast;
 uniform float uPulseAmplitude;
@@ -192,6 +198,11 @@ const vec3 RIM_COLOR = vec3(0.82, 0.88, 1.0);
 const vec3 GLOW_COLOR = vec3(1.0, 0.702, 0.278);
 
 const float TWO_PI = 6.2831853;
+
+// Half-width of the band boundary feather, in band heights. 0.07 either side
+// makes the transition ~14% of a band tall, inside band-glow.md's "roughly
+// 10-15%". See bandFillAt.
+const float BAND_FEATHER = 0.07;
 
 /**
  * Low-discrepancy ordered dither, three ops.
@@ -245,22 +256,52 @@ float mottle(vec2 uv) {
 }
 
 /**
- * Band fill at a world height, linearly interpolated between the two nearest
- * band centres.
+ * Band fill at a world height: flat across the body of each band, feathered
+ * only near the boundaries.
  *
- * ADR 0007 notes the 20-band quantisation makes the glow boundary a horizontal
- * step and predicts interpolating adjacent fills as the expected fix. It is
- * that fix, and it also *is* band-glow.md's required soft edge: a linear blend
- * between band centres feathers every boundary over half a band on each side,
- * comfortably past the 10-15% the spec asks for. A hard cutoff would read as a
- * debug overlay or a HUD line, which the client explicitly rejected.
+ * ## Why this is not a plain interpolation between band centres
+ *
+ * That was the first implementation, and it was wrong. ADR 0007 predicts
+ * "interpolate between adjacent band fills" as the cheap fix for the 20-band
+ * quantisation, which is true as far as it goes, but band-glow.md is more
+ * specific about how much: *"Feather the emissive mask at the top/bottom of
+ * each band by roughly 10-15% of band height (soft falloff, not a hard
+ * cutoff)."*
+ *
+ * A straight lerp between band centres feathers across the **entire** band
+ * height — roughly seven times what the spec asks — which leaves no flat
+ * region anywhere and turns the whole well into one smooth vertical gradient.
+ * That matters because of a number from the backend engineer: a band is 1.0
+ * world unit tall and a piece is 2.40, so **a single piece spans about three
+ * bands**. Over-feathered, those three values blur into a gradient across the
+ * piece and the horizontal zone — which is the entire signal — stops being
+ * legible as a zone at all.
+ *
+ * So: blend to the neighbouring band only across [BAND_FEATHER] of band height
+ * either side of a boundary, reaching an exact half-and-half mix at the
+ * boundary itself so the result stays continuous. Everywhere else the band
+ * reads its own value flat, and the banding is crisp without being a hard
+ * cutoff — which would read as a debug overlay or a HUD line, and the client
+ * rejected HUD chrome.
+ *
+ * Sampled per fragment, from an interpolated world position, never per vertex.
+ * Per-vertex sampling across a piece 2.4 bands tall would smear three bands'
+ * values through the rasteriser and destroy the same signal from the other
+ * direction.
  */
 float bandFillAt(float worldY) {
-    // Continuous band coordinate, offset so integers land on band centres.
-    float b = (worldY - uBandBottomY) * uBandInvHeight - 0.5;
-    float lo = clamp(floor(b), 0.0, float(BAND_COUNT - 1));
-    float hi = clamp(lo + 1.0, 0.0, float(BAND_COUNT - 1));
-    return mix(uBandFill[int(lo)], uBandFill[int(hi)], clamp(b - lo, 0.0, 1.0));
+    float b = (worldY - uBandBottomY) * uBandInvHeight;
+    float index = floor(b);
+    float offset = b - index - 0.5; // -0.5..0.5, zero at the band's centre
+
+    float last = float(BAND_COUNT - 1);
+    float here = clamp(index, 0.0, last);
+    // step() rather than a ternary: the neighbour is the band the fragment is
+    // leaning towards, and branchless keeps the warp coherent.
+    float there = clamp(index + (step(0.0, offset) * 2.0 - 1.0), 0.0, last);
+
+    float weight = 0.5 * smoothstep(0.5 - BAND_FEATHER, 0.5, abs(offset));
+    return mix(uBandFill[int(here)], uBandFill[int(there)], weight);
 }
 
 void main() {
@@ -363,20 +404,39 @@ void main() {
 
         float glow = emissive * pulse * shimmer;
 
-        // The cap from band-glow.md: the base hue must contribute at least ~35%
-        // of the final colour, so a glowing blue piece stays "blue, glowing"
-        // and not "a differently-hued piece". Base share >= 0.35 means the
-        // added luma may not exceed (0.65/0.35) = 1.857 times the base luma,
-        // and uGlowCapRatio carries that constant divided by GLOW_COLOR's own
-        // luma — so the whole cap is one multiply and one min.
+        // --- ignition, the one moment the identity cap may be exceeded ------
         //
-        // The 120ms ignition flash is the one moment the spec allows this to be
-        // exceeded. That is deliberately NOT implemented here: ignition fires
-        // on a settle against a clear threshold, which is Stage 3A. The cap is
-        // written so raising uGlowCapRatio for the flash is the only change
-        // needed.
-        glow = min(glow, uGlowCapRatio * baseLuma);
-        color += GLOW_COLOR * (glow * uGlowGain);
+        // Envelope agreed with the backend engineer for Stage 3A: progress runs
+        // 0 -> 1 over 24 ticks (400ms) with the material still present for all
+        // of it, so this plays on real geometry. Within that, feel-feedback.md's
+        // 120ms flash + 80ms hold + 200ms dissolve lands at progress 0.30 and
+        // 0.50.
+        //
+        // Only the flash is implemented here. The dissolve is Stage 3A's to
+        // define — it removes material, which is geometry rather than shading —
+        // and guessing at it would put a second definition in the codebase for
+        // that work to collide with.
+        float clearing = uBandClearProgress[int(floor(clamp(
+            (vWorldPos.y - uBandBottomY) * uBandInvHeight, 0.0, float(BAND_COUNT - 1))))];
+        // -1 means not clearing. Rising to the white-hot core over the first
+        // half of the flash, falling back through the hold.
+        float flash = max(0.0, 1.0 - abs(clearing - 0.15) / 0.15) * step(0.0, clearing);
+
+        // The identity cap. band-glow.md: the base hue must contribute at least
+        // ~35% of the final colour, so a glowing blue piece stays "blue,
+        // glowing" and not "a differently-hued piece" — which matters most
+        // exactly when several differently-hued pieces share a filling band.
+        // Base share >= 0.35 means the added luma may not exceed
+        // (0.65 / 0.35) = 1.857 times the base luma, and uGlowCapRatio carries
+        // that constant already divided by GLOW_COLOR's own luma, so the whole
+        // rule costs one multiply and one min.
+        //
+        // The flash is the single exception the spec grants — "a genuine
+        // white-hot flash is intentional and momentary" — so the cap *lifts*
+        // rather than disappearing, and only for as long as flash is non-zero.
+        float cap = mix(uGlowCapRatio, uIgnitionCapRatio, flash);
+        glow = min(glow + flash, cap * baseLuma);
+        color += mix(GLOW_COLOR, uIgnitionColor, flash) * (glow * uGlowGain);
     }
 
     // Always on, at every tier above the flat baseline, and deliberately after

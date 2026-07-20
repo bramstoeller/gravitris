@@ -76,6 +76,7 @@ class GameRenderer(
     private var shadeTierUniform = -1
     private var timeUniform = -1
     private var bandFillUniform = -1
+    private var bandClearProgressUniform = -1
     private var bandBottomYUniform = -1
     private var bandInvHeightUniform = -1
 
@@ -121,6 +122,9 @@ class GameRenderer(
      * 3A owns the real fill and does not exist yet, so this stands in for it.
      */
     private val bandFill = FloatArray(BAND_COUNT)
+
+    /** The debug clear envelope. See [debugClearProgress]. */
+    private val clearProgress = FloatArray(BAND_COUNT) { NOT_CLEARING }
 
     private val scale = FloatArray(2)
     private val offset = FloatArray(2)
@@ -225,6 +229,33 @@ class GameRenderer(
     }
 
     /**
+     * A stand-in for the clear envelope, on the same footing as
+     * [debugBandFill]: the shader needs to be exercised through the ignition
+     * flash, and Stage 3A owns when a clear actually fires.
+     *
+     * The envelope's shape is **not** invented here — it is the timeline the
+     * backend engineer confirmed for Stage 3A: progress runs 0 to 1 over 24
+     * ticks (400ms) with the material still present throughout, so the flash
+     * plays on real geometry. What is fabricated is only *when* it starts.
+     *
+     * One band at a time, marched up the well, so the flash can be watched in
+     * isolation against neighbours that are merely glowing — which is the
+     * comparison that shows whether the cap lift reads as a deliberate event or
+     * as the glow simply blowing out.
+     */
+    private fun debugClearProgress(nowNanos: Long): FloatArray {
+        clearProgress.fill(NOT_CLEARING)
+        val cycle = shaderClock(nowNanos) / IGNITION_DEBUG_PERIOD_SECONDS
+        val band = (cycle.toInt()) % BAND_COUNT
+        val within = cycle - cycle.toInt()
+        // Only the first 400ms of each cycle is a clear; the rest is the gap
+        // that makes the event read as an event.
+        val envelope = within * IGNITION_DEBUG_PERIOD_SECONDS / CLEAR_ENVELOPE_SECONDS
+        if (envelope <= 1f) clearProgress[band] = envelope
+        return clearProgress
+    }
+
+    /**
      * Throw away the accumulated frame history and the pending simulated time.
      *
      * Called on the GL thread after the benchmark has blocked it for several
@@ -271,6 +302,7 @@ class GameRenderer(
         shadeTierUniform = GLES30.glGetUniformLocation(program, "uShadeTier")
         timeUniform = GLES30.glGetUniformLocation(program, "uTime")
         bandFillUniform = GLES30.glGetUniformLocation(program, "uBandFill")
+        bandClearProgressUniform = GLES30.glGetUniformLocation(program, "uBandClearProgress")
         bandBottomYUniform = GLES30.glGetUniformLocation(program, "uBandBottomY")
         bandInvHeightUniform = GLES30.glGetUniformLocation(program, "uBandInvHeight")
         uploadConstantUniforms()
@@ -334,6 +366,12 @@ class GameRenderer(
         set("uDitherGain", Tunables.DITHER_GAIN)
         set("uGlowGain", Tunables.GLOW_GAIN)
         set("uGlowCapRatio", Tunables.GLOW_CAP_RATIO)
+        set("uIgnitionCapRatio", Tunables.IGNITION_CAP_RATIO)
+        GLES30.glUniform3f(
+            GLES30.glGetUniformLocation(program, "uIgnitionColor"),
+            // color-glow-hot #FFF4E0 — the ignition flash (docs/ux/tokens.md).
+            1.0f, 0.957f, 0.878f,
+        )
         set("uPulseRateSlow", Tunables.PULSE_RATE_SLOW)
         set("uPulseRateFast", Tunables.PULSE_RATE_FAST)
         set("uPulseAmplitude", Tunables.PULSE_AMPLITUDE)
@@ -410,6 +448,9 @@ class GameRenderer(
         GLES30.glUniform1f(bandBottomYUniform, state.bandBottomY)
         GLES30.glUniform1f(bandInvHeightUniform, 1f / state.bandHeight)
         GLES30.glUniform1fv(bandFillUniform, BAND_COUNT, debugBandFill(frameStart), 0)
+        GLES30.glUniform1fv(
+            bandClearProgressUniform, BAND_COUNT, debugClearProgress(frameStart), 0,
+        )
 
         wellFrame.draw()
         mesh.draw()
@@ -528,6 +569,17 @@ class GameRenderer(
         private const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L
 
         private const val TWO_PI = 6.2831855f
+
+        /** `bandClearProgress`'s "this band is not clearing" sentinel, as
+         *  declared by `SimState`. */
+        private const val NOT_CLEARING = -1f
+
+        /** 24 ticks at 60Hz — the clear envelope agreed with Stage 3A. */
+        private const val CLEAR_ENVELOPE_SECONDS = 0.4f
+
+        /** How often the debug ignition fires, per band. Long enough that the
+         *  400ms envelope reads as a discrete event rather than a strobe. */
+        private const val IGNITION_DEBUG_PERIOD_SECONDS = 2.0f
 
         /** Top of the shading dial — the full art direction. See [shadeLevel]. */
         const val SHADE_LEVEL_MAX = 4
