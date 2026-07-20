@@ -21,8 +21,15 @@ every decision is recorded here, so a restarted container knows where it stands.
 
 | 2026-07-20 | 2 | **APPROVED** | client approved architecture, six-person staffing and the twelve-item backlog ("ja") |
 
-**Currently waiting on:** nothing. Building. Next gate is 3 — the milestone demo,
-the "Squish Toy" build the client runs on their own Fairphone.
+| 2026-07-20 | 3 | **requested** | milestone 1 "Squish Toy" APK built, 227 tests green, install doc written |
+
+| 2026-07-20 | 3 | **APPROVED** | client ran it on their Fairphone: softness "ja, beter", contact "ziet er goed uit nu, blokjes raken elkaar". Told the team to carry on without further gates until release. |
+
+**Currently waiting on:** nothing. Building Stage 3 — the mechanic and the art.
+Next gate is 4, release.
+
+**Standing:** the client does not want to be asked to approve each step. Report
+outcomes, ask only for product decisions and device test results.
 
 **Note:** conversation with the client switched to **Dutch** at this point.
 Repository artifacts stay in English.

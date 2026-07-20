@@ -23,7 +23,8 @@ make dev     # builds the debug APK; installs+launches it if a device is
 ```
 
 `make help` lists every target (`setup`, `dev`, `test`, `lint`, `build`,
-`apk`, `clean`, `doctor`). All of them wrap `./gradlew` — nothing here is
+`apk`, `clean`, `doctor`, `emulator-setup`, `emulator`, `screenshot`). All of
+them wrap `./gradlew` or a script under `scripts/` — nothing here is
 Makefile-specific magic; anyone who prefers Gradle directly can run
 `./gradlew check` or `./gradlew :app:assembleDebug`.
 
@@ -145,28 +146,152 @@ needs to require the `build-and-test` check to pass before merging to `main`,
 in the repository's Settings → Branches, for "blocks merge on failure" to
 actually be true rather than just advisory.
 
-## Why there is no emulator, and no instrumented Android tests
+## Emulator — correctness testing only
 
-This container has no `/dev/kvm` and no `/dev/dri`. Any Android emulator here
-would run under full software CPU emulation with a software GL rasterizer.
-Two consequences, both permanent for this container:
+**This never measures performance. No frame time, FPS, or timing number
+that ever comes out of this emulator may be cited as evidence of anything
+about how the product performs.** The client's own phone is the only
+performance instrument this project recognizes — this is a standing
+constraint in the brief, not a suggestion. What the emulator is for: does it
+launch, does it render, does it look right. `scripts/emulator-screenshot.sh`
+never prints a frame-time or FPS number for exactly this reason.
 
-- **No performance number from an emulator here is ever valid**, for
-  anything — not solver timing, not frame rate, not shader cost. This is a
-  hardware fact about the container, not a temporary limitation, and no
-  future change to this project should cite an emulator frame time as
-  evidence of anything.
-- **Correctness-only use (launch, tap, screenshot, instrumented test)** is
-  technically available but was evaluated and **not set up**. See handoff
-  0005 for the reasoning: the part of this product that most needs
-  deterministic, automated testing (`:core-sim` — physics and game rules) is
-  already fully covered by plain JVM tests with no device or emulator
-  involved at all (that is the entire point of ADR 0008). The remaining
-  surface an emulator could check — does `:app` launch, does a tap register —
-  is thin at Stage 0 (one placeholder screen) and the client already has the
-  one device that matters for it. Revisit only if `:app` grows enough
-  instrumented-test surface that waiting for the client's phone becomes the
-  actual bottleneck; it is not today.
+`/dev/kvm` and `/dev/dri` are passed into this container (they were not,
+earlier in the project — see handoff 0005, which recommended against an
+emulator on that basis; that recommendation no longer applies to whether an
+emulator can exist, only to what it's worth here, below).
+
+```sh
+make emulator-setup   # once: installs the pinned emulator + system image,
+                       # creates the AVD (idempotent, ~1.5GB download)
+make screenshot        # build the debug APK, boot, install, launch, wait
+                       # for the first frame, save a PNG
+make emulator          # boot the AVD with a window, for poking at it by hand
+```
+
+**x86_64, not arm64.** The client's phone is `arm64-v8a`, but neither
+`:core-sim` (pure Kotlin/JVM, ADR 0008 forbids an Android dependency, let
+alone native code) nor `:app` has any NDK/JNI code — confirmed, not assumed:
+neither module declares a `ndk {}` block or ships a `jniLibs/` directory.
+Nothing in this build is ABI-sensitive. x86_64 runs under this container's
+`/dev/kvm` at native speed; an arm64 system image on an x86_64 host gets no
+KVM acceleration (much slower binary translation) for zero correctness
+benefit. Revisit if the app ever gains native code.
+
+**API 36 (Android 16), not minSdk 29.** minSdk is the floor this build still
+supports, not the version to test rendering against. The client's phone
+runs Android 16 — an API-29 image would not catch anything specific to the
+OS version the client actually has.
+
+### What was actually found setting this up
+
+Updated after a second, deeper pass (gdb, not just strace; a real Vulkan
+compute workload, not just enumeration). The short version: **`make
+screenshot` is now reliable in this container** — it was not on the first
+pass, and the fix is `-gpu swangle` instead of the emulator's own default.
+Two things worth knowing, in order of how much they should worry you:
+
+1. **The emulator's default software GPU mode crashes; a different software
+   mode doesn't, and the fix is now applied.** Root-caused with `gdb`
+   attached to a live boot (a naive `strace`/backtrace-after-the-fact wasn't
+   enough — see "how this was actually diagnosed" below if you need to
+   redo this kind of investigation): `-gpu swiftshader_indirect` (the
+   default this AVD was created with) SIGSEGVs inside
+   `libGLESv2.so` — specifically, a JIT-compiled routine (SwiftShader's
+   Subzero/Reactor JIT, which compiles shaders to native code at runtime)
+   faults with `SEGV_ACCERR` (the memory *is* mapped, just not with the
+   permissions the faulting instruction needed — the signature of a
+   write-then-execute JIT transition going wrong) on a majority of boots.
+   `-gpu swangle` runs the identical GLES calls through ANGLE on top of
+   SwiftShader's *Vulkan* backend instead of straight through SwiftShader's
+   GLESv2 JIT path, and has not reproduced the crash once: 9/9 clean boots
+   and 3/3 full `make screenshot` runs (build, install, launch, screenshot)
+   while confirming this. `scripts/emulator-screenshot.sh` now requests
+   `swangle` as its software fallback, not `swiftshader_indirect`.
+   **Both are still software** — this fixes a stability bug, not the
+   hardware-acceleration question below.
+
+2. **Real hardware GL rendering is possible in this container — the AMD GPU
+   genuinely works — but the Android emulator has no way to reach it
+   today.** These are two different claims and it matters that they don't
+   get merged into one:
+   - The GPU itself: confirmed with actual executed work, not just
+     enumeration. A hand-written Vulkan compute program (device creation,
+     memory allocation, a real compiled SPIR-V shader, command buffer
+     submission, `vkQueueWaitIdle`, and a correct readback) ran successfully
+     on `AMD Radeon Graphics (RADV GFX1152)`. Separately,
+     `MESA_LOADER_DRIVER_OVERRIDE=zink eglinfo -B` (Mesa's OpenGL-over-Vulkan
+     driver, headless, via `/dev/dri` directly — no X server) reports a real
+     hardware-backed **`OpenGL ES 3.2` renderer naming the RADV device**, not
+     `llvmpipe`. The GPU is not the problem.
+   - What *is* blocked: the classic Mesa/AMDGPU path — the one `eglinfo -B`
+     picks by default, and the one the emulator's own `-gpu host` capability
+     check relies on — goes through `libdrm_amdgpu`'s
+     `amdgpu_query_info(ACCEL_WORKING)` at device-init time, and that call
+     fails with `EACCES`. This is not a file-permission problem
+     (`/dev/dri/renderD128` is `0666`, world-writable) and not fixable with
+     Mesa driver-selection environment variables (tried
+     `MESA_LOADER_DRIVER_OVERRIDE=radeonsi` explicitly — same failure). An
+     `EACCES` on a specific privileged ioctl, with the device node itself
+     wide open, is the signature of a container-level restriction (a seccomp
+     filter or an AppArmor/SELinux device policy) on that specific
+     operation, imposed by whoever configured this container's GPU
+     passthrough — not something liftable from inside the container, even as
+     root. Precisely what to ask for, if this is worth pursuing: **whatever
+     policy is blocking the `AMDGPU_INFO` "accel working" query ioctl (or
+     more broadly, privileged `amdgpu`/DRM ioctls) on `/dev/dri/card1` needs
+     relaxing** — the same shape of ask as the original `/dev/kvm`/`/dev/dri`
+     grant, one level more specific.
+   - Separately, `-gpu host` *also* wants a real X server for its GLX-based
+     interop path on Linux (it tries `libX11`, fails "Failed to open
+     display" without one) — and a virtual one doesn't help: `Xvfb` is a
+     software-only X server, and GLX through it resolves to `llvmpipe`
+     regardless of `MESA_LOADER_DRIVER_OVERRIDE` (tested). So even if the
+     `ACCEL_WORKING` gate above were lifted, `-gpu host` would need a real,
+     GPU-backed X server too, or the emulator would need to route its
+     rendering through EGL/zink the way the bare-Mesa test above does — which
+     is not something exposed by any `emulator` flag found (`-help-gpu`
+     lists `auto`, `host`, `software`, `lavapipe`, `swiftshader`, `swangle` —
+     none of them "use the system's EGL/zink").
+   - `scripts/emulator-screenshot.sh` still tries `-gpu host` first (fast:
+     it detects the `ACCEL_WORKING`-driven failure from the emulator's own
+     log rather than waiting out a timeout) and reports `GPU status:
+     hardware GL` if it ever succeeds — so a future container with this
+     restriction actually lifted needs no script change to benefit from it.
+
+#### How this was actually diagnosed (for next time)
+
+The first pass at this (see the git history of this section) used `strace`
+and concluded "crashes on a majority of attempts, not root-caused." That
+undersold it — `strace`'s own overhead was enough to sometimes avoid the
+race entirely, and a plain post-mortem backtrace attempt caught the crash
+handler's cleanup, not the fault. What actually worked:
+
+- Attach `gdb -p <pid>` to the emulator process *after* it execs into
+  `qemu-system-x86_64-headless` (same PID, `ps -p $PID -o comm` confirms the
+  exec happened), not to the `emulator` launcher script.
+- `handle SIGUSR1 SIGUSR2 SIGPIPE noprint nostop pass` before continuing —
+  QEMU uses these internally, and gdb's default is to stop on them, which
+  looks exactly like an unrelated hang if you don't know to expect it.
+- Exactly **one** `continue`, then gather everything you need (`bt full`,
+  `info registers`, `print $_siginfo`) before doing anything else — a second
+  queued `continue` resumes past the fault and hands you a half-torn-down
+  process instead.
+- `$_siginfo.si_code` is the detail that actually explains the bug: `2`
+  (`SEGV_ACCERR`, wrong permissions on mapped memory) rather than `1`
+  (`SEGV_MAPERR`, not mapped at all) is what points at a JIT write→execute
+  transition rather than a plain bad pointer.
+
+The part of this product that most needs deterministic, automated testing
+(`:core-sim` — physics and game rules) is already fully covered by plain JVM
+tests with no device or emulator involved at all (the entire point of ADR
+0008) and is unaffected by any of the above.
+
+This is not wired into CI: CI runners have no `/dev/kvm` and no `/dev/dri`,
+so an emulator there would be slower and no more informative than
+JVM tests already are, and would inherit the crash above with no way to
+diagnose it interactively. `make screenshot` is a local, this-container-only
+tool for the person doing rendering work, same spirit as `make dev`.
 
 ## When something breaks
 

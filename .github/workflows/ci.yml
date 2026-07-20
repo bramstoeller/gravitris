@@ -16,6 +16,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets a run be triggered directly against any branch (`gh workflow run ci
+  # --ref <branch>`) rather than only via push-to-main or a PR event. Needed
+  # in practice: a PR whose merge-ref can't be computed (e.g. a real
+  # conflict with its base) gets no pull_request-triggered run at all, and a
+  # push to a branch that is only a PR *base* doesn't retrigger the PRs on
+  # top of it either. Manual only — nothing here runs on a schedule.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -32,14 +39,18 @@ jobs:
       # CHK-7 (docs/security/threat-model.md, chore/threat-model): a
       # keystore or credential must never enter this repo's history. Runs on
       # every push, over the full history, not just the diff.
+      #
+      # GITHUB_TOKEN: gitleaks-action requires this explicitly for
+      # `pull_request` events as of its own v3 breaking change — it is not
+      # optional the way GITHUB_TOKEN usually is, and its absence is a hard
+      # failure at this step, not a soft warning. Found by actually running
+      # this workflow (it had never been executed before that), not by
+      # reading the action's source: exactly the gap this fix is about.
       - name: Secret scan (CHK-7)
         uses: gitleaks/gitleaks-action@v3.0.0
         env:
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-          # gitleaks-action@v3 requires a token to enumerate a pull request's
-          # commits; without it the step aborts before scanning. The
-          # auto-provisioned job token is sufficient — no PAT, no secret added.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
       # CHK-6 (docs/security/dependency-policy.md R4): a modified wrapper JAR
       # is a well-documented supply-chain attack and is invisible in a normal
@@ -55,14 +66,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # Same script a developer runs via `make setup` — CI and a laptop
-      # install the identical, pinned SDK, not two different sets of
-      # versions that happen to both work today.
-      - name: Install the pinned Android SDK
-        run: bash scripts/setup-android-sdk.sh
-        env:
-          ANDROID_HOME: ${{ runner.temp }}/android-sdk
-
+      # Restored *before* the SDK install step below, not after: an
+      # actions/cache step restores wherever it sits in the job, and a cache
+      # entry sitting after the very step it's meant to short-circuit never
+      # gets the chance to help (review finding N-4). This way a warm cache
+      # means the install script's sdkmanager calls are a fast no-op instead
+      # of a full re-download.
       - name: Cache Gradle and Android SDK
         uses: actions/cache@v6.1.0
         with:
@@ -74,6 +83,19 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
+      # Same script a developer runs via `make setup` — CI and a laptop
+      # install the identical, pinned SDK, not two different sets of
+      # versions that happen to both work today.
+      - name: Install the pinned Android SDK
+        run: bash scripts/setup-android-sdk.sh
+        env:
+          ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
       # Exactly `make test` — see Makefile. Runs JVM unit tests, the ADR 0008
       # no-Android check, the CHK-1/3/4 merged-manifest checks, and lint,
       # across both the debug and release variants.
@@ -81,14 +103,26 @@ jobs:
         run: make test
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       # Exactly `make build`. Unsigned — no keystore exists in CI, by design
       # (R7, docs/security/dependency-policy.md). Nothing here signs or
-      # publishes anything.
+      # publishes anything. This is also "build 1" for the reproducibility
+      # check below — kept as the ordinary build step, not duplicated, so a
+      # normal run pays no extra cost.
       - name: make build
         run: make build
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
@@ -96,3 +130,36 @@ jobs:
           name: gravitris-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      # dependency-policy.md §3: "two clean builds from scratch producing
+      # identical unsigned artifacts, as a CI job rather than a claim." The
+      # code review ran this by hand and got a match; this is that same
+      # check, checked on every run instead of once by a reviewer.
+      - name: Reproducibility check — hash build 1
+        run: |
+          sha256sum app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            > /tmp/build1.sha256
+          cat /tmp/build1.sha256
+
+      - name: Reproducibility check — clean rebuild (build 2)
+        run: make clean && make build
+        env:
+          ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
+      - name: Reproducibility check — compare
+        run: |
+          sha256sum app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            > /tmp/build2.sha256
+          cat /tmp/build2.sha256
+          if ! diff -u /tmp/build1.sha256 /tmp/build2.sha256; then
+            echo "::error::Two clean builds from the same source produced different APK bytes — the build is not reproducible (docs/security/dependency-policy.md §3)."
+            exit 1
+          fi
+          echo "Reproducible: both builds produced byte-identical APKs."
