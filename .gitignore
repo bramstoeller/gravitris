@@ -12,15 +12,18 @@ id_rsa*
 # Android signing material. No keystore or signing key may enter this
 # container at all (see docs/security/signing-and-key-custody.md) — this is
 # the last line of defence if that rule is ever ignored, not permission to
-# keep a key nearby.
+# keep a key nearby. The build only ever produces unsigned artifacts.
 *.jks
 *.keystore
 *.p12
 *.pfx
 keystore.properties
 
-# Machine-local Android SDK paths. Not a secret and never has been — ignored
-# by long-standing Android convention because the paths differ per machine.
+# Machine-local Android SDK path. Not a secret and never has been — ignored
+# by long-standing Android convention because the path differs per machine.
+# This project points Gradle at the SDK via $ANDROID_HOME instead (see
+# .env.example), so this file is not expected to exist at all, only guarded
+# against.
 local.properties
 
 # Dependencies and build output. Seeded up front rather than after an agent
@@ -49,6 +52,18 @@ coverage/
 .turbo/
 .cache/
 
+# Android / Gradle build output. `build/` above already catches
+# core-sim/build, app/build and buildSrc/build, but the artifact types are
+# named explicitly too: a 4.6MB APK was committed by accident before this
+# file existed, and it must not be possible to repeat that.
+*.apk
+*.aab
+*.ap_
+*.dex
+.cxx/
+captures/
+.kotlin/
+
 # Editor and OS noise.
 .DS_Store
 Thumbs.db
@@ -59,15 +74,15 @@ Thumbs.db
 # Spike build output.
 *.jar
 
-# Build artifacts — never commit these. A 4.6MB spike jar was committed by
-# accident on 2026-07-20; these rules exist so it cannot happen again.
-*.jar
+# ...except the Gradle wrapper jar, which is the opposite of build output: it
+# is a pinned, committed part of the toolchain (its distribution checksum is
+# in gradle/wrapper/gradle-wrapper.properties, and CI validates the jar
+# itself against Gradle's own known-good list — CHK-6). Without this
+# exception `git add -A` silently drops it and `./gradlew` breaks for the
+# next clone with no obvious cause — worth naming explicitly rather than
+# rediscovering.
 !gradle/wrapper/gradle-wrapper.jar
 *.class
-build/
-.gradle/
-*.apk
-*.aab
 
 # Personal Claude Code overrides — operator config, not product config.
 .claude/settings.local.json
