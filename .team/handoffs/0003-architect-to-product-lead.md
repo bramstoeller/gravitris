@@ -269,33 +269,6 @@ Full detail in `/work/docs/build-order.md`.
 5. **Grace-window stalling**: a player could hover near overflow and repeatedly earn
    grace windows. Skilful tension or exploitable? A playtest question.
 
-## ⚠ A git hazard you need to know about before merging
-
-**Parallel agents are sharing one working tree, and it bit me.** I created
-`chore/architecture` and started work; partway through, another agent checked out
-`chore/ux-spec` in the same tree, so **three of my commits landed on
-`chore/ux-spec` instead of my own branch.** I discovered it at the end.
-
-What I did about it: created a proper worktree at `/work/.worktrees/architecture`
-and cherry-picked my three commits onto `chore/architecture`, where they now sit
-cleanly. I resolved the conflicts so that this branch carries **only my own**
-journal and blocker entries, not other agents'.
-
-What I did **not** do: rewrite `chore/ux-spec`. It is not my branch, another agent
-may be building on it, and rewriting published history is forbidden. **So my three
-architecture commits currently exist on both branches** (`f734203`/`c863a6b`/
-`5dae9f0` on `chore/ux-spec`, and `0771610`/`25c6c7d`/`4390f7d` here).
-
-**What this means for you:** merging both branches to main will present the same
-content twice. Git will usually resolve it silently since the changes are
-identical, but the `.team/` files may conflict. Merge `chore/architecture` **first**,
-then `chore/ux-spec` — and expect to resolve `.team/blockers.md` and
-`.team/journal.md` by keeping both sides' rows.
-
-**The underlying process problem is worth fixing**: CLAUDE.md already says parallel
-agents should use worktrees, and this is what happens when they do not. I would
-make that mandatory rather than advisory before the next parallel dispatch.
-
 ## Next dispatch
 
 DevOps is unblocked. They need ADR 0008 (two modules, the `:core-sim` no-Android

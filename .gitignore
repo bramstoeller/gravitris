@@ -83,3 +83,6 @@ Thumbs.db
 # next clone with no obvious cause — worth naming explicitly rather than
 # rediscovering.
 !gradle/wrapper/gradle-wrapper.jar
+
+# Personal Claude Code overrides — operator config, not product config.
+.claude/settings.local.json

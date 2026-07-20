@@ -67,13 +67,29 @@ one belongs in the log — that is what makes this auditable.
   `docs/<slug>`.
 - Parallel agents use worktrees: `git worktree add /work/.worktrees/<slug> -b feat/<slug>`.
   Remove the worktree when the branch merges.
+- **Commit under your own role.** Both author and committer are the role that
+  did the work. Pass it explicitly on every commit, because worktrees share one
+  `.git/config` and a repo-level identity would be wrong for whoever is not
+  currently holding it:
+
+  ```
+  git -c user.name="Backend Engineer" -c user.email="backend-engineer@ai-team.local" commit -m "..."
+  ```
+
+  Use your role name exactly as it appears in the Roles list above. Client
+  instruction, 2026-07-20: `git log` should show who did what without needing to
+  cross-reference the handoffs.
 - **Conventional commits**, enforced by a `commit-msg` hook:
   `type(scope): subject` — types `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
   Subject in the imperative, lower case, no trailing period, under 72 characters.
 - One logical change per commit. Never commit code that does not build.
 - Merge to `main` only after Code Reviewer approval.
-- If `origin` exists, push after every merge to `main`. If it does not, work
-  locally and say so in the journal.
+- **Push every branch to `origin` as you go** — not only on merge to `main`.
+  Client instruction, 2026-07-20: all work must be visible in the remote
+  repository at all times. Push after your first commit on a branch (`git push
+  -u origin <branch>`) and after every commit thereafter. Work in progress on
+  the remote is expected and fine; invisible work is not. If `origin` does not
+  exist, work locally and say so in the journal.
 - Never force-push `main` and never rewrite published history. A guard hook
   blocks this; do not try to route around it.
 - Never commit secrets. If you find one in history, stop and escalate.
