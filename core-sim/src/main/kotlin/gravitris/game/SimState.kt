@@ -278,8 +278,19 @@ interface SimState {
 sealed interface Phase {
     object Playing : Phase
 
-    /** Spawn region blocked; the stack is being given time to settle (ADR 0005). */
-    data class Overflow(val remainingTicks: Int) : Phase
+    /**
+     * The spawn band is over the overflow line and a piece is due; the stack is
+     * being given [remainingTicks] more ticks to settle back below it before the
+     * game ends (ADR 0005). If it settles, play resumes; if the grace runs out
+     * with the band still over the line, the phase becomes [GameOver].
+     *
+     * [remainingTicks] is a `var` mutated in place, and the shell must **read it,
+     * not retain it** — the same bargain [Clearing] makes, and for the same
+     * reason: one instance is reused across an overflow so the grace does not
+     * allocate on the per-frame path. A captured `Overflow` will have changed
+     * underneath a tick later.
+     */
+    data class Overflow(var remainingTicks: Int) : Phase
 
     /**
      * A band cleared; the stack is dropping and re-settling.

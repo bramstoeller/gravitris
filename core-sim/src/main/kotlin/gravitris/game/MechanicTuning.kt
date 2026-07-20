@@ -94,8 +94,34 @@ class MechanicTuning(config: SimConfig) {
      */
     var clearMaxTicks: Int = 84
 
+    /**
+     * Fill of the spawn band above which a due piece triggers overflow rather
+     * than spawning (ADR 0005). Live; read each time a piece is due and each
+     * tick of the grace window.
+     *
+     * ~50% is a starting guess like [clearThreshold] — the spawn band is the
+     * topmost coverage band, so this is "the top of the well is half-full when
+     * the next piece needs to appear". Tuned by watching how it feels to be
+     * warned, exactly the reason it is a live dial and not a [SimConfig]
+     * constant.
+     */
+    var overflowThreshold: Float = config.overflowThreshold
+
+    /**
+     * Ticks the stack is given to settle back below [overflowThreshold] before
+     * the game ends (ADR 0005). 90 ticks = 1.5 s.
+     *
+     * A tick count, not a wall-clock duration (ADR 0013): the grace freezes and
+     * resumes correctly across a backgrounding, so a run cannot top out while
+     * the player is not looking. Long enough that a hard landing's transient
+     * bulge falls back within it; short enough that the game does not stall at
+     * its tensest moment.
+     */
+    var graceTicks: Int = config.graceTicks
+
     init {
         require(clearEnvelopeTicks >= 1) { "clearEnvelopeTicks must be >= 1" }
+        require(graceTicks >= 1) { "graceTicks must be >= 1, was $graceTicks" }
         require(clearMinTicks >= clearEnvelopeTicks) {
             "clearMinTicks ($clearMinTicks) must be >= clearEnvelopeTicks ($clearEnvelopeTicks); " +
                 "play cannot resume before the material has been removed"
