@@ -351,3 +351,223 @@ writing the assertion anyway.
 - The benchmark divisor is `SolverBenchmark.HOST_P50_MS`. If the solver changes,
   that number needs re-taking on the host or the ratio quietly stops meaning
   hardware.
+
+---
+---
+
+# Addendum — device results, silent haptics, and the 60/90Hz question
+
+**Frontend Engineer, 2026-07-20. Branch `fix/haptics-amplitude` (off
+`feat/squish-toy`), commits `41d7e80..6b1dc30`. Pushed to `origin`.**
+
+Written after the client ran Milestone 1 on a Fairphone 6
+(`.team/reviews/0002-milestone-1-device-results.md`), reported
+`haptics:fixed` / `shade:off`, and then — crucially — reported **"Ik heb GEEN
+trilling gevoeld"**: no vibration at all, and that their phone vibrates only
+for notifications.
+
+## 1. Why there was no vibration
+
+I found **three independent defects in the shipped build, each sufficient on
+its own** to produce exactly the reported symptom — a readout confidently
+saying `haptics:fixed` and a phone that never moved. I fixed all three rather
+than picking the most likely one, because with the instrumentation we had,
+none of them was distinguishable from the others.
+
+**(a) The pulse was classified as touch feedback, and the client has touch
+feedback off.** The fixed path was `View.performHapticFeedback`, which is
+`USAGE_TOUCH` by construction. AOSP's `VibrationSettings` forces `USAGE_TOUCH`
+to `VIBRATION_INTENSITY_OFF` whenever `Settings.System.HAPTIC_FEEDBACK_ENABLED`
+is `0` — silently, with no exception and no return code. The client's
+"vibrates only for notifications" is precisely that configuration. **The pulse
+was guaranteed to be discarded by the platform before reaching the motor.**
+
+Impacts now go out as `USAGE_MEDIA`. I want to be exact about why, because the
+Product Lead asked me to choose on meaning and not on what survives: AOSP
+documents `USAGE_MEDIA` as "media vibrations, such as music, movie, soundtrack,
+animations, **games**, or any interactive media **that isn't for touch feedback
+specifically**", against `USAGE_TOUCH` for "tap, long press, drag and scroll".
+A block landing under gravity is a physical event the game reports — the player
+may not even be touching the screen when it lands. On the documented meanings
+this is not a close call, and the fact that it also survives this user's
+settings is a consequence of classifying honestly, not the reason for it.
+
+**This does not route around user intent.** The master `VIBRATE_ON` toggle
+suppresses every usage except accessibility, and `MEDIA_VIBRATION_INTENSITY`
+can silence us independently. Someone who turns vibration off still gets none.
+
+**(b) It was called on the wrong thread.** `flush()` runs on the **GL thread**
+from `GameRenderer.onDrawFrame`. `View.performHapticFeedback` reaches into the
+view's `AttachInfo` and on to `ViewRootImpl`; off the UI thread it does nothing
+rather than failing loudly. It is now posted to the UI thread, and the
+`Vibrator` path — a binder call, safe from any thread — carries both the scaled
+and the fixed pulse.
+
+**(c) The fallback was unreachable in the case that needed it most.** The old
+`flush()` did `val vibrator = this.vibrator ?: return` **before** the
+`performHapticFeedback` branch. If no `Vibrator` resolved, nothing played at
+all — while the readout still said `haptics:fixed`.
+
+## 2. Why the readout said `fixed` — and what it says now
+
+Separately from delivery, the capability check was fragile. `hasAmplitudeControl()`
+was sampled **once, in `onCreate`, and cached in a `val`**. AOSP's
+`SystemVibrator.getInfo()` returns `VibratorInfo.EMPTY_VIBRATOR_INFO` — which
+reports *no* capabilities — while the vibrator service is still starting,
+logging *"Vibrator manager service not ready"*. `onCreate` is the earliest and
+worst moment in the process to ask, and the old code could never recover. It
+now re-asks for up to two seconds before trusting a negative.
+
+The readout no longer has one word for four situations. It reports the reason:
+`haptics:scaled` · `haptics:fixed (no amp control)` · `haptics:fixed (no
+vibrator)` · `haptics:fixed (vibrate threw)` · `haptics:pending (asking)`.
+
+And it now carries a diagnostic line that splits "felt nothing" into causes
+that were previously identical from the outside:
+
+```
+  imp:<impacts from core>  puls:<pulses requested>  e:<last energy>
+  sys vib:<on|OFF|?>  touch-fb:<on|OFF|?>
+```
+
+- `imp:0` → nothing is crossing the `:core-sim` contract; the fault is upstream.
+- `imp:N puls:0` → impacts arrive but all sit below the energy floor.
+- `imp:N puls:M`, nothing felt → we asked and the platform dropped it; the
+  `sys` line then says whether the user's settings did it.
+
+`vibrate()` returns `void` — there is no way to observe suppression from inside
+the app — so reading the settings is the only way to close that gap.
+
+## 3. The zero/NaN-energy hypothesis: refuted, with a measurement
+
+New `ImpactEnergyRangeTest` measures the real solver. Over 3000 frames it
+emits 137 impacts spanning **0.075–0.62**, of which **72 clear the 0.15
+floor**, mapping to amplitudes **60–167** with none saturating at 1.0. Energy
+is healthy and does spread across the ramp. **It is not why the client felt
+nothing.** The test keeps that true, the way `CompressionRangeTest` does for
+the darkening gain.
+
+One real defect did surface here: `NaN` compares `false` against the floor and
+truncates to the *minimum* amplitude, so a broken energy would have presented
+as "every impact feels weak and identical" — indistinguishable by feel from
+having no amplitude control. Non-finite energy is now silent.
+
+**Note for the Backend Engineer:** impacts are firing correctly across the
+contract. The rigidity work does not need to fix an impact-plumbing bug,
+because there isn't one. Do expect the `imp:`/`e:` numbers to move when
+compliance changes.
+
+## 4. Does the Fairphone 6 have amplitude control?
+
+**I still do not know, and neither does anyone else** — that is the honest
+answer, and it is the whole reason for the readout change. Nothing in the
+Milestone 1 data distinguishes "no amplitude control" from "we asked too early"
+from "we asked and it was dropped". The Fairphone community forum has users
+calling the FP6's vibration "exceptionally bad" and insufficient even at
+maximum, but no one states the motor type and Fairphone have not answered. That
+is a hint that this device's haptics are weak, not evidence about the API.
+
+The next build answers it in one glance. **I did not engineer around a hardware
+limitation I have not established.**
+
+## 5. The 60 vs 90 Hz question
+
+**The 60Hz request was not being ignored — it was outvoted.** The client's
+logcat says `RefreshRateSelector: 90.00 Hz (Touch Boost)`. `setFrameRate` is a
+*vote*; Android boosts the render rate to "high" while the screen is touched
+and holds it after release, and the final rate is the highest vote. Our control
+scheme is drag-anywhere, so the boost never lapses during play.
+
+There is a documented API for exactly this: `Window.setFrameRateBoostOnTouchEnabled(false)`
+(API 35+). Google advise against it because touch boost exists to keep
+scrolling UI tracking the finger — reasoning that does not apply to a fixed
+60Hz simulation, where frames beyond 60 carry no new state and cost full
+fragment work to display a duplicate. ADR 0006 rejected 120Hz on exactly that
+fragment cost, and that rejection is only real if this call happens. Applied.
+
+**My read on whether we should pin 60: yes, but understand what it buys.** It
+is a *measurement-hygiene* fix, not a performance fix. At 90Hz the compositor
+gives us an 11.1ms deadline while we take 16.8ms mean at 24 bodies — which is
+why 29 jank/s. Pinning 60 gives a 16.67ms deadline, so the same frames stop
+being counted as janky without getting faster. **The 90Hz panel is currently
+masking the problem, not causing it.** The real issue is 16.8ms mean at 24
+bodies with the solver alone at 32.2% of a frame, and at 12.06× derating that
+belongs to ADR 0009's quality tiers, which need re-deriving.
+
+If the next build still reports ~90 fps, the stronger lever is
+`LayoutParams.preferredDisplayModeId` pinned to a 60Hz mode. I rejected it as
+the first move because it forces a panel mode switch rather than expressing a
+preference and can flash visibly on change.
+
+## 6. `shade:off` — the brief's premise was wrong, and the real trap is worse
+
+**The compression darkening has never defaulted off.** `GameRenderer` has had
+`var compressionDarkening = true` since the commit that introduced it
+(`1a4c852`), unchanged, and both branches are present in the shipped APK. I
+checked the dex.
+
+So `shade:off` in both screenshots means **someone pressed volume-up.** That is
+the toggle. And `onKeyDown` returns `true` for it, so the volume UI never
+appears and the volume never changes — a client pressing volume-up for the
+obvious reason gets no feedback that anything happened, except that the single
+most important visual in the demo silently switches off. **The client spent the
+demo unable to see the deformation the demo existed to show, and the only clue
+was three lower-case characters in a corner.**
+
+I made the readout shout `shade:OFF`. **I did not move the toggle off the
+volume key** — that is an input-scheme change I cannot test on a device, and
+guessing at it seemed worse than flagging it. My recommendation: either move it
+behind a deliberate gesture, or simply tell the client not to press volume-up.
+Product Lead's call.
+
+The gain (`Tunables.COMPRESSION_GAIN = 4.0`) is one named constant with the
+measured distribution in its comment, and `CompressionRangeTest` re-measures
+and fails with the numbers in the message. It is as retunable as I can make it
+short of a runtime control. Expect to retune when compliance lands.
+
+## What I could not verify — and what to ask the client
+
+**I have no device. Nothing below has run on hardware.** Specifically I could
+not test: that any vibration now occurs; whether the Fairphone has amplitude
+control; whether `USAGE_MEDIA` is delivered on this OEM; whether declining
+touch boost actually yields 60Hz; or that the new readout lines fit the screen
+without wrapping.
+
+The APK is at `app/build/outputs/apk/debug/app-debug.apk` (`make build`).
+
+**A photograph of the readout answers nearly all of it.** Worth asking for:
+
+1. **The whole readout, in one photo, after a few pieces have landed.** The
+   `imp:`/`puls:`/`sys` lines are the diagnostic.
+2. **Did you feel anything at all?** Then read `haptics:` — if it says
+   `scaled`, do heavy landings feel stronger than light ones?
+3. **If still nothing:** what do `sys vib:` and `touch-fb:` say? If
+   `vib:OFF`, that is the answer and it is their setting, working correctly.
+4. **The fps line** — is it near 60 now, or still ~90?
+5. **Does `shade:on` show?** If so, do blocks visibly darken where they hit?
+   (Expect very little until the compliance work lands.)
+6. **Optional, and worth a lot:** `adb logcat -s GravitrisHaptics` prints the
+   resolved mode, attempt count and both settings.
+
+## Things I am uneasy about
+
+**1. I shipped `USAGE_TOUCH` and had to be corrected.** My first pass at this
+chose the exact classification that was already silencing the client, for the
+plausible-sounding reason that it "respects the user's haptic setting". It took
+the Product Lead relaying the client's own description of their phone to catch
+it. I had the AOSP source open and did not think to check which settings gate
+which usage until told to.
+
+**2. Three defects in one small class, all in code I had read.** Same pattern
+as both previous handoffs. The GL-thread call in particular I wrote and read
+several times without noticing that `performHapticFeedback` is a View method.
+
+**3. Fixing three things at once means I cannot attribute the fix.** If the
+next build vibrates, I will not know which defect was *the* one — plausibly all
+three. I judged that acceptable because each is independently wrong, but it
+does mean we learn less than a single-variable change would have taught us.
+
+**4. This is the third build the client installs, and the second that has
+never rendered a frame here.** If it still does not vibrate, the readout at
+least says where the chain breaks — which is the thing I would most want and
+did not have.
