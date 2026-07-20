@@ -5,7 +5,7 @@ The Product Lead owns this file.
 
 | # | Item | Role(s) | Branch | Status |
 | - | ---- | ------- | ------ | ------ |
-| 1 | Foundation: reproducible Gradle build, two modules, one-command run/test, installable debug APK | devops | `chore/build-foundation` | **review** |
+| 1 | Foundation: reproducible Gradle build, two modules, one-command run/test, installable debug APK | devops | `chore/build-foundation` | **changes requested** — fresh clone cannot build (cold-cache verification metadata) |
 | 2 | Physics core: particles, constraints, broadphase, contacts, fixed tick + 8 substeps, JVM stability & determinism tests | backend | `feat/core-sim` | in-progress |
 | 3 | Renderer + input: GL ES 3.0 context, dynamic mesh upload, flat triangles, drag/tap/swipe, impact haptics | frontend | `feat/app-shell` | in-progress |
 | 4 | Visual language against the confirmed shader varying set | ux | `chore/ux-varyings` | todo |
