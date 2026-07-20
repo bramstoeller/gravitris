@@ -1,0 +1,139 @@
+# Solver budget spike — HOST measurements (x86-64, HotSpot 21.0.11)
+# NOT on-device numbers. Derating is documented in docs/adr/0001.
+# cpu: 1 logical cores, single-threaded solver
+
+## 1. Cost vs scene size and substep count
+Scene: full well, lattice soft bodies pre-stacked, settled before timing.
+compliance=MEDIUM, self-collision off (bodies are held together by their own constraints)
+
+Well is 10 wide x 20 tall; 'height' is the settled pile top, so a value
+near 20 means the well is genuinely full and the game would be ending.
+
+bodies | lattice | particles | dist | area | contacts | height | substeps | p50 ms | p95 ms | p99 ms
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+20 | 4 | 320 | 840 | 360 | 42 | 16.4 | 8 | 0.158 | 0.162 | 0.185
+40 | 4 | 640 | 1680 | 720 | 110 | 32.8 | 8 | 0.323 | 0.329 | 0.347
+60 | 4 | 960 | 2520 | 1080 | 211 | 46.7 | 8 | 0.493 | 0.505 | 0.540
+80 | 4 | 1280 | 3360 | 1440 | 312 | 62.5 | 8 | 0.662 | 0.670 | 0.714
+60 | 3 | 540 | 1200 | 480 | 175 | 51.6 | 8 | 0.265 | 0.275 | 0.290
+60 | 5 | 1500 | 4320 | 1920 | 356 | 43.1 | 8 | 0.846 | 0.867 | 0.916
+60 | 6 | 2160 | 6600 | 3000 | 453 | 31.5 | 8 | 1.282 | 1.307 | 1.376
+60 | 8 | 3840 | 12600 | 5880 | 582 | 29.6 | 8 | 2.410 | 2.608 | 3.044
+60 | 4 | 960 | 2520 | 1080 | 461 | 32.5 | 2 | 0.137 | 0.141 | 0.156
+60 | 4 | 960 | 2520 | 1080 | 280 | 42.4 | 4 | 0.254 | 0.271 | 0.300
+60 | 4 | 960 | 2520 | 1080 | 192 | 47.1 | 12 | 0.740 | 0.757 | 0.805
+60 | 4 | 960 | 2520 | 1080 | 182 | 47.2 | 16 | 0.983 | 1.030 | 1.171
+60 | 5 | 1500 | 4320 | 1920 | 395 | 37.7 | 4 | 0.425 | 0.490 | 0.534
+60 | 5 | 1500 | 4320 | 1920 | 325 | 43.4 | 12 | 1.259 | 1.424 | 1.536
+60 | 6 | 2160 | 6600 | 3000 | 322 | 31.8 | 12 | 1.887 | 1.940 | 2.001
+
+## 2. Stack stability: residual jitter after settling
+A settled stack should be still. A non-zero floor is solver jitter and
+will read on screen as a bug. 60 bodies, lattice 4, mass 1/particle.
+
+substeps | compliance | KE after 600f | KE after 1200f | max speed | stack height | verdict
+--- | --- | --- | --- | --- | --- | ---
+2 | FIRM | 129.5290 | 19.5845 | 1.4718 | 31.77 | jittering
+4 | FIRM | 7.4732 | 7.0829 | 1.0141 | 44.25 | jittering
+6 | FIRM | 0.7101 | 0.7104 | 0.2207 | 45.95 | creeping
+8 | FIRM | 0.1935 | 0.1944 | 0.1682 | 46.40 | settled
+12 | FIRM | 0.0540 | 0.0012 | 0.0057 | 47.16 | settled
+16 | FIRM | 0.0175 | 0.0028 | 0.0097 | 47.26 | settled
+2 | MEDIUM | 57.5707 | 58.6388 | 2.3787 | 32.52 | jittering
+4 | MEDIUM | 0.2662 | 0.0047 | 0.0325 | 42.37 | settled
+6 | MEDIUM | 0.7475 | 0.7439 | 0.2932 | 46.14 | creeping
+8 | MEDIUM | 0.0369 | 0.0018 | 0.0059 | 46.66 | settled
+12 | MEDIUM | 0.0398 | 0.0061 | 0.0110 | 47.08 | settled
+16 | MEDIUM | 0.0048 | 0.0019 | 0.0074 | 47.18 | settled
+2 | SPONGY | 16567.1969 | 9256.4818 | 50.9788 | 31.18 | jittering
+4 | SPONGY | 6.8218 | 7.7494 | 0.7147 | 42.47 | creeping
+6 | SPONGY | 0.0200 | 0.0066 | 0.0069 | 45.59 | settled
+8 | SPONGY | 0.0072 | 0.0012 | 0.0039 | 46.23 | settled
+12 | SPONGY | 0.2859 | 0.0713 | 0.0510 | 46.43 | settled
+16 | SPONGY | 0.0299 | 0.0205 | 0.0157 | 46.56 | settled
+
+### 2b. Stability vs piece mass (compliance MEDIUM, the late-game case)
+
+mass/particle | substeps | KE settled | max speed | stack height | verdict
+--- | --- | --- | --- | --- | ---
+1.0 | 4 | 0.0047 | 0.0325 | 42.37 | settled
+1.0 | 8 | 0.0018 | 0.0059 | 46.66 | settled
+1.0 | 12 | 0.0061 | 0.0110 | 47.08 | settled
+1.0 | 16 | 0.0019 | 0.0074 | 47.18 | settled
+2.0 | 4 | 0.0020 | 0.0037 | 42.72 | settled
+2.0 | 8 | 1.6839 | 0.4347 | 46.70 | creeping
+2.0 | 12 | 0.0029 | 0.0056 | 47.02 | settled
+2.0 | 16 | 0.0061 | 0.0081 | 47.14 | settled
+4.0 | 4 | 0.0033 | 0.0029 | 44.80 | settled
+4.0 | 8 | 0.0021 | 0.0038 | 46.52 | settled
+4.0 | 12 | 0.1721 | 0.1013 | 46.92 | settled
+4.0 | 16 | 0.0260 | 0.0328 | 46.81 | settled
+8.0 | 4 | 7.8747 | 0.5269 | 43.48 | creeping
+8.0 | 8 | 0.0231 | 0.0055 | 46.25 | settled
+8.0 | 12 | 1.1433 | 0.1178 | 46.58 | settled
+8.0 | 16 | 0.0916 | 0.0147 | 46.70 | settled
+
+## 3. SoA vs AoS, identical constraint work (no contacts, no broadphase)
+Scaled well past the game's own budget to find where layout starts to
+matter. Working set is ~32 bytes/particle + ~20 bytes/constraint.
+
+particles | constraints | ~working set | SoA p50 ms | AoS p50 ms | AoS/SoA
+--- | --- | --- | --- | --- | ---
+320 | 1200 | 33 KB | 0.091 | 0.092 | 1.01x
+960 | 3600 | 100 KB | 0.273 | 0.276 | 1.01x
+2160 | 9600 | 255 KB | 0.772 | 0.786 | 1.02x
+8640 | 38400 | 1020 KB | 3.094 | 3.185 | 1.03x
+34560 | 153600 | 4080 KB | 12.427 | 12.751 | 1.03x
+138240 | 614400 | 16320 KB | 50.119 | 58.360 | 1.16x
+
+## 3b. Steady-state allocation per frame (must be zero)
+
+scene | bytes/frame over 1000 frames
+--- | ---
+960p solver+coverage | 0 B/frame
+2160p solver+coverage | 0 B/frame
+
+## 4. Coverage-band cost (occupancy bitmap), per frame
+
+particles | bands | cells/band | p50 ms | p95 ms | % of 16.67ms
+--- | --- | --- | --- | --- | ---
+960 | 20 | 160 | 0.0060 | 0.0060 | 0.04%
+960 | 20 | 360 | 0.0090 | 0.0090 | 0.05%
+1500 | 20 | 160 | 0.0082 | 0.0125 | 0.05%
+1500 | 20 | 360 | 0.0149 | 0.0174 | 0.09%
+2160 | 20 | 160 | 0.0125 | 0.0200 | 0.07%
+2160 | 20 | 360 | 0.0174 | 0.0185 | 0.10%
+
+Settled-stack band fill (band 0 = floor):
+  band  0:  75.0%
+  band  1:  75.0%
+  band  2:  85.0%
+  band  3:  75.6%
+  band  4:  76.3%
+  band  5:  80.0%
+  band  6:  85.6%
+  band  7:  80.0%
+  band  8:  79.4%
+  band  9:  78.1%
+  band 10:  80.6%
+  band 11:  92.5%
+
+## 5. Determinism
+  same binary, same seed, 900 frames, 8 substeps: hashes MATCH (bit-identical)
+  same scene at 12 substeps instead of 8: hashes DIFFER (expected — substep count is part of the simulation contract)
+  450+450 frames vs 900 frames: hashes MATCH (stepping is stateless across calls)
+
+## 6. REFERENCE CONFIGURATION
+Run this exact configuration on a target device to obtain the true
+host->device derating ratio. Everything else scales from it.
+
+  config:     60 bodies, lattice 4x4, 8 substeps, compliance 1e-6, mass 1.0
+  particles:  960
+  distance:   2520
+  area:       1080
+  contacts:   210 pairs/frame
+  HOST p50:   0.497 ms/frame
+  HOST p95:   0.525 ms/frame
+  HOST mean:  0.502 ms/frame
+
+  DEVICE p50: (unmeasured — see blockers.md)
