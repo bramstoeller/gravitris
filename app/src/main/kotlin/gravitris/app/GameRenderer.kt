@@ -11,6 +11,7 @@ import gravitris.app.input.PlayerIntent
 import gravitris.app.perf.FrameSnapshot
 import gravitris.app.perf.FrameStats
 import gravitris.game.InputFrame
+import gravitris.game.Phase
 import gravitris.game.SimConfig
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -40,6 +41,17 @@ class GameRenderer(
      * forty times its intended speed until the next inset change.
      */
     private val onLayout: (Float) -> Unit,
+    /**
+     * Called on the GL thread the first time the simulation reaches
+     * [Phase.GameOver] (the well topped out and the settle grace expired —
+     * ADR 0005, landed in the core by the Backend Engineer). The shell posts
+     * this to the UI thread to raise the game-over overlay; [restart] clears it.
+     *
+     * Without this the app would sit frozen on a topped-out stack with no way
+     * out — worse than the toy's honest reset, which is exactly why it is wired
+     * the moment `Simulation.start()` makes the phase reachable.
+     */
+    private val onGameOver: () -> Unit,
     /**
      * Debug-only clear-threshold override, or null for the [SimConfig] default.
      * Threaded into every [GameSession] this builds; `MainActivity` supplies it
@@ -76,6 +88,11 @@ class GameRenderer(
      * no tick does not re-accumulate the previous one.
      */
     private var lastTick = 0
+
+    /** Whether [onGameOver] has already fired for the current session, so it is
+     *  raised once per game-over rather than every frame the phase holds. Reset
+     *  when a session is (re)built. */
+    private var wasGameOver = false
 
     /**
      * The per-tick input drain handed to [GameSession.advance]. Field-held so
@@ -386,6 +403,19 @@ class GameRenderer(
 
         val alpha = advanceSimulation(session, frameStart)
 
+        // Game over is terminal until a restart, so raise the overlay once
+        // rather than every frame the phase holds. Read-don't-retain: the phase
+        // is read fresh here and never captured (Phase.Overflow is a reused,
+        // mutated instance — see its contract). Overflow itself needs no handling
+        // — the stack simply renders while its grace counts down, then either
+        // settles back to Playing or crosses into GameOver here.
+        if (session.state.phase is Phase.GameOver) {
+            if (!wasGameOver) {
+                wasGameOver = true
+                onGameOver()
+            }
+        }
+
         // A clear removes whole bodies, so the set of bodies shrinks mid-session.
         // The archetype cache is keyed on the body count and BodyMesh.upload
         // rewrites the statics whenever that count changes in *either* direction
@@ -513,8 +543,26 @@ class GameRenderer(
         }
 
         if (config == sessionConfig) return
+        buildSession(config)
+    }
 
-        sessionConfig = config
+    /**
+     * Restart after a game over: rebuild the session for the current well and
+     * clear the game-over latch.
+     *
+     * Reconstruct rather than mutate — `SimConfig` is immutable by design
+     * (ADR 0006) and [GameSession] centralises `Simulation` + `start()` +
+     * `FrameDriver`, so a fresh one *is* the restart, the same shape the toy's
+     * reset had. Called on the GL thread (`MainActivity` queues it) once the
+     * player dismisses the overlay.
+     */
+    fun restart() {
+        buildSession(sessionConfig ?: return)
+    }
+
+    /** Build a fresh [GameSession] for [config] and reset the per-session render
+     *  state. Shared by the well-geometry rebuild and [restart]. */
+    private fun buildSession(config: SimConfig) {
         val session = GameSession(config, clearThresholdOverride)
         // The mesh is sized once, for the largest well; every real well is
         // smaller, so its capacity must fit. Asserted rather than trusted: if
@@ -528,7 +576,9 @@ class GameRenderer(
                 "body estimate has drifted from SoftBodyWorld.maxBodies"
         }
         this.session = session
+        sessionConfig = config
         lastTick = 0
+        wasGameOver = false
         mesh.invalidateArchetypes()
         session.resetAccumulator()
         lastFrameNanos = 0L
