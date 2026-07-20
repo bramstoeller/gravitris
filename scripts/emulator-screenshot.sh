@@ -28,7 +28,13 @@ APK="app/build/outputs/apk/debug/app-debug.apk"
 EMULATOR_BIN="$ANDROID_HOME/emulator/emulator"
 EMULATOR_STDOUT_LOG="$OUT_DIR/emulator.stdout.log"
 EMULATOR_PID=""
-SERIAL="emulator-5554"
+# Discovered per-boot from the emulator's own running-instance file, not
+# assumed — see discover_serial() below. A hardcoded emulator-5554 would
+# cross-talk with a developer's own, unrelated AVD already on that port
+# (installing onto it, screenshotting it, and `emu kill`ing it instead of
+# ours) exactly the kind of machine .env.example invites by saying nothing
+# stops you running other AVDs alongside this one.
+SERIAL=""
 
 # Deliberately not `pkill` — matching and signalling processes by name
 # scan (rather than a PID this script itself started) is a broader
@@ -45,7 +51,11 @@ kill_stale_emulator() {
 cleanup() {
   if [ -n "$EMULATOR_PID" ] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
     echo "==> Shutting down emulator (pid $EMULATOR_PID)"
-    adb -s "$SERIAL" emu kill >/dev/null 2>&1 || kill "$EMULATOR_PID" 2>/dev/null
+    if [ -n "$SERIAL" ]; then
+      adb -s "$SERIAL" emu kill >/dev/null 2>&1 || kill "$EMULATOR_PID" 2>/dev/null
+    else
+      kill "$EMULATOR_PID" 2>/dev/null
+    fi
     for _ in $(seq 1 10); do
       kill -0 "$EMULATOR_PID" 2>/dev/null || break
       sleep 1
@@ -54,7 +64,20 @@ cleanup() {
   fi
   rm -rf "$HOME/.android/avd/${AVD_NAME}.avd/running" "$HOME/.android/avd/running" 2>/dev/null || true
 }
+# EXIT alone misses a Ctrl-C, an outer `timeout`, or a container stop — any
+# of which would otherwise orphan the backgrounded qemu child, which then
+# holds the AVD lock until the next run. That is exactly the failure mode
+# this script exists to avoid (see the file header).
+#
+# INT/TERM need their own explicit `exit` after cleanup, not just `trap
+# cleanup INT TERM` — bash does not terminate a script on a trapped signal
+# once a handler is installed for it, it just runs the handler and *resumes*
+# execution afterwards. Verified this the hard way: an earlier version of
+# this trap ran cleanup on SIGTERM, then carried on into another boot
+# attempt instead of stopping. 128+signal is the conventional exit code.
 trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 mkdir -p "$OUT_DIR"
 
@@ -85,14 +108,21 @@ boot_emulator() {
   local gpu_mode="$1"
   echo "==> Booting emulator ($AVD_NAME, -gpu $gpu_mode)"
   rm -f "$EMULATOR_STDOUT_LOG"
+  SERIAL=""
   "$EMULATOR_BIN" -avd "$AVD_NAME" \
     -no-window -no-audio -no-boot-anim -no-snapshot \
     -gpu "$gpu_mode" \
     > "$EMULATOR_STDOUT_LOG" 2>&1 &
   EMULATOR_PID=$!
+  # The emulator writes its own actual assigned port here, keyed by its own
+  # PID (which we already have) — this is what makes SERIAL correct instead
+  # of assumed. See the file header comment on why hardcoding emulator-5554
+  # is wrong.
+  local running_ini="$HOME/.android/avd/running/pid_${EMULATOR_PID}.ini"
 
   local waited=0
   local died=0
+  local port boot
   while [ "$waited" -lt "$BOOT_TIMEOUT" ]; do
     if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
       died=1
@@ -103,9 +133,15 @@ boot_emulator() {
       died=1
       break
     fi
-    boot="$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null || true)"
-    if [ "$boot" = "1" ]; then
-      return 0
+    if [ -z "$SERIAL" ] && [ -f "$running_ini" ]; then
+      port="$(grep -m1 '^port\.serial=' "$running_ini" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+      [ -n "$port" ] && SERIAL="emulator-$port"
+    fi
+    if [ -n "$SERIAL" ]; then
+      boot="$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null || true)"
+      if [ "$boot" = "1" ]; then
+        return 0
+      fi
     fi
     sleep 3
     waited=$((waited + 3))
@@ -119,6 +155,7 @@ boot_emulator() {
   kill -9 "$EMULATOR_PID" 2>/dev/null || true
   wait "$EMULATOR_PID" 2>/dev/null || true
   EMULATOR_PID=""
+  SERIAL=""
   kill_stale_emulator "$AVD_NAME"
   rm -rf "$HOME/.android/avd/${AVD_NAME}.avd/running" "$HOME/.android/avd/running" 2>/dev/null || true
   # Give the crash handler and any lingering child processes (crashpad,
@@ -177,6 +214,11 @@ fi
 
 echo "==> Boot completed"
 
+if [ -z "$SERIAL" ]; then
+  echo "FAIL: boot reported complete but no adb serial was ever discovered — this is this script's own bug, not the emulator's" >&2
+  exit 1
+fi
+
 RENDERER_LINE="$(grep -m1 "Graphics Adapter " "$EMULATOR_STDOUT_LOG" 2>/dev/null || true)"
 API_LINE="$(grep -m1 "Graphics API Version " "$EMULATOR_STDOUT_LOG" 2>/dev/null || true)"
 # Keyed off which -gpu mode actually booted, not off sniffing the renderer
@@ -193,10 +235,38 @@ fi
 
 echo "==> Installing debug APK"
 adb -s "$SERIAL" wait-for-device
-adb -s "$SERIAL" install -r "$APK" >/dev/null
+# Checked explicitly, not left to `set -e`: a failed install must not be
+# allowed to fall through to "launch" a component that was never installed
+# and screenshot whatever the home screen happens to show instead — that
+# would report success on a build that never actually ran. `adb install`
+# does return nonzero on failure, but the output is also checked for
+# "Failure" since that is the more specific signal adb itself uses.
+install_output="$(adb -s "$SERIAL" install -r "$APK" 2>&1)" || {
+  echo "FAIL: adb install failed:" >&2
+  echo "$install_output" >&2
+  exit 1
+}
+if echo "$install_output" | grep -q "^Failure"; then
+  echo "FAIL: adb install reported a failure despite a zero exit code:" >&2
+  echo "$install_output" >&2
+  exit 1
+fi
 
 echo "==> Launching $ACTIVITY"
-adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" >/dev/null
+# Same reasoning as the install check above: `am start` can exit 0 while
+# still failing to resolve or launch the component (e.g. a typo'd activity
+# name, or ADR/manifest drift) — the failure shows up only in its own
+# output, as an "Error:" line instead of "Status: ok".
+start_output="$(adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" 2>&1)" || {
+  echo "FAIL: am start failed:" >&2
+  echo "$start_output" >&2
+  exit 1
+}
+if ! echo "$start_output" | grep -q "^Status: ok"; then
+  echo "FAIL: am start did not report Status: ok:" >&2
+  echo "$start_output" >&2
+  exit 1
+fi
 
 # "Waits for first frame": am start -W blocks until the activity reports
 # drawn, but the very first GL frame can still land a beat after that for a
