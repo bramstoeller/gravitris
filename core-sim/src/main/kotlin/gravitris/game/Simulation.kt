@@ -95,6 +95,22 @@ class Simulation(private val config: SimConfig) {
 
     private var clearPhase: Phase.Clearing? = null
 
+    /** Remaining grace ticks while overflowing (ADR 0005); -1 when not in overflow. */
+    private var overflowTicks: Int = -1
+
+    /**
+     * Reused overflow phase — one instance whose [Phase.Overflow.remainingTicks]
+     * is mutated in place, so the grace window allocates nothing per tick, the
+     * same bargain [Phase.Clearing] makes.
+     */
+    private val overflowPhase = Phase.Overflow(0)
+
+    /** Terminal: the grace expired with the spawn band still over the line. */
+    private var gameOver: Boolean = false
+
+    /** Centre of the well: where every piece is dealt. */
+    private val spawnX: Float = 0.5f * (world.wellMinX + world.wellMaxX)
+
     /** Bodies scheduled for removal. Sized to capacity; the clear allocates nothing. */
     private val removalScratch = IntArray(world.maxBodies)
 
@@ -133,9 +149,16 @@ class Simulation(private val config: SimConfig) {
     }
 
     private fun advanceMechanic() {
-        if (!running) return
+        if (!running || gameOver) return
+        // A clear takes precedence over an overflow grace (ADR 0005): a clear
+        // that drops the stack resolves the would-be overflow, so it is run
+        // first and, because a clear holds the spawn, the two never overlap.
         if (clearTicks >= 0) {
             advanceClear()
+            return
+        }
+        if (overflowTicks >= 0) {
+            advanceOverflow()
             return
         }
         if (stateImpl.activePieceBody < 0) {
@@ -410,26 +433,77 @@ class Simulation(private val config: SimConfig) {
     // --- spawning -----------------------------------------------------------
 
     /**
-     * Brings in the next piece, if there is room for it.
+     * Brings in the next piece if the spawn region is clear, or opens the
+     * overflow grace if it is not (ADR 0005).
      *
-     * **A blocked spawn is not an error and not a loss.** It is the state
-     * ADR 0005 builds the losing condition out of: the well is full, and the
-     * right response is to give the stack time to settle and prove it. That
-     * grace window is Stage 4 and deliberately not built here. What is built
-     * here is the shape it needs — the spawn simply does not happen, the
-     * simulation stays in [Phase.Playing] with no active piece, and the next
-     * tick tries again. A stack that settles back down resumes play on its
-     * own; one that does not will sit there until Stage 4 gives it a verdict.
-     *
-     * The retry is what Stage 4 replaces with [Phase.Overflow], and it is the
-     * only thing that needs replacing.
+     * A blocked spawn is not an error and not a loss: it is the topped-out
+     * state, and the fair response is to give the stack time to settle and prove
+     * it rather than end the game on a transient bulge. So instead of silently
+     * retrying, a due piece with the spawn band over [MechanicTuning.overflowThreshold]
+     * — or physically no room — starts the grace window in [beginOverflow].
      */
     private fun spawnNext() {
-        val x = 0.5f * (world.wellMinX + world.wellMaxX)
-        if (!world.canPlace(x, spawnCenterY)) return
-        stateImpl.activePieceBody = world.addBody(sequence.next(), x, spawnCenterY)
+        if (canSpawn()) doSpawn() else beginOverflow()
+    }
+
+    /**
+     * Whether the next piece may appear: the spawn band's fill is at or below
+     * the overflow line **and** there is physically room to place a piece.
+     *
+     * The fill test is ADR 0005's primary, legible trigger — it warns before the
+     * well is literally blocked. The [SoftBodyWorld.canPlace] test is the safety
+     * net that also keeps [doSpawn] from ever calling [SoftBodyWorld.addBody]
+     * into a spot it would throw on. Reads the damped [CoverageBands.fill], the
+     * same value the clear rule and the renderer read, so a transient bulge is
+     * attenuated and cannot trip overflow on its own.
+     */
+    private fun canSpawn(): Boolean =
+        bands.fill[stateImpl.spawnBandIndex] <= tuning.overflowThreshold &&
+            world.canPlace(spawnX, spawnCenterY)
+
+    private fun doSpawn() {
+        stateImpl.activePieceBody = world.addBody(sequence.next(), spawnX, spawnCenterY)
         stillTicks = 0
         touchedTicks = -1
+        overflowTicks = -1
+    }
+
+    /**
+     * Opens the settle grace at its full window. Only reached from a due spawn:
+     * once overflowing, [advanceMechanic] routes to [advanceOverflow], so this
+     * is never called again mid-grace and cannot refresh the countdown.
+     */
+    private fun beginOverflow() {
+        overflowTicks = tuning.graceTicks.coerceAtLeast(1)
+        overflowPhase.remainingTicks = overflowTicks
+    }
+
+    /**
+     * Runs one tick of the overflow grace (ADR 0005).
+     *
+     * The stack is left alone to settle. The instant it has fallen back below
+     * the overflow line **and** gone quiet — the same kinetic-energy predicate
+     * the clear rule and stability tests use — play resumes with no penalty.
+     * Otherwise the grace counts down, tick by tick so it survives dropped ticks
+     * and a backgrounding (ADR 0013); when it reaches zero with the band still
+     * over the line, the game is over.
+     *
+     * "No death by transient" falls straight out of this: a hard landing's bulge
+     * pushes the *damped* fill up only briefly, and even at its peak the stack is
+     * not quiet, so neither the trigger nor the failure fires on it — the stack
+     * settles back, goes quiet under the line, and play resumes.
+     */
+    private fun advanceOverflow() {
+        if (canSpawn() && solver.kineticEnergy <= config.quietKineticEnergy) {
+            doSpawn()
+            return
+        }
+        overflowTicks--
+        overflowPhase.remainingTicks = overflowTicks
+        if (overflowTicks <= 0) {
+            overflowTicks = -1
+            gameOver = true
+        }
     }
 
     /**
@@ -644,7 +718,12 @@ class Simulation(private val config: SimConfig) {
                 .toInt()
                 .coerceIn(0, config.bandCount - 1)
 
-        override val phase: Phase get() = clearPhase ?: Phase.Playing
+        override val phase: Phase get() = when {
+            gameOver -> Phase.GameOver
+            clearPhase != null -> clearPhase!!
+            overflowTicks >= 0 -> overflowPhase
+            else -> Phase.Playing
+        }
 
         /** Stage 4. A clear scores nothing yet; the scoring formula is undecided. */
         override val score: Int get() = 0
