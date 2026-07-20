@@ -32,7 +32,8 @@ import org.w3c.dom.Element
  * by name as the most likely way this gate quietly stops working.
  *
  * Checks, all against the merged `<manifest>`:
- *  - CHK-1: zero `<uses-permission>` elements of any name.
+ *  - CHK-1: no `<uses-permission>` outside [ALLOWED_PERMISSIONS], and never
+ *    `INTERNET` regardless of that list.
  *  - CHK-3: `<application>` has `android:allowBackup="false"` and an
  *    `android:dataExtractionRules` attribute present.
  *  - CHK-4: no `<activity>`, `<service>`, `<receiver>` or `<provider>` is
@@ -89,15 +90,37 @@ abstract class CheckMergedManifest : DefaultTask() {
 
         val failures = mutableListOf<String>()
 
-        // CHK-1: zero <uses-permission>, from our manifest or any dependency.
+        // CHK-1: no permission outside the allowlist, from our manifest or any
+        // dependency's, at any depth.
         val permissions = manifestElement.getElementsByTagName("uses-permission")
-        if (permissions.length > 0) {
-            val names = (0 until permissions.length).joinToString(", ") { i ->
-                (permissions.item(i) as Element).getAttributeNS(androidNs, "name")
-                    .ifBlank { "(unnamed)" }
-            }
-            failures += "CHK-1: expected zero <uses-permission> elements in the " +
-                "merged manifest, found ${permissions.length}: $names"
+        val unexpected = mutableListOf<String>()
+        var declaresInternet = false
+        for (i in 0 until permissions.length) {
+            val name = (permissions.item(i) as Element)
+                .getAttributeNS(androidNs, "name")
+                .ifBlank { "(unnamed)" }
+            if (name == INTERNET_PERMISSION) declaresInternet = true
+            if (name !in ALLOWED_PERMISSIONS) unexpected += name
+        }
+
+        if (unexpected.isNotEmpty()) {
+            failures += "CHK-1: merged manifest declares ${unexpected.size} " +
+                "permission(s) outside the allowlist: ${unexpected.joinToString(", ")}. " +
+                "The allowlist is ${ALLOWED_PERMISSIONS.joinToString(", ")}. " +
+                "Adding to it is a security-engineer decision recorded in " +
+                "docs/security/threat-model.md, not a build fix."
+        }
+
+        // Belt-and-braces, and deliberately independent of the allowlist: even
+        // if someone adds INTERNET to ALLOWED_PERMISSIONS, this still fails.
+        // The no-network guarantee is the one the client asked to have enforced
+        // rather than intended, so it does not get to depend on a list staying
+        // correct.
+        if (declaresInternet) {
+            failures += "CHK-1: merged manifest declares $INTERNET_PERMISSION. " +
+                "This is never permitted — the brief's no-telemetry guarantee is " +
+                "kernel-enforced by the absence of this permission " +
+                "(docs/security/threat-model.md §5)."
         }
 
         // CHK-3: allowBackup=false and dataExtractionRules present (S-1).
@@ -145,6 +168,34 @@ abstract class CheckMergedManifest : DefaultTask() {
                     failures.joinToString("\n") { "  - $it" }
             )
         }
+    }
+
+    private companion object {
+        const val INTERNET_PERMISSION = "android.permission.INTERNET"
+
+        /**
+         * The complete set of permissions this app may declare.
+         *
+         * CHK-1 originally asserted **zero** permissions, which was correct
+         * when the app did nothing. Stage 1B needs `VIBRATE` for impact
+         * haptics: `Vibrator.vibrate()` requires it, and the permission-free
+         * alternative (`View.performHapticFeedback`) plays a fixed canned
+         * effect with no amplitude control, discarding the energy ramp in
+         * docs/ux/feel-feedback.md that makes the blocks read as heavy.
+         *
+         * An allowlist rather than deleting the check, because the property
+         * worth protecting was never "zero permissions" — it was "no
+         * permission arrives that nobody decided on". A dependency
+         * contributing anything at all still turns the build red, which is the
+         * behaviour the client asked for. `VIBRATE` is normal, install-time,
+         * grants no data access and shows no runtime prompt.
+         *
+         * Adding an entry here is a security-engineer decision and belongs in
+         * docs/security/threat-model.md, not in a build fix.
+         */
+        val ALLOWED_PERMISSIONS = setOf(
+            "android.permission.VIBRATE",
+        )
     }
 
     private fun isLauncherActivity(activity: Element): Boolean {
