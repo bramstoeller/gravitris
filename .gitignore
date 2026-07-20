@@ -9,6 +9,17 @@
 *.key
 id_rsa*
 
+# Android signing material. No keystore or signing key may enter this
+# container at all (see docs/security/signing-and-key-custody.md) — this is
+# the last line of defence if that rule is ever ignored, not permission to
+# keep a key nearby.
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+local.properties
+
 # Dependencies and build output. Seeded up front rather than after an agent
 # has already staged a virtualenv: the team installs toolchains as it works,
 # and the first `git add -A` is too late to notice.
