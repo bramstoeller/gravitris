@@ -33,6 +33,31 @@ class VertexFillTest {
     private fun scratch(toy: SquishToy) =
         FloatArray(toy.state.particleCount * BodyMesh.FLOATS_PER_VERTEX)
 
+    /**
+     * Particle indices whose vertex is written by the lerp and nothing else.
+     *
+     * `fill` also extrudes each body's boundary ring out to the material's true
+     * surface, so a boundary vertex deliberately does *not* equal the position
+     * it was interpolated from. The interpolation is still exactly observable
+     * on the interior, and that is where these tests read it — the extrusion
+     * has its own tests in [RenderFootprintTest].
+     *
+     * Checking the interior is not a weaker test of the lerp: the extrusion is
+     * applied uniformly to every body from the already-interpolated buffer, so
+     * an alpha mistake would show up on the interior first and identically.
+     */
+    private fun interiorParticles(toy: SquishToy): List<Int> {
+        val lattice = toy.state.bodyLattice
+        val perBody = lattice * lattice
+        return (0 until toy.state.particleCount).filter { index ->
+            val row = (index % perBody) / lattice
+            val column = (index % perBody) % lattice
+            row in 1..lattice - 2 && column in 1..lattice - 2
+        }.also {
+            assertTrue(it.isNotEmpty(), "no interior particles; the test proves nothing")
+        }
+    }
+
     @Test
     fun `alpha zero draws exactly the previous tick`() {
         val toy = movingToy()
@@ -40,7 +65,7 @@ class VertexFillTest {
 
         VertexFill.fill(toy.state, 0f, out)
 
-        for (i in 0 until toy.state.particleCount) {
+        for (i in interiorParticles(toy)) {
             assertEquals(toy.state.prevPositionX[i], out[i * 3], 1e-6f)
             assertEquals(toy.state.prevPositionY[i], out[i * 3 + 1], 1e-6f)
         }
@@ -53,7 +78,7 @@ class VertexFillTest {
 
         VertexFill.fill(toy.state, 1f, out)
 
-        for (i in 0 until toy.state.particleCount) {
+        for (i in interiorParticles(toy)) {
             assertEquals(toy.state.positionX[i], out[i * 3], 1e-6f)
             assertEquals(toy.state.positionY[i], out[i * 3 + 1], 1e-6f)
         }
@@ -71,7 +96,7 @@ class VertexFillTest {
         VertexFill.fill(toy.state, 0.25f, out)
 
         var moved = 0
-        for (i in 0 until toy.state.particleCount) {
+        for (i in interiorParticles(toy)) {
             val previous = toy.state.prevPositionY[i]
             val current = toy.state.positionY[i]
             if (current == previous) continue
