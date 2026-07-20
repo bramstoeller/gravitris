@@ -62,8 +62,8 @@ class DeformationTest {
             if (box[0] > widest) widest = box[0]
         }
 
-        val heightRatio = flattest / SimConfig.PIECE_WIDTH
-        val widthRatio = widest / SimConfig.PIECE_WIDTH
+        val heightRatio = flattest / config.pieceWidth
+        val widthRatio = widest / config.pieceWidth
         val aspect = widthRatio / heightRatio
 
         // Measured 0.852 / 1.203 / 1.412 at distanceCompliance 1e-4, against
@@ -102,7 +102,7 @@ class DeformationTest {
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val box = bodyBox(sim.state, 0)
-        val heightRatio = box[1] / SimConfig.PIECE_WIDTH
+        val heightRatio = box[1] / config.pieceWidth
 
         // Measured 0.936 at 1e-4, against 0.992 at Milestone 1's 1e-6.
         assertTrue(

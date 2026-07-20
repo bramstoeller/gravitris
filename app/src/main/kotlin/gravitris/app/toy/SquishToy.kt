@@ -109,7 +109,7 @@ class SquishToy(
      * must not be caught and ignored, so the shell has to be certain before it
      * calls rather than sorry afterwards.
      *
-     * Pieces are seeded a clear [SPAWN_CLEARANCE] above the well's top edge,
+     * Pieces are seeded a full piece extent above the well's top edge,
      * and half a piece plus its contact radius is less than that clearance, so
      * a spawn footprint cannot reach down to `wellHeight`. No particle above
      * `wellHeight` therefore implies no overlap, with margin, using only
@@ -139,7 +139,7 @@ class SquishToy(
         simulation.addPiece(
             archetype = archetype,
             centerX = config.wellWidth * 0.5f,
-            centerY = config.wellHeight + SPAWN_CLEARANCE,
+            centerY = config.wellHeight + config.pieceExtent,
         )
         settledTicks = 0
     }
@@ -206,16 +206,6 @@ class SquishToy(
     }
 
     companion object {
-        /**
-         * How far above the well's top edge a piece is seeded, in world units.
-         *
-         * Must exceed half a piece plus one contact radius, or a spawn could
-         * overlap material sitting exactly at `wellHeight` and
-         * [Simulation.addPiece] would throw. One full piece width is
-         * comfortably past that and also gives the piece a moment of free fall,
-         * so it enters the frame already moving.
-         */
-        const val SPAWN_CLEARANCE: Float = SimConfig.PIECE_WIDTH
 
         /**
          * World units per second below which a particle counts as still.

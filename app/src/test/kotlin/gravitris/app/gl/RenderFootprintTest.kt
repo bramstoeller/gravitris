@@ -239,7 +239,10 @@ class RenderFootprintTest {
                 minY = minOf(minY, y(buffer, i)); maxY = maxOf(maxY, y(buffer, i))
             }
 
-            val extent = SimConfig.PIECE_WIDTH + 2f * state.particleRadius
+            // Per ADR 0011 the material extent is the gameplay constant and the
+            // lattice is derived from it, so this is the same number at every
+            // lattice — a quality tier must not change how big a piece is.
+            val extent = config.pieceExtent
             assertEquals(extent, maxX - minX, 1e-4f, "lattice $lattice: drawn width")
             assertEquals(extent, maxY - minY, 1e-4f, "lattice $lattice: drawn height")
         }

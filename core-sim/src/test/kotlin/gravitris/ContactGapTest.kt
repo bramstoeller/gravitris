@@ -78,8 +78,9 @@ class ContactGapTest {
     @Test
     fun publishedRadiusIsHalfTheLatticeSpacing() {
         for (lattice in 4..6) {
-            val state = Simulation(SimConfig(lattice = lattice)).state
-            val expected = 0.5f * (SimConfig.PIECE_WIDTH / (lattice - 1))
+            val config = SimConfig(lattice = lattice)
+            val state = Simulation(config).state
+            val expected = 0.5f * (config.pieceExtent / lattice)
             assertEquals(
                 expected,
                 state.particleRadius,

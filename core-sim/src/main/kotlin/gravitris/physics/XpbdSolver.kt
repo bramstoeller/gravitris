@@ -72,6 +72,39 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
     var kineticEnergy: Float = 0f
         private set
 
+    // --- kinematic drag -----------------------------------------------------
+
+    /**
+     * A player drag, in well units for the whole tick, spread evenly over the
+     * substeps. Set by `Simulation` before [step]; consumed and cleared by it.
+     *
+     * **Why the solver applies this rather than the caller.** A drag is a
+     * kinematic translation: the finger moves the piece regardless of what the
+     * physics wants. Applying the whole tick's motion in one teleport before
+     * the substep loop puts the piece up to `dragDeltaX` *inside* whatever it
+     * was dragged against, and the contact solve then removes that overlap
+     * inside a single substep. [deriveVelocities] divides position change by
+     * the substep `h`, not the tick, so the overlap comes back out as a speed
+     * of `dragDeltaX / h` — `substeps` times the speed the finger was actually
+     * moving at. At 8 substeps a leisurely 3 units/s drag manufactured 24
+     * units/s of ejection, close to [MAX_SPEED], every tick for as long as the
+     * finger was held. That is the "interlocked, vibrating, then apart" the
+     * client reported: the vibration lasts exactly as long as the drag.
+     *
+     * Spreading the same translation over the substeps makes the manufactured
+     * speed `(dragDeltaX / substeps) / h` — which is just `dragDeltaX / TICK`,
+     * the finger's real speed, independent of the substep count. The piece
+     * still squashes against whatever it is pushed into, because the contact
+     * solve still resolves the overlap; it simply stops being resolved
+     * `substeps` times too hard.
+     *
+     * Measured on the two-body repro (`InterlockJitterTest`): peak kinetic
+     * energy during a held drag falls from 162 to under the quiet threshold,
+     * and no longer grows with the substep count.
+     */
+    var dragBody: Int = -1
+    var dragDeltaX: Float = 0f
+
     // --- tick ---------------------------------------------------------------
 
     fun step() {
@@ -79,15 +112,44 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         if (n == 0) {
             kineticEnergy = 0f
             impactCount = 0
+            dragBody = -1
+            dragDeltaX = 0f
             return
         }
 
         beginTick(n)
-        grid.build(world.posX, world.posY, n)
 
         val h = TICK / config.substeps
         for (s in 0 until config.substeps) {
             integrate(h, n)
+            applyDragSubstep()
+            // Rebuilt every substep, not every tick (revising ADR 0003 §1).
+            //
+            // The narrowphase stencil reaches one cell — `2 * particleRadius`,
+            // 0.45 well units at lattice 5 — around the cell a particle was
+            // bucketed into. A pair bucketed two cells apart is never tested,
+            // and at build time such a pair is at least one cell apart, so the
+            // stencil is only sound while a pair cannot close a cell's width
+            // before the next rebuild.
+            //
+            // Per *tick* that bound does not hold: two particles may each move
+            // `MAX_SPEED * TICK` = 0.5 units, closing 1.0 against a 0.45 cell.
+            // Measured, two bodies converging faster than ~35 units/s
+            // interpenetrated up to 0.39 of a particle diameter with no contact
+            // ever being detected, and the correction — rigid, resolved inside
+            // one substep — came back out as ejection velocity at the terminal
+            // cap. It is non-monotonic in closing speed (clean at 50, deep at
+            // 40 and 60), which is the signature of a missed pair rather than
+            // of a stiffness limit.
+            //
+            // Per *substep* the bound holds with margin: `MAX_SPEED * h` is
+            // 0.0625, closing 0.125 against the same 0.45 cell, a 3.6x margin.
+            //
+            // Cost measured on the ADR 0001 reference scene (960 particles, 60
+            // bodies): a build is 0.6% of a step, and seven extra builds raised
+            // a step from 468 to 478 us, +2.1%. That is a relative cost and
+            // survives the 12.06x device derating unchanged.
+            grid.build(world.posX, world.posY, n)
             // XPBD accumulates a Lagrange multiplier per constraint within a
             // substep; it must be reset at the start of each one or the
             // effective compliance drifts.
@@ -100,6 +162,30 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         }
 
         endTick(n)
+        dragBody = -1
+        dragDeltaX = 0f
+    }
+
+    /**
+     * One substep's share of the pending drag.
+     *
+     * `substepPrev` moves with the position, so a piece dragged through empty
+     * space derives no velocity from the drag at all — the property the
+     * original per-tick translation was written to have, and which the
+     * per-substep split preserves. Only the part of the motion the contact
+     * solve *undoes* becomes velocity, which is the part that physically
+     * should.
+     */
+    private fun applyDragSubstep() {
+        val body = dragBody
+        if (body < 0 || dragDeltaX == 0f) return
+        val step = dragDeltaX / config.substeps
+        val base = body * world.particlesPerBody
+        for (k in 0 until world.particlesPerBody) {
+            val i = base + k
+            world.posX[i] += step
+            world.substepPrevX[i] += step
+        }
     }
 
     private fun beginTick(n: Int) {

@@ -402,10 +402,17 @@ class SolverBehaviourTest {
         assertEquals(1, s.level)
         assertFalse(s.landing.valid, "the landing silhouette is Stage 4")
         assertEquals(config.bandCount, s.bandFill.size)
-        assertTrue(s.bandFill.all { it == 0f }, "coverage bands are Stage 3")
         assertTrue(s.bandClearProgress.all { it == -1f }, "-1 means 'not clearing'")
         assertEquals(config.wellHeight / config.bandCount, s.bandHeight)
         assertEquals(config.lattice, s.bodyLattice)
+
+        // Coverage bands were Stage 3 and are now live, so this no longer
+        // asserts they read zero. What it does assert is that a simulation
+        // nobody called `start()` on deals no pieces: `TestScenes.pile` and the
+        // reference benchmark both seed a scene and measure it, and a piece
+        // arriving mid-measurement would corrupt every number they produce.
+        assertEquals(4, s.bodyCount, "an unstarted simulation must not spawn")
+        assertEquals(-1, s.activePieceBody, "an unstarted simulation has no active piece")
     }
 
     @Test

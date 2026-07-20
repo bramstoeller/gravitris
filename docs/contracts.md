@@ -295,9 +295,19 @@ Uniforms:
 | uniform | meaning |
 | ------- | ------- |
 | `uPalette[N]` | per-archetype `{hue, sat, light, grainScale}` — owned by `:app`, extensible without a shader change |
-| `uBandFill[20]` | per-band fill 0..1 |
-| `uBandClear[20]` | per-band clear-envelope progress, -1 when not clearing |
-| `uBandBottomY`, `uBandHeight` | band geometry for world-Y lookup |
+| `uBandFill[20]` | per-band fill 0..1. **Anticipation glow only** — never ignition or dissolve |
+| `uBandClearProgress[20]` | per-band clear-envelope progress, -1 when not clearing. Drives ignition, hold and dissolve |
+| `uBandBottomY`, `uBandInvHeight` | band geometry for world-Y lookup |
+
+`uBandInvHeight` is the **reciprocal** of `SimState.bandHeight`, uploaded as
+`1f / state.bandHeight`, because the shader multiplies rather than divides:
+`(worldY - uBandBottomY) * uBandInvHeight`. The ugly name is deliberate and is
+not a candidate for tidying. Renaming it to `uBandHeight` and uploading
+`bandHeight` would scale every band lookup by height² — glow landing in the
+wrong bands, with no compile error and no assertion to catch it. It stays
+invisible at the default `wellHeight / bandCount = 20 / 20 = 1.0`, and appears
+only once the well geometry changes, which is exactly what ADR 0010 does at
+runtime from the display insets.
 | `uOverflow` | spawn-zone warning intensity 0..1 (ADR 0005) |
 | `uTime` | seconds |
 | *look parameters* | the UX Designer's named tunables |
