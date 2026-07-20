@@ -23,6 +23,11 @@ import org.junit.jupiter.api.Test
  */
 class LoseConditionTest {
 
+    private companion object {
+        /** Long enough for a non-clearing well to top out with margin. */
+        const val BUDGET = 15000
+    }
+
     private fun config(w: Float = 6f, h: Float = 12f) =
         SimConfig(lattice = 5, wellWidth = w, wellHeight = h)
 
@@ -145,6 +150,38 @@ class LoseConditionTest {
             if (sim.state.phase == Phase.GameOver) { gameOverAt = t; break }
         }
         assertEquals(9, gameOverAt, "a 10-tick grace tops out on the 10th tick")
+    }
+
+    @Test
+    fun `clearing staves off the top-out a non-clearing well hits`() {
+        // The observable form of "a clear resolves a would-be overflow": in the
+        // same well, a game that can clear frees space and survives far longer
+        // than one that never can. A literal clear-vs-overflow precedence test
+        // would be vacuous — the two states are mutually exclusive by
+        // construction (overflow has no active piece to lock into a clear) — so
+        // this locks the interaction that is actually observable instead.
+        // A well wide enough that bands can fill horizontally and clear; the
+        // narrow default never clears before it tops out, which is a fine
+        // baseline but no contrast.
+        val wide = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f, seed = 7L)
+        fun ticksToGameOver(clearThreshold: Float): Int {
+            val sim = Simulation(wide)
+            sim.tuning.clearThreshold = clearThreshold
+            sim.start()
+            val input = InputFrame()
+            var t = 0
+            while (sim.state.phase != Phase.GameOver && t < BUDGET) { sim.step(input); t++ }
+            return t
+        }
+
+        val neverClears = ticksToGameOver(clearThreshold = 2f) // unreachable
+        val clears = ticksToGameOver(clearThreshold = 0.85f)
+
+        assertTrue(neverClears < BUDGET, "the non-clearing well must actually top out to be a baseline")
+        assertTrue(
+            clears > neverClears,
+            "clearing frees space and must delay the top-out (clears=$clears, neverClears=$neverClears)",
+        )
     }
 
     @Test
