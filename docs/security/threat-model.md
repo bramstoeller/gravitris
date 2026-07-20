@@ -27,6 +27,13 @@ Risk 3 is the non-obvious one and is expanded in §4. It is the reason the
 "no network permission" guarantee, as currently worded in the brief, is not
 quite true as stated.
 
+**The app is no longer permission-free.** Impact haptics require
+`android.permission.VIBRATE`, so CHK-1 has moved from "zero permissions" to a
+governed allowlist of exactly that one, with `INTERNET` banned unconditionally.
+The allowlist, what that change cost, and how it may be widened are in §5.
+Hardening CHK-1 uncovered **finding S-2 (High, fixed)** — a complete bypass of
+the check via `<uses-permission-sdk-23>` — recorded in §5.
+
 Signing key custody is handled separately in
 `docs/security/signing-and-key-custody.md` — it is client-facing and must be
 handed over **before** the first APK, not at release.
@@ -152,10 +159,15 @@ Enforced by CHK-3.
 
 ## 5. Manifest posture — required, and enforced
 
-The app requests **nothing**. The required end state of the *merged* manifest:
+The app requests **exactly one permission**. The required end state of the
+*merged* manifest:
 
-- **Zero `<uses-permission>` entries.** Not "only safe ones" — zero.
-- `android.permission.INTERNET` **absent**, and actively blocked (below).
+- **Only permissions on the allowlist below.** Anything else — from our manifest
+  or any dependency's, at any depth — fails the build.
+- `android.permission.INTERNET` **absent**, actively blocked (below), and banned
+  **unconditionally**: the ban does not consult the allowlist, so adding
+  `INTERNET` to the allowlist does not permit it.
+- `android:allowBackup="false"` and restrictive `dataExtractionRules` (S-1).
 - `android:allowBackup="false"` and restrictive `dataExtractionRules` (S-1).
 - `android:debuggable` absent from release builds (the Android Gradle Plugin
   handles this; CHK-2 verifies it rather than trusting it).
@@ -164,6 +176,50 @@ The app requests **nothing**. The required end state of the *merged* manifest:
 - No `<provider>`, `<service>`, or `<receiver>` unless a later item justifies
   one in writing.
 
+### The permission allowlist
+
+| Permission | Protection level | Why | Approved |
+| ---------- | ---------------- | --- | -------- |
+| `android.permission.VIBRATE` | **normal** | Impact haptics scaled to mass and fall speed. `Vibrator.vibrate()` requires it; the permission-free `View.performHapticFeedback()` has no amplitude control and discards the energy ramp that makes blocks read as heavy. | Security Engineer, 2026-07-20, `.team/reviews/security-chk1-allowlist.md` |
+
+`VIBRATE` is **normal**, not dangerous: granted at install, no runtime prompt,
+no data access, no network. The worst it can do is buzz the device. It does not
+weaken the no-network guarantee, which rests entirely on the absence of
+`INTERNET`.
+
+**CHK-1 originally asserted zero permissions.** That was a bright line, and I
+preferred it. An allowlist is a slope, and this is the honest accounting of what
+was lost and what was kept:
+
+- **Kept:** a dependency contributing *any* permission still turns the build
+  red, which was the property the client actually asked to have enforced. The
+  guarantee was never "zero" for its own sake — it was "no permission arrives
+  that nobody decided on".
+- **Kept, and strengthened:** `INTERNET` is banned on a code path that does not
+  consult the allowlist. Adding it to the allowlist does not permit it. This was
+  verified by test, not assumed — see the review record.
+- **Lost:** the check no longer proves its own correctness by being trivially
+  empty. It now depends on a list staying short.
+
+**Governance — how the allowlist may be widened.** Adding an entry is a Security
+Engineer decision, recorded here and in `.team/reviews/`. Three things make a
+silent widening harder:
+
+1. **Each entry must carry a justification string.** The build fails if any is
+   blank, so widening cannot be a one-word edit — the author must state why, in
+   the same diff, which makes the change legible to a reviewer skimming it.
+2. **This table must be updated** in the same change. A code-only edit leaves
+   the two out of sync and should be treated as a review failure.
+3. **`INTERNET` is unreachable by this route at all**, so the worst case for a
+   careless widening is a non-network permission.
+
+Be clear about the limit: **none of this stops a determined author**, and I am
+not going to claim it does. It removes the *silent* path, not the deliberate
+one. The control that would genuinely gate this is a CODEOWNERS entry over
+`buildSrc` plus branch protection requiring code-owner review — which only bites
+once merges go through pull requests on `origin` rather than locally. Recorded
+as a follow-up; it is not in place today.
+
 ### Why "absent from our manifest" is not sufficient
 
 The manifest that ships is the **merged** manifest. Any library, at any depth in
@@ -171,6 +227,42 @@ the dependency graph, can contribute `<uses-permission android:name="android.
 permission.INTERNET"/>` from its own manifest, and the merger will add it
 silently. Nobody has to edit our file for the guarantee to break. Checking
 `app/src/main/AndroidManifest.xml` therefore proves nothing.
+
+### Finding S-2 — `<uses-permission-sdk-23>` bypassed CHK-1 (High, fixed)
+
+**This was my error, not the implementer's.** The original CHK-1 specification
+said "zero `<uses-permission>` elements", and that is precisely what was built.
+It is the wrong element set.
+
+Android has a sibling element that requests a permission just as effectively:
+
+```xml
+<uses-permission-sdk-23 android:name="android.permission.INTERNET" />
+```
+
+It requests the permission on API 23 and above. **`minSdk` is 29**, so that is
+every device this app supports — a total bypass, not a partial one. A dependency
+contributing the `sdk-23` form would have been granted `INTERNET` on 100% of the
+install base while the build stayed green and the client kept telling people the
+app had no network access.
+
+Exploitation is the same one-line manifest entry in any transitive dependency
+that the original check was written to stop; the `sdk-23` spelling simply made
+it invisible.
+
+**Verified, not asserted.** Injecting the line above into the real manifest: the
+pre-fix check reported `BUILD SUCCESSFUL`; the fixed check fails with both the
+allowlist violation and the unconditional `INTERNET` ban. Evidence in
+`.team/reviews/security-chk1-allowlist.md`.
+
+**Fix:** match every element whose tag name begins with `uses-permission`,
+rather than the literal tag. Prefix-matching is deliberately fail-closed — a
+future platform version adding another `<uses-permission-*>` form is caught by
+default instead of being missed until someone remembers to update a list.
+
+The generalised lesson, which is the same one that motivated this whole section:
+**enumerate the property, not the spelling.** "No permission is requested" is
+the property; `<uses-permission>` was only one way to spell it.
 
 Two controls, and we want both:
 
@@ -223,7 +315,7 @@ All are cheap and fast; none needs a device or emulator.
 
 | ID | Check | Where | Fails when |
 | -- | ----- | ----- | ---------- |
-| **CHK-1** | Assert the **merged** manifest contains zero `<uses-permission>` elements | Gradle task wired into `check`, reading `app/build/intermediates/merged_manifests/<variant>/AndroidManifest.xml`; plus `aapt2 dump permissions` on the release artifact at the release gate | Any permission is present, from our manifest or any dependency's |
+| **CHK-1** | Assert every element in the **merged** manifest whose tag starts with `uses-permission` names a permission on the allowlist (§5), and that `INTERNET` is absent regardless of the allowlist | Gradle task `check<Variant>MergedManifest` wired into `check`, bound to the AGP variant API artifact `SingleArtifact.MERGED_MANIFEST` rather than a hardcoded intermediates path; plus `aapt2 dump permissions` on the release artifact at the release gate | Any off-allowlist permission is present, from our manifest or any dependency's, in any `uses-permission*` spelling — or `INTERNET` in any form |
 | **CHK-2** | Assert release artifact is not debuggable and has no `android:testOnly` | `aapt2 dump badging` at release | Debug flags leak into a release build |
 | **CHK-3** | Assert merged manifest has `allowBackup="false"` and a `dataExtractionRules` reference | Same task as CHK-1 | S-1 regresses |
 | **CHK-4** | Assert no exported component other than the launcher activity | Same task as CHK-1 | A dependency contributes an exported service/receiver/provider |
@@ -306,10 +398,11 @@ open.
 **What must be true before this can be truthfully filled in**, if the client
 later publishes:
 
-- **CHK-1 green** — zero permissions in the merged manifest. If any dependency
-  has contributed `INTERNET` in the meantime, "no data collected" is no longer
-  automatically defensible and every network path needs auditing before the form
-  is signed.
+- **CHK-1 green** — no permission in the merged manifest beyond the §5
+  allowlist. `VIBRATE` is not declarable data collection and does not affect the
+  form. If any dependency has contributed `INTERNET` in the meantime, "no data
+  collected" is no longer automatically defensible and every network path needs
+  auditing before the form is signed.
 - **CHK-3 green** — `allowBackup="false"`. S-1 is the detail most likely to make
   the declaration inaccurate without anyone noticing, since it is a platform
   default rather than something we chose.
@@ -361,10 +454,15 @@ consequences, both directions:
   device — an independent party can rebuild from source and confirm nothing was
   inserted. Under Play App Signing that chain was broken at upload. This
   materially increases what our supply-chain controls actually buy.
-- **The permission list is inspectable on-device before install.** "This app
-  requests no permissions" is visible to every recipient on the installer
-  screen, with no tooling. CHK-1 is what keeps that true, and it is now a
-  user-facing claim rather than an internal one.
+- **The permission list is inspectable by any recipient.** The claim is now
+  "one normal permission, and no network access" rather than "no permissions" —
+  see `signing-and-key-custody.md` §9 for how to state that honestly. Two
+  caveats worth knowing: `VIBRATE` is a *normal* permission, so most install
+  screens will not display it at all, and reading the complete list needs a tool
+  (`aapt2 dump permissions`) rather than the on-device installer screen. The
+  strong, tool-verifiable, kernel-enforced claim remains **the absence of
+  `INTERNET`**, and that is the one to lead with. CHK-1 is what keeps it true,
+  and it is now a user-facing claim rather than an internal one.
 
 CHK-1 through CHK-7 are unaffected by the distribution change and stand exactly
 as specified in §6.
@@ -374,14 +472,21 @@ as specified in §6.
 Per my remit: critical and high findings block release.
 
 - **No critical findings.**
-- **No high findings in the app.** The High-severity supply-chain risk is a
-  standing risk managed by the dependency policy, not an open defect — it does
+- **S-2 (High) — found and fixed, does not block.** `<uses-permission-sdk-23>`
+  bypassed CHK-1 entirely. Fixed on `fix/chk1-sdk23-bypass`; **that branch must
+  merge into `feat/app-shell` before `feat/app-shell` merges to `main`.** If it
+  does not, the release ships with the product's headline guarantee unenforced,
+  and this becomes blocking.
+- **No other high findings in the app.** The High-severity supply-chain risk is
+  a standing risk managed by the dependency policy, not an open defect — it does
   not block, provided the policy's controls are actually implemented.
 - **S-1 (Medium)** does not formally block the binary, but it must be fixed
   before any public claim that no data leaves the device. That claim is in the
   brief's success criteria and, under direct distribution, is likely to be made
   verbally by the client to each person they share the APK with — which is
   harder to correct later than a store listing. Fix it before first handover.
+  *(Implemented on `feat/app-shell`: `allowBackup="false"` plus
+  `dataExtractionRules` are present and asserted by CHK-3.)*
 
-Nothing found here is exploitable in anything currently running, because nothing
-is running. No escalation required.
+S-2 was exploitable in code that was about to merge, not in anything running.
+Escalated to the Product Lead immediately rather than held for a gate.
