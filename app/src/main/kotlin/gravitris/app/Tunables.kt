@@ -69,17 +69,14 @@ object Tunables {
     const val HAPTIC_MIN_AMPLITUDE = 60
     const val HAPTIC_MAX_AMPLITUDE = 255
 
-    // --- simulation pacing (ADR 0006) --------------------------------------
+    // --- simulation pacing (ADR 0006 / 0013) -------------------------------
 
-    /** Exactly 1/60s. Never variable, never scaled by wall-clock delta. */
-    const val TICK_SECONDS = 1f / 60f
-    const val TICK_NANOS = 16_666_667L
-
-    /**
-     * Clamp a frame delta to at most 4 ticks so a stall cannot cascade into a
-     * death spiral of catch-up steps (ADR 0006 §3).
-     */
-    const val MAX_CATCH_UP_TICKS = 4
+    // The fixed tick, the no-clamp accumulator and the catch-up bound now live
+    // in :core-sim's FrameDriver (ADR 0013) — the shell used to keep its own
+    // TICK_NANOS / MAX_CATCH_UP_TICKS here and clamp the delta itself, which is
+    // exactly the wall-clock-dilating behaviour ADR 0013 removed. Those
+    // constants are gone with the toy; the app reads Simulation.TICK through the
+    // driver and never paces the sim on its own again.
 
     /** ADR 0006 §4: ask the LTPO panel for 60Hz explicitly. Not asking is
      *  itself a decision, and it is the wrong one. */

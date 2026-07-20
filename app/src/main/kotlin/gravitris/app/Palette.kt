@@ -82,6 +82,26 @@ object Palette {
     /** Total slots uploaded to the shader. */
     const val SIZE = 7
 
+    /**
+     * Folds a core piece archetype (`0 until Simulation.ARCHETYPE_COUNT`,
+     * currently **7**) onto one of the [PIECE_COUNT] = **6** piece hues.
+     *
+     * The two counts disagree: the core deals seven shape-archetypes (colour
+     * only at Stage 3), while `piece-identity.md` specifies six hues. The
+     * Milestone-1 toy hid this by only ever dealing six archetypes; the real
+     * piece sequence deals all seven, and archetype 6 would otherwise index
+     * [SURFACE_INDEX] and paint a piece in the **well-surface grey** — a piece
+     * the player can barely see against the well. This folds it back onto a real
+     * hue instead, which is what makes the wired game render correctly.
+     *
+     * It is a **placeholder for a design decision, flagged to UX**: seven
+     * archetypes over six hues forces a collision, so archetype 6 shares hue 0
+     * here. The proper resolution is one of — a seventh `piece-identity.md` hue,
+     * the core dealing six archetypes, or a designed 7->6 map — none of which the
+     * shell should make unilaterally.
+     */
+    fun pieceHue(archetype: Int): Int = Math.floorMod(archetype, PIECE_COUNT)
+
     /** The flat `vec3` array for `glUniform3fv`. Returned directly rather than
      *  copied: it is read-only by convention, exactly like `SimState`'s arrays. */
     fun asVec3Array(): FloatArray = RGB

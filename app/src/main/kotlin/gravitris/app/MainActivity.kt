@@ -86,6 +86,7 @@ class MainActivity : Activity() {
             onLayout = { worldPerDp ->
                 gameView.post { gameView.configureGestures(worldPerDp) }
             },
+            clearThresholdOverride = debugClearThresholdOverride(),
         )
         gameView.setRenderer(renderer)
         // Must follow setRenderer(): that is what creates the GLThread this
@@ -370,5 +371,29 @@ class MainActivity : Activity() {
         haptics.cancel()
         gameView.queueEvent { renderer.setPaused(true) }
         gameView.onPause()
+    }
+
+    /**
+     * A debug-only clear-threshold override read from the launch intent, or null
+     * to leave the [gravitris.game.SimConfig] default (0.90) in place.
+     *
+     * Gated on `FLAG_DEBUGGABLE`, the same idiom as [runSolverBenchmark] and for
+     * the same reason: the shipped game must not let anyone dial its rules from
+     * outside. It exists so `make playthrough` can pass a reachable threshold
+     * (`--ef $EXTRA_CLEAR_THRESHOLD 0.55`) and film a real band clear on the slow
+     * software emulator, where packing a band to 90% by crude `adb` input in one
+     * scripted session is not reliable. It changes *when* a band clears, never
+     * *how*. A release build ignores it entirely.
+     */
+    private fun debugClearThresholdOverride(): Float? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+        if (!intent.hasExtra(EXTRA_CLEAR_THRESHOLD)) return null
+        val value = intent.getFloatExtra(EXTRA_CLEAR_THRESHOLD, Float.NaN)
+        return if (value.isFinite() && value in 0f..1f) value else null
+    }
+
+    private companion object {
+        /** Launch-intent extra (float, 0..1) for [debugClearThresholdOverride]. */
+        const val EXTRA_CLEAR_THRESHOLD = "gravitris.debug.clearThreshold"
     }
 }
