@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Gravitris</string>
-    <string name="stage0_placeholder">Gravitris — Stage 0 build scaffold.\nNo renderer, no solver, no game yet.</string>
+    <!--
+        docs/ux/screens/playing.md: "The canvas itself is exposed to TalkBack
+        as one static-labelled element ('Game board') per accessibility.md —
+        this is a stated limitation, not a gap to close later."
+    -->
+    <string name="game_board">Game board</string>
 </resources>
