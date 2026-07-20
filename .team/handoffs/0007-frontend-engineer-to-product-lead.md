@@ -2,11 +2,14 @@
 
 **Stage 1, Track B — the `:app` shell.**
 Branch `feat/app-shell`, based on `chore/build-foundation`.
-Commits `fcded24..1a4c852` (7 commits). Pushed to `origin` after each.
+Commits `fcded24..3e67fb9`, including the Security Engineer's `4cc81a0` merged
+in. Pushed to `origin` after each.
 
 *Updated after the Product Lead's decisions on the three items raised below.
-Compression darkening is built (§1 resolved); the readout is labelled as a
-baseline (§3); the CHK-1 change is untouched pending security review (§2).*
+Compression darkening is built; the readout is labelled as a baseline; the
+CHK-1 change was reviewed and approved by the Security Engineer, who found a
+High-severity bypass underneath it that is now fixed and merged. Nothing here
+is still blocking.*
 
 ---
 
@@ -166,11 +169,49 @@ the cap acting as a safety rail rather than the normal operating point.
 
 ---
 
-## The one thing still needing a decision before merge
+## The VIBRATE permission and the CHK-1 change — reviewed, and a bypass found
 
 **I added `android.permission.VIBRATE`, which required changing the security
-check the client specifically asked to have enforced.** Per the Product Lead
-this is with the Security Engineer and I have not touched it since.
+check the client specifically asked to have enforced.** The Security Engineer
+approved the reasoning and the shape of the change.
+
+They also found a **High-severity bypass underneath it**, and it is worth
+recording plainly because it was mine to miss:
+
+CHK-1 matched the literal `<uses-permission>` tag. That is exactly what the
+original spec asked for, and the element set was wrong.
+`<uses-permission-sdk-23 android:name="android.permission.INTERNET"/>` requests
+the permission on API 23+, and `minSdk` is 29 — so every device this app
+supports. `getElementsByTagName("uses-permission")` never matches it, and the
+`tools:node="remove"` block targets the other spelling and does not help. Any
+transitive dependency using that form would have shipped `INTERNET` to 100% of
+the install base with a green build, while the client was telling people face
+to face that the app has no network access.
+
+Their fix (`4cc81a0`) is merged into this branch as `3e67fb9`. It prefix-matches
+any tag beginning `uses-permission`, so it is fail-closed by construction and a
+future `<uses-permission-sdk-NN>` form is caught by default rather than missed
+until someone remembers to update a list. It also requires a written
+justification for every allowlist entry, so widening the list cannot be a
+one-word edit.
+
+No merge conflict — I had not touched the check since it went for review.
+
+**I re-verified it independently rather than trusting the merge**, on the real
+Gradle task against the real merged manifest:
+
+| Injected | Result |
+| -------- | ------ |
+| `<uses-permission-sdk-23>` INTERNET | fails, both the allowlist and the unconditional INTERNET guard fire |
+| `<uses-permission-sdk-23>` CAMERA | fails on the allowlist alone |
+| legitimate manifest, debug and release | passes |
+
+**What I take from this.** I built the check correctly against a spec that was
+wrong about the platform, and I did not go and confirm that `<uses-permission>`
+was the *only* element that grants a permission. When implementing a security
+control, matching the spec is not the same as covering the threat, and the
+enumeration is the part worth checking against the platform rather than against
+the document.
 
 `Vibrator.vibrate()` requires it. The only permission-free alternative,
 `View.performHapticFeedback()`, plays a fixed canned effect with no amplitude
@@ -355,15 +396,13 @@ impact feels the same we can tell hardware from curve without a day of retuning.
 
 ## Open questions
 
-1. **Security-engineer sign-off on the CHK-1 allowlist change.** Blocks merge.
-   Untouched since the Product Lead sent it for review.
-2. **Does the slop-crossing behaviour match UX's intent?** (Deviation 2.)
-3. **Does UX want a say on the compression darkening's strength and cap?** It
+1. **Does the slop-crossing behaviour match UX's intent?** (Deviation 2.)
+2. **Does UX want a say on the compression darkening's strength and cap?** It
    is currently an engineering judgement — 55% maximum darkening, chosen so hue
    survives. It is one constant if they want it different, but it interacts
    with `piece-identity.md`'s lightness ladder, which I did not want to
    re-derive unilaterally.
-4. **Is `bodyLattice` fixed at 5 for Milestone 1**, or does the startup quality
+3. **Is `bodyLattice` fixed at 5 for Milestone 1**, or does the startup quality
    calibration (ADR 0009) need to select it? The renderer takes lattice as a
    constructor parameter and the topology is built per lattice size, so
    supporting 4/5/6 is small — but nothing selects it today.
