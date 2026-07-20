@@ -5,6 +5,7 @@ import gravitris.game.SimConfig
 import gravitris.game.Simulation
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -90,6 +91,93 @@ class DeterminismTest {
             TestScenes.fingerprint(sim.state),
             "the core must not depend on InputFrame identity or mutate it",
         )
+    }
+
+    /**
+     * The physics tests above drive pieces in by hand. The *game* adds two
+     * things that must be deterministic in their own right: the piece sequence
+     * (a seeded PRNG) and a clear (which calls `removeBody`, rebasing every
+     * particle and constraint array). A replay fixture is only a fixture if the
+     * same seed deals the same pieces and removes the same bodies in the same
+     * order, bit for bit.
+     *
+     * Tuning is left at its defaults on purpose: `MechanicTuning` warns that a
+     * value changed mid-run makes the run unrepeatable, and a replay fixture is
+     * exactly the thing that must not touch it. So this runs long enough for a
+     * clear to occur naturally at the default threshold rather than forcing one
+     * by lowering it.
+     */
+    private fun runStartedGame(frames: Int, seed: Long): Pair<IntArray, Boolean> {
+        val sim = Simulation(config().copy(seed = seed))
+        sim.start()
+        val input = InputFrame()
+        val initialBodies = sim.state.bodyCount
+        var maxBodies = initialBodies
+        repeat(frames) {
+            sim.step(input)
+            if (sim.state.bodyCount > maxBodies) maxBodies = sim.state.bodyCount
+        }
+        // A clear removes bodies, so bodyCount ends below its peak. This proves
+        // the run actually exercised removeBody rather than only the spawn path.
+        return TestScenes.fingerprint(sim.state) to (sim.state.bodyCount < maxBodies)
+    }
+
+    @Test
+    fun `a running game is bit-identical across runs, clears included`() {
+        val (a, aCleared) = runStartedGame(2600, seed = 20260720L)
+        val (b, _) = runStartedGame(2600, seed = 20260720L)
+        assertArrayEquals(a, b, "two runs of a seeded game must be bit-identical")
+        assertTrue(
+            aCleared,
+            "2600 ticks did not reach a clear, so removeBody was not exercised — raise the budget",
+        )
+    }
+
+    @Test
+    fun `a running game does not depend on where the step loop is split`() {
+        val sim = Simulation(config().copy(seed = 20260720L))
+        sim.start()
+        val input = InputFrame()
+        repeat(1300) { sim.step(input) }
+        repeat(1300) { sim.step(input) }
+
+        val (whole, _) = runStartedGame(2600, seed = 20260720L)
+        assertArrayEquals(
+            whole,
+            TestScenes.fingerprint(sim.state),
+            "1300 + 1300 must equal 2600 for a running game too",
+        )
+    }
+
+    @Test
+    fun `a different seed deals a different sequence of pieces`() {
+        // At Stage 3 an archetype is a colour index only — every piece is the
+        // same square lattice — so two seeds deal physically identical piles
+        // and the *positions* cannot tell them apart. What the seed changes is
+        // the archetype order, which is the thing that must actually be seeded.
+        assertFalse(
+            dealtArchetypes(1200, seed = 1L).contentEquals(dealtArchetypes(1200, seed = 2L)),
+            "two seeds dealt the same archetype sequence — the piece bag is not seeded",
+        )
+        assertArrayEquals(
+            dealtArchetypes(1200, seed = 7L),
+            dealtArchetypes(1200, seed = 7L),
+            "the same seed must deal the same archetype sequence",
+        )
+    }
+
+    /**
+     * The archetype of every body present after [frames] ticks. Run short
+     * enough (< first clear) that no body has been removed, so this is the deal
+     * order intact.
+     */
+    private fun dealtArchetypes(frames: Int, seed: Long): IntArray {
+        val sim = Simulation(config().copy(seed = seed))
+        sim.start()
+        val input = InputFrame()
+        repeat(frames) { sim.step(input) }
+        val n = sim.state.bodyCount
+        return IntArray(n) { sim.state.bodyArchetype[it] }
     }
 
     @Test
