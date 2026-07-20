@@ -67,3 +67,27 @@ Milestone 1 did its job: it answered the question it existed to ask, and the
 answer is no. Not fun-yet, not pretty-yet — the core mechanic is not present.
 Better to know this now, with one block and nothing else built, than after the
 art direction and the game rules are layered on top.
+
+---
+
+## Third device run — 2026-07-20, after the gap fix and softening
+
+`15.0ms mean · 24.5 p95 · 43.9 max · 8.2 cpu · 66.5 fps · 23 jank/s · 544 tri · 17 bodies · 5.0 KB/f`
+`shade:on · haptics:fixed (no amp control) · imp:1247 puls:346 e:0.17 · sys vib:? touch-fb:OFF`
+
+**Fixed and confirmed by the client:** bodies now touch — no margin, contact reads
+as a line. Deformation is clearly visible. Client: *"Ziet er goed uit nu, blokjes
+raken elkaar."*
+
+**Answered:** the Fairphone 6 reports **no amplitude control**. The open question
+from the haptics work is closed, and the answer is the unwelcome one — the
+scaled-impact cue that justified the `VIBRATE` permission is not available on the
+client's device. They feel a fixed buzz. `imp:1247 puls:346` shows most impacts
+fall below the pulse floor.
+
+**New, not yet triaged:** the two airborne bodies in the screenshot show sharp
+concave spikes and a folded, crumpled silhouette rather than smooth squash. May
+be legitimate deformation from a mid-air collision, or the boundary extrusion
+inverting on heavily deformed bodies. Needs a verdict.
+
+**Still janky:** 23 jank/s and a 43.9 ms worst frame at only 17 bodies.
