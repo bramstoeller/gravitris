@@ -83,11 +83,37 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         }
 
         beginTick(n)
-        grid.build(world.posX, world.posY, n)
 
         val h = TICK / config.substeps
         for (s in 0 until config.substeps) {
             integrate(h, n)
+            // Rebuilt every substep, not every tick (revising ADR 0003 §1).
+            //
+            // The narrowphase stencil reaches one cell — `2 * particleRadius`,
+            // 0.45 well units at lattice 5 — around the cell a particle was
+            // bucketed into. A pair bucketed two cells apart is never tested,
+            // and at build time such a pair is at least one cell apart, so the
+            // stencil is only sound while a pair cannot close a cell's width
+            // before the next rebuild.
+            //
+            // Per *tick* that bound does not hold: two particles may each move
+            // `MAX_SPEED * TICK` = 0.5 units, closing 1.0 against a 0.45 cell.
+            // Measured, two bodies converging faster than ~35 units/s
+            // interpenetrated up to 0.39 of a particle diameter with no contact
+            // ever being detected, and the correction — rigid, resolved inside
+            // one substep — came back out as ejection velocity at the terminal
+            // cap. It is non-monotonic in closing speed (clean at 50, deep at
+            // 40 and 60), which is the signature of a missed pair rather than
+            // of a stiffness limit.
+            //
+            // Per *substep* the bound holds with margin: `MAX_SPEED * h` is
+            // 0.0625, closing 0.125 against the same 0.45 cell, a 3.6x margin.
+            //
+            // Cost measured on the ADR 0001 reference scene (960 particles, 60
+            // bodies): a build is 0.6% of a step, and seven extra builds raised
+            // a step from 468 to 478 us, +2.1%. That is a relative cost and
+            // survives the 12.06x device derating unchanged.
+            grid.build(world.posX, world.posY, n)
             // XPBD accumulates a Lagrange multiplier per constraint within a
             // substep; it must be reset at the start of each one or the
             // effective compliance drifts.
