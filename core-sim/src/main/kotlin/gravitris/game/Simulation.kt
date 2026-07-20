@@ -200,12 +200,31 @@ class Simulation(private val config: SimConfig) {
      *
      * Two gates, both from ADR 0005.
      *
-     * **Quiescence.** "A clear also requires quiescence ... this stops a clear
-     * firing on a transient bounce spike, which would be the mirror image of
-     * the unfairness [the losing condition] exists to prevent." The lock
-     * debounce has already established that the *piece* is still; this asks
-     * the same of the stack. It is bounded by the lock timeout above rather
-     * than waited on forever, for the creep reason given there.
+     * **Quiescence, via the damping — not via a stack-wide energy test.**
+     * ADR 0005 requires that a clear not fire "on a transient bounce spike,
+     * which would be the mirror image of the unfairness [the losing condition]
+     * exists to prevent". That requirement is real and it is met here by
+     * reading the *damped* fill: rise is 0.25/tick, so a one- or two-frame
+     * bounce is attenuated to nothing while genuinely sustained material
+     * converges well inside [SimConfig.lockDebounceTicks].
+     *
+     * This used to be a second gate — `solver.kineticEnergy <=
+     * quietKineticEnergy` over the whole stack — and it was wrong twice over.
+     * **Measured, it made the clear rule unreachable in a real game:** at the
+     * lock of a 22-body pile, stack energy was 0.436 against a 0.05 threshold
+     * while the fullest band sat at 0.994 against a 0.90 threshold. The game
+     * dealt pieces forever and never cleared once in 6 000 ticks.
+     *
+     * It failed for the reason already written down one method up, in
+     * [hasSettled]: piles in this solver do not fully stop, so any wait on
+     * stack-wide quiet is a wait on something that may never happen. Worse,
+     * [hasSettled] bounds that wait with a timeout and this did not — the
+     * doc comment claimed to be "bounded by the lock timeout above", but
+     * `beginClear` is asked exactly once per lock, so a gate that fails at
+     * that instant does not retry. The clear was not delayed; it was lost.
+     *
+     * The lesson is the trap's, not this method's: a global quiet test in this
+     * solver is never a bound, and a comment asserting a bound is not one.
      *
      * **Something must actually be removed.** A band can be over threshold
      * while no body's centre of mass sits in it — material belonging to
@@ -215,12 +234,10 @@ class Simulation(private val config: SimConfig) {
      * against the removal list, not against the fill alone.
      */
     private fun beginClear(): Boolean {
-        if (solver.kineticEnergy > config.quietKineticEnergy) return false
-
         val threshold = tuning.clearThreshold
         var clearing = 0
         for (band in 0 until config.bandCount) {
-            if (bands.fillRaw[band] >= threshold) clearing++
+            if (bands.fill[band] >= threshold) clearing++
         }
         if (clearing == 0) return false
 
@@ -230,7 +247,7 @@ class Simulation(private val config: SimConfig) {
         val cleared = IntArray(clearing)
         var k = 0
         for (band in 0 until config.bandCount) {
-            if (bands.fillRaw[band] >= threshold) cleared[k++] = band
+            if (bands.fill[band] >= threshold) cleared[k++] = band
         }
 
         clearPhase = Phase.Clearing(cleared, envelopeTicks() + 1)
@@ -267,7 +284,7 @@ class Simulation(private val config: SimConfig) {
             var cy = 0f
             for (k in 0 until n) cy += world.posY[base + k]
             val band = bands.bandAt(cy / n)
-            if (band >= 0 && bands.fillRaw[band] >= threshold) removalScratch[count++] = body
+            if (band >= 0 && bands.fill[band] >= threshold) removalScratch[count++] = body
         }
         return count
     }
@@ -349,6 +366,21 @@ class Simulation(private val config: SimConfig) {
         // frame must match the material that now exists, or the cleared band
         // draws one frame of glow over a gap.
         bands.update(world.posX, world.posY, world.particleCount, world.particleRadius)
+
+        // ...and snap, because the recompute alone does not achieve that. The
+        // damping exists to swallow the *bounce* of a heavy landing, which is a
+        // transient the player should not see rewarded with a flash. Material
+        // vanishing in a clear is the opposite: a real, intended, instantaneous
+        // change. Left damped, fill only falls by FALL_PER_TICK — it halves —
+        // so the cleared band keeps glowing over empty space for several frames
+        // and the recompute above buys nothing.
+        //
+        // This snaps every band, not only the cleared ones. That is deliberate:
+        // a clear removes whole bodies, which span about three bands each, so
+        // several bands change discontinuously at once. A band elsewhere that
+        // happens to be mid-bounce loses one frame of damping, on the single
+        // frame where the largest visual event in the game is happening.
+        bands.snap()
     }
 
     // Tuning is mutable and could be left inconsistent by a dev panel mid-run,

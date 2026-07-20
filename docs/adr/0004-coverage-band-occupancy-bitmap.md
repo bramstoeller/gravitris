@@ -113,3 +113,70 @@ coarser lattices have larger particles, which stamp larger disks, which read as 
 higher fill for the same material. **The clear threshold must therefore be
 calibrated per tier**, or the startup performance tier silently changes the game
 rules. See ADR 0009.
+
+## Amendment 1 — the band-fill consumer contract (2026-07-20)
+
+Settled between the backend and frontend engineers while wiring `uBandFill`.
+Everything here **ratifies behaviour that already ships**; nothing in this
+amendment asks either module to change. It is recorded because all of it was
+true and none of it was written down, which is the condition under which the
+contact gap (ADR 0011) happened.
+
+**1. Fill is per *band*, never per row and never per body.** One value per band,
+`set cells / (bandColumns * bandRows)` = `set / 160` at the default resolution.
+Rows exist only as bitmap resolution *inside* a band; there is no per-row fill
+value anywhere in the system, and there is no per-body one either — a body
+spanning three bands contributes to all three independently. That is precisely
+what makes the glow a property of a *zone*: two fragments at the same height in
+different pieces read the identical value with no work.
+
+**2. Fill cannot exceed 1, structurally — and the reason is load-bearing.**
+`set` counts *distinct* set cells within a band's slice, so `set <= cellsPerBand`.
+The bound holds because the bitmap measures **span, not area**: overlapping
+particles cannot double-count, which is the specific reason the area-sum
+alternative was rejected in the decision above. The damping is convex
+interpolation between two values already in `0..1`, so it cannot overshoot
+either. **Consumers may rely on `0..1` without clamping**, and the shader does.
+The "why" is recorded next to the number deliberately: a bare "it cannot exceed
+1" is exactly the kind of fact that quietly stops being true.
+
+**3. `uBandFill` drives anticipation glow only. `uBandClearProgress` drives
+ignition, hold and dissolve.** Fill alone cannot animate a clear — a band at
+fill 1.0 and a band mid-dissolve are indistinguishable — so the two signals are
+separate and stay separate. Keying a flash off fill would re-trigger it, because
+fill never latches.
+
+**4. `SimState.bandFill` is damped; the clear rule fires on an undamped value
+that is not published.** Asymmetric first-order, rise 0.25/tick, fall 0.5/tick.
+The damping is correct and intentional: raw fill spikes during the bounce of a
+heavy landing, and an undamped glow would flash the well amber on every hard
+drop, teaching the player a rule that is not the rule. **The consequence is a
+trap and belongs in every consumer's head: never treat the glow as evidence of
+the decision.** Do not assert "glow crossed threshold ⇒ clear fired" against
+`bandFill`; read `bandClearProgress` leaving `-1`. Asserted against fill, such a
+test is off by a frame or two and reads as a race.
+
+**5. Fill *snaps* on the tick material is removed, rather than damping down.**
+The damping exists to swallow a transient the player should not see rewarded.
+Material vanishing in a clear is the opposite — a real, intended, instantaneous
+change. Left damped, fill merely halves on the removal tick, so a cleared band
+keeps glowing over empty space for several frames. The snap covers every band,
+not only the cleared ones, because a clear removes whole bodies spanning about
+three bands each.
+
+**6. `bandCount` is published on `SimState`.** The shader's uniform array length
+is baked in at compile time and out-of-range indexing is undefined behaviour in
+GLSL, so `:app` asserts the two agree against the authoritative runtime value
+rather than against a default-constructed config.
+
+### Naming: `uBandInvHeight` is a correctness constraint, not a preference
+
+The uniform is the **reciprocal** of `bandHeight`, because the shader multiplies:
+`(worldY - uBandBottomY) * uBandInvHeight`. Renaming it to `uBandHeight` and
+uploading `bandHeight` scales every lookup by height², putting the glow in the
+wrong bands with no compile error and no assertion. At the default
+`20 / 20 = 1.0` the bug is invisible, and it surfaces only when the well
+geometry changes — which ADR 0010 does at runtime from the display insets. The
+uglier name is the one that cannot be got wrong. `docs/contracts.md` has been
+moved onto the shader's names (`uBandClearProgress`, `uBandInvHeight`) rather
+than the reverse.
