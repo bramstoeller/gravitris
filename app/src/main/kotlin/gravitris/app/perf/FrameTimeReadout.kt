@@ -76,15 +76,19 @@ class FrameTimeReadout(context: Context) {
      * measurable UI-thread work inside the frame we are trying to measure.
      */
     fun update(snapshot: FrameSnapshot, context: RenderContext) {
+        // Every figure is an aggregate over the trailing second. Deliberately
+        // no instantaneous frame time: the text refreshes at ~4Hz, so an
+        // instantaneous reading would be one arbitrarily-chosen frame out of
+        // fifteen — noise presented with the authority of a measurement.
         view.text = String.format(
             Locale.US,
-            "%5.1fms cur  %5.1fms cpu%n" +
-                "%5.1fms p95  %5.1fms max%n" +
-                "%5.1f fps   %4d jank/s%n" +
-                "%5d tri   %4d bodies%n" +
+            "%5.1fms mean %5.1fms p95%n" +
+                "%5.1fms cpu  %5.1fms max%n" +
+                "%5.1f fps   %5d jank/s%n" +
+                "%5d tri   %5d bodies%n" +
                 "%5.1f KB/frame  %s",
-            snapshot.currentMs, snapshot.cpuMs,
-            snapshot.p95Ms, snapshot.maxMs,
+            snapshot.meanMs, snapshot.p95Ms,
+            snapshot.meanCpuMs, snapshot.maxMs,
             snapshot.fps, snapshot.jankPerSecond,
             context.triangles, context.bodies,
             context.dynamicBytesPerFrame / 1024f,

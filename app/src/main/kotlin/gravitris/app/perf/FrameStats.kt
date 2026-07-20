@@ -17,7 +17,8 @@ package gravitris.app.perf
  * that hitch while the average stays green. So this reports the distribution,
  * not a headline:
  *
- * - **cur** — the most recent frame. Jitters, and is supposed to.
+ * - **mean** — the typical frame over the last second, and the number `fps` is
+ *   derived from.
  * - **p95** — the frame time 95% of frames beat. The honest "how it runs"
  *   number.
  * - **max** — the single worst frame in the window. The stutter, undisguised.
@@ -126,16 +127,11 @@ class FrameStats(
 
         if (count == 0) return false
 
-        val newestIndex = (head - 1 + frameNanos.size) % frameNanos.size
-
-        out.currentMs = frameNanos[newestIndex].toMillis()
-        out.cpuMs = cpuNanos[newestIndex].toMillis()
         out.meanMs = (frameSum / count).toMillis()
         out.meanCpuMs = (cpuSum / count).toMillis()
         out.maxMs = worst.toMillis()
         out.p95Ms = percentile(count, 0.95f).toMillis()
         out.jankPerSecond = jank
-        out.sampleCount = count
         // Derived from the mean rather than the latest frame: an instantaneous
         // fps reading from one frame is noise, and unlike frame time, fps has
         // no honest instantaneous meaning.
@@ -177,13 +173,14 @@ class FrameStats(
  * thread. All times are milliseconds.
  */
 class FrameSnapshot {
-    var currentMs = 0f
-    var cpuMs = 0f
+    /** Mean frame-to-frame time over the window. */
     var meanMs = 0f
+
+    /** Mean time spent on our own work — simulation step plus buffer fill. */
     var meanCpuMs = 0f
+
     var p95Ms = 0f
     var maxMs = 0f
     var fps = 0f
     var jankPerSecond = 0
-    var sampleCount = 0
 }

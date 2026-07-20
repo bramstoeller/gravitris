@@ -133,7 +133,6 @@ class FrameStatsTest {
         frames(count = 30, durationMs = 16, cpuMs = 3)
 
         assertTrue(stats.snapshot(clock, snapshot))
-        assertEquals(3f, snapshot.cpuMs, 0.1f)
         assertEquals(3f, snapshot.meanCpuMs, 0.1f)
         assertEquals(16f, snapshot.meanMs, 0.5f)
     }
@@ -173,6 +172,5 @@ class FrameStatsTest {
         assertTrue(stats.snapshot(clock, snapshot))
         assertEquals(16f, snapshot.meanMs, 0.5f)
         assertEquals(16f, snapshot.maxMs, 0.5f)
-        assertTrue(snapshot.sampleCount in 1..256)
     }
 }

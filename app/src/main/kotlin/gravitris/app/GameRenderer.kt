@@ -236,8 +236,6 @@ class GameRenderer(
 
     fun bodyCount(): Int = harness.bodyCount
 
-    fun particleCount(): Int = harness.particleCount
-
     fun dynamicBytesPerFrame(): Int = harness.particleCount * 2 * Float.SIZE_BYTES
 
     private companion object {
