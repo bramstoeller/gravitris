@@ -53,8 +53,14 @@ dev: ## Build the debug APK; install and launch it if a device is attached over 
 		echo "    See docs/operations.md 'Installing on a phone' for plain-language sideload steps."; \
 	fi
 
-test: ## Run the full verification suite: JVM tests, the ADR 0008 no-Android check, the CHK-1/3/4 merged-manifest checks, and lint
-	@./gradlew check
+test: ## Run the full verification suite: JVM tests, the buildSrc guard-check tests, the ADR 0008 no-Android check, the CHK-1/3/4 merged-manifest checks, and lint
+	# :buildSrc:check is listed explicitly, not folded into plain `check`:
+	# buildSrc is its own separate build, and the root project's `check`
+	# builds buildSrc's *classes* (needed for the plugin classpath) but never
+	# runs buildSrc's own tests — dropping this would silently stop running
+	# the CheckMergedManifest/CheckNoAndroidDependency tests with `make test`
+	# still reporting green.
+	@./gradlew check :buildSrc:check
 
 lint: ## Run Android Lint on :app
 	@./gradlew :app:lint

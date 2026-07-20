@@ -25,10 +25,26 @@ dependencies {
     // Pin matches gradle/libs.versions.toml — buildSrc can't read the root
     // catalog, so this version is kept in sync by hand; see docs/operations.md.
     compileOnly("com.android.tools.build:gradle:8.9.3")
+
+    // CheckMergedManifest and CheckNoAndroidDependency are security/ADR-0008
+    // guard tasks (docs/security/threat-model.md CHK-1/3/4) that had zero
+    // tests until now, verified only by reading — which is exactly how the
+    // <uses-permission-sdk-23> total bypass of CHK-1 survived a review (PR
+    // #3, .team/reviews/security-chk1-allowlist.md). Same JUnit version as
+    // :core-sim/:app; buildSrc can't read the root version catalog (see the
+    // compileOnly comment above), so this is pinned by hand.
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.11.4")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:5.11.4")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
 }
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 // R2 of docs/security/dependency-policy.md (chore/threat-model, pending
