@@ -1,4 +1,4 @@
-# Squish — architecture
+# Gravitris — architecture
 
 Date: 2026-07-20 · Author: Architect · Status: proposed, for Gate 2
 

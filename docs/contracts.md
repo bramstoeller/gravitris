@@ -13,7 +13,7 @@ Signatures are the contract. Implementations behind them are not.
 ## 1. Constructing a simulation
 
 ```kotlin
-package squish.game
+package gravitris.game
 
 /**
  * Every tunable in the product. Constructed once; a change means a new
