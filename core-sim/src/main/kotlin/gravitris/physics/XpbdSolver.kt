@@ -72,6 +72,39 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
     var kineticEnergy: Float = 0f
         private set
 
+    // --- kinematic drag -----------------------------------------------------
+
+    /**
+     * A player drag, in well units for the whole tick, spread evenly over the
+     * substeps. Set by `Simulation` before [step]; consumed and cleared by it.
+     *
+     * **Why the solver applies this rather than the caller.** A drag is a
+     * kinematic translation: the finger moves the piece regardless of what the
+     * physics wants. Applying the whole tick's motion in one teleport before
+     * the substep loop puts the piece up to `dragDeltaX` *inside* whatever it
+     * was dragged against, and the contact solve then removes that overlap
+     * inside a single substep. [deriveVelocities] divides position change by
+     * the substep `h`, not the tick, so the overlap comes back out as a speed
+     * of `dragDeltaX / h` — `substeps` times the speed the finger was actually
+     * moving at. At 8 substeps a leisurely 3 units/s drag manufactured 24
+     * units/s of ejection, close to [MAX_SPEED], every tick for as long as the
+     * finger was held. That is the "interlocked, vibrating, then apart" the
+     * client reported: the vibration lasts exactly as long as the drag.
+     *
+     * Spreading the same translation over the substeps makes the manufactured
+     * speed `(dragDeltaX / substeps) / h` — which is just `dragDeltaX / TICK`,
+     * the finger's real speed, independent of the substep count. The piece
+     * still squashes against whatever it is pushed into, because the contact
+     * solve still resolves the overlap; it simply stops being resolved
+     * `substeps` times too hard.
+     *
+     * Measured on the two-body repro (`InterlockJitterTest`): peak kinetic
+     * energy during a held drag falls from 162 to under the quiet threshold,
+     * and no longer grows with the substep count.
+     */
+    var dragBody: Int = -1
+    var dragDeltaX: Float = 0f
+
     // --- tick ---------------------------------------------------------------
 
     fun step() {
@@ -79,6 +112,8 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         if (n == 0) {
             kineticEnergy = 0f
             impactCount = 0
+            dragBody = -1
+            dragDeltaX = 0f
             return
         }
 
@@ -87,6 +122,7 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         val h = TICK / config.substeps
         for (s in 0 until config.substeps) {
             integrate(h, n)
+            applyDragSubstep()
             // Rebuilt every substep, not every tick (revising ADR 0003 §1).
             //
             // The narrowphase stencil reaches one cell — `2 * particleRadius`,
@@ -126,6 +162,30 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
         }
 
         endTick(n)
+        dragBody = -1
+        dragDeltaX = 0f
+    }
+
+    /**
+     * One substep's share of the pending drag.
+     *
+     * `substepPrev` moves with the position, so a piece dragged through empty
+     * space derives no velocity from the drag at all — the property the
+     * original per-tick translation was written to have, and which the
+     * per-substep split preserves. Only the part of the motion the contact
+     * solve *undoes* becomes velocity, which is the part that physically
+     * should.
+     */
+    private fun applyDragSubstep() {
+        val body = dragBody
+        if (body < 0 || dragDeltaX == 0f) return
+        val step = dragDeltaX / config.substeps
+        val base = body * world.particlesPerBody
+        for (k in 0 until world.particlesPerBody) {
+            val i = base + k
+            world.posX[i] += step
+            world.substepPrevX[i] += step
+        }
     }
 
     private fun beginTick(n: Int) {

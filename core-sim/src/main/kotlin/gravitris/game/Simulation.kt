@@ -81,13 +81,19 @@ class Simulation(config: SimConfig) {
     }
 
     /**
-     * Translates the active piece horizontally, clamped to the well.
+     * Moves the active piece horizontally, clamped to the well.
      *
-     * Position and both previous-position buffers move together, so the drag
-     * is kinematic and injects no velocity. Moving position alone would make
-     * the solver derive a velocity spike of `drag / h` on the next substep and
-     * fling the piece — the same class of mistake as seeding bodies
-     * overlapping.
+     * The clamp is computed here, where the piece's extents are known, but the
+     * motion itself is handed to the solver and applied one substep's share at
+     * a time — see [XpbdSolver.dragDeltaX]. Translating the whole tick's drag
+     * in one go before the substep loop is what made a held drag against
+     * another body buzz: the overlap it seeded was undone inside a single
+     * substep and came back out as velocity `substeps` times too large.
+     *
+     * The drag stays kinematic either way. The solver moves the piece's
+     * `substepPrev` along with its position, so dragging through empty space
+     * derives no velocity from the drag — moving position alone would fling the
+     * piece, the same class of mistake as seeding bodies overlapping.
      */
     private fun applyDrag(body: Int, dragX: Float) {
         val base = body * world.particlesPerBody
@@ -104,12 +110,8 @@ class Simulation(config: SimConfig) {
         val highLimit = world.wellMaxX - r - maxX
         val delta = dragX.coerceIn(min(lowLimit, 0f), maxOf(highLimit, 0f))
         if (delta == 0f) return
-        for (k in 0 until n) {
-            val i = base + k
-            world.posX[i] += delta
-            world.framePrevX[i] += delta
-            world.substepPrevX[i] += delta
-        }
+        solver.dragBody = body
+        solver.dragDeltaX = delta
     }
 
     /**
