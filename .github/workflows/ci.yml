@@ -62,6 +62,11 @@ jobs:
         run: bash scripts/setup-android-sdk.sh
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       - name: Cache Gradle and Android SDK
         uses: actions/cache@v6.1.0
@@ -81,6 +86,11 @@ jobs:
         run: make test
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       # Exactly `make build`. Unsigned — no keystore exists in CI, by design
       # (R7, docs/security/dependency-policy.md). Nothing here signs or
@@ -89,6 +99,11 @@ jobs:
         run: make build
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          # The runner image ships its own preinstalled SDK and exports
+          # ANDROID_SDK_ROOT for it; left alone, AGP sees two different SDK
+          # paths (ANDROID_HOME here vs. the runner's ANDROID_SDK_ROOT) and
+          # refuses to guess. Point both at the one we just pinned.
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7.0.1
