@@ -82,9 +82,24 @@ interface SimState {
 
     // --- rendering topology (static per tier, ADR 0007) ---
     /**
-     * Body-local triangle indices, `0 until bodyLattice * bodyLattice`. Valid
-     * for one body and reused for every body with an offset of
-     * `bodyIndex * bodyLattice * bodyLattice`. Constant for the whole run.
+     * Body-local triangle indices. Valid for one body and reused for every
+     * body with an offset of `bodyIndex * bodyLattice * bodyLattice`.
+     * Constant for the whole run.
+     *
+     * **Length is `6 * (bodyLattice - 1) * (bodyLattice - 1)`** — six indices
+     * per lattice cell, two triangles each. The *values* it contains run
+     * `0 until bodyLattice * bodyLattice`, which is a different number: 96
+     * versus 25 at lattice 5. Do not size a buffer from the value range.
+     *
+     * **Winding is counter-clockwise** and the cell is split on the
+     * `p00`–`p11` diagonal:
+     * ```
+     * p00, p10, p11   then   p00, p11, p01
+     * ```
+     * where `pRC = row * bodyLattice + col`, row 0 at the bottom. The
+     * diagonal is not a free choice for the consumer to re-derive: these are
+     * *deforming* cells, and splitting on the other diagonal makes a sheared
+     * cell crease the wrong way, which is visible in motion.
      */
     val triangleIndices: IntArray
 
@@ -100,6 +115,18 @@ interface SimState {
      */
     val bandFill: FloatArray
     val bandBottomY: Float
+
+    /**
+     * Number of coverage bands, and the length of both [bandFill] and
+     * [bandClearProgress].
+     *
+     * Published for the same reason those arrays must not be measured with
+     * `.size`: the renderer's `uBandFill` is a fixed-size GLSL uniform array
+     * whose length is baked into the shader at compile time, so `:app` needs
+     * this to assert the two agree rather than to discover the mismatch as
+     * out-of-range indexing, which is undefined behaviour in GLSL.
+     */
+    val bandCount: Int
 
     /** `wellHeight / bandCount`. */
     val bandHeight: Float

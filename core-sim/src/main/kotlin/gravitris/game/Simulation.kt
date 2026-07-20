@@ -252,6 +252,7 @@ class Simulation(config: SimConfig) {
         override val bandFill = FloatArray(config.bandCount)
         override val bandClearProgress = FloatArray(config.bandCount) { -1f }
         override val bandBottomY: Float = world.wellFloorY
+        override val bandCount: Int = config.bandCount
         override val bandHeight: Float = config.wellHeight / config.bandCount
 
         override val phase: Phase get() = Phase.Playing

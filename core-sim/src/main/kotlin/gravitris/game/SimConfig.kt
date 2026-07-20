@@ -88,6 +88,13 @@ data class SimConfig(
         require(linearDamping in 0f..1f) { "linearDamping must be in 0..1, was $linearDamping" }
         require(friction >= 0f) { "friction must be >= 0, was $friction" }
         require(initialPieceMass > 0f) { "initialPieceMass must be > 0, was $initialPieceMass" }
+        // Downward is negative. Zero is allowed and used — a weightless scene
+        // isolates constraint behaviour from settling. Positive is always a
+        // sign error, and a non-finite value poisons every position in the
+        // world within one tick with no other symptom.
+        require(gravity.isFinite() && gravity <= 0f) {
+            "gravity must be finite and <= 0 (downward is negative), was $gravity"
+        }
         require(wellWidth >= PIECE_WIDTH) {
             "wellWidth ($wellWidth) is narrower than a piece ($PIECE_WIDTH); no piece could fit"
         }
