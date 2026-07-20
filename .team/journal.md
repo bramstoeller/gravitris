@@ -1876,3 +1876,4 @@ staffing. Three blockers raised. Branch chore/architecture, not merged.
 - **2026-07-20 14:21:35Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
 
 - **2026-07-20 14:21:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+- **2026-07-20** `product-lead` — playable game landed on main (mechanic + gel shading). APK staged at gravitris-playable.apk, test notes at TESTING-NEXT.md. Dispatched 5 parallel tasks: play-through verification + readout label (frontend), lattice-6 broadphase fix (backend), land QA #7 (reviewer), screenshot first-frame settle (devops), CHK-4 guard (security). NOTE: the `claude` CLI native binary is broken after a re-login (`claude --version` errors); git/gradle/emulator/agents all unaffected. Did not reinstall unprompted while client away.
