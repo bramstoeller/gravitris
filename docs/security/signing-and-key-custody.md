@@ -1,199 +1,362 @@
-# Signing and key custody — guidance for the client
+# Signing, key custody and sideloading — guidance for the client
 
-Status: draft, to be handed over at the release gate
-Date: 2026-07-20
+Status: revised 2026-07-20 for **direct distribution** (no Play Store this phase)
+Supersedes: the Play App Signing guidance in the first draft of this document
 Author: Security Engineer
 Audience: **the client** — written assuming no prior Android release experience
 
-This is the one part of the project where a mistake is expensive and hard to
-undo. It is not technically difficult, but the consequences of getting it wrong
-are permanent, so it is worth reading once slowly.
+The client has decided to skip the Play Store for this phase. We build to
+store-ready standard and hand over a **signed APK** that you share directly and
+recipients sideload. Publishing is deferred, not cancelled.
+
+That decision changes this document substantially, and not in your favour on one
+specific point. Please read §2 carefully — it is the one thing in this project
+that cannot be undone.
 
 ---
 
-## The one thing to understand first
+## 1. What signing is, in one paragraph
 
-Android has no central authority that says "this app is really Squish". Instead,
-every app is **signed** with a cryptographic key, and Android enforces one rule:
+Android has no central authority that says "this app is really Squish". Every
+app is **signed** with a cryptographic key, and Android enforces one rule:
 
 > An update can only be installed over an existing app if it is signed with the
 > **same key** as the version already installed.
 
-Two consequences follow, and they are the whole reason this document exists:
+That rule is what makes an app's identity meaningful. It is also what makes the
+key irreplaceable.
 
-- **Lose the key → you can never update your app again.** Not "call support and
-  recover it" — the update is cryptographically impossible. Your only option is
-  to publish a brand new listing, with a new URL, zero installs, zero reviews
-  and no way to migrate your existing players.
-- **Someone else gets the key → they can ship malware as you**, and it installs
-  over your app on your players' phones as a routine update, with no warning.
+## 2. The one unrecoverable failure mode — read this twice
 
-Everything below is about making the first outcome unlikely and the second one
-hard.
+**If you lose the keystore file, or forget its password, you can never update
+Squish again.**
 
-## The hard rule for this project
+Not "difficult". Not "contact support". Cryptographically impossible. Android
+will refuse the install, and there is no appeal, because there is no longer
+anyone in a position to grant one.
 
-**No keystore, key, password or Play Console credential ever enters the
-development container.** The AI team builds **unsigned** artifacts. You sign
-them, on your machine, or let Google sign them for you.
+This is a *change* from the earlier plan. Google Play offers "Play App Signing",
+where Google holds the real signing key and you hold a disposable *upload* key
+that they will reset for you if you lose it. That safety net turned key loss
+into a support ticket. **Without a Play Console account, that safety net does
+not exist.** You hold the only copy of the only key that matters.
 
-This is deliberate. It means that even in the worst case — the container is
-compromised, a dependency is malicious, an agent misbehaves — nobody can produce
-a signed build that Android will accept as an update to your app. It also means
-the team never has to be trusted with the asset that matters. Please do not
-relax this rule as a convenience during release week; that is exactly when it
-will feel tempting.
+What happens if the key is lost, concretely:
 
-## Two keys, not one
+- Existing players keep the version they have. It keeps working.
+- You cannot ship them a fix or an update, ever.
+- To distribute anything further you must sign with a new key, which Android
+  treats as a **different app**. Recipients must **uninstall first**, then
+  install the new one.
+- Uninstalling deletes app data. Because we deliberately disabled Android's
+  cloud backup for privacy reasons (see the threat model, finding S-1), there is
+  **no backup to restore from**. Every player's high score is gone permanently.
 
-This is the part that confuses everyone the first time. Modern Google Play uses
-**Play App Signing**, which involves two separate keys:
+Those two decisions interact, and you should know we made the trade knowingly:
+no backup means no leak, and it also means no recovery. For a local arcade score
+that is the right call — but it does mean key loss costs your players something
+real, not just you.
 
-| | **App signing key** | **Upload key** |
-| - | ------------------- | -------------- |
-| What it does | Signs the app that players actually install | Signs what *you* send to Google |
-| Who holds it | **Google**, in their key management service | **You** |
-| If lost | Catastrophic — but if Google holds it, you cannot lose it | **Recoverable.** Google resets it for you |
-| Who verifies it | Android, on every player's device | Google, on upload |
+> **The realistic risk here is loss, not theft.** You are one person, not a
+> target. Nobody is trying to steal this key. You are far more likely to lose it
+> to a dead laptop, a forgotten password, or a tidy-up in three years than to an
+> attacker. **So the guidance below biases toward redundancy over secrecy** —
+> more copies, in more places. That is the opposite of normal secret-handling
+> advice, and it is deliberate.
 
-The flow: you sign your app bundle with your **upload key** and upload it.
-Google checks the upload key, removes that signature, and re-signs the app with
-the **app signing key** before distributing it.
+## 3. One key now, not two
 
-The point of the arrangement is that the key you handle day to day — the upload
-key — is the *recoverable* one. If your laptop dies or you lose the file, you
-raise a support request, prove you are you, and register a new upload key. Your
-app carries on.
+Under the earlier Play plan there were two keys. Now there is one.
 
-Play App Signing is **required** for new apps on Google Play, so this is not
-optional. It is also genuinely the safer arrangement.
+| | **Your signing key** |
+| - | -------------------- |
+| What it does | Signs the APK that people install |
+| Who holds it | **You. Only you.** |
+| If lost | **Unrecoverable.** See §2 |
+| If stolen | Someone can sign an app that installs over yours as an update |
 
-## Recommendation: let Google generate the app signing key
+Simpler, and more fragile. There is no reset path and no second chance.
 
-When you enrol, Play offers a choice: let Google generate the app signing key,
-or upload one you generated yourself.
+## 4. The hard rule for this project
 
-**Let Google generate it.** For a first release with no existing app to be
-compatible with, this is clearly right:
+**No keystore, key, password or credential ever enters the development
+container.** The AI team builds an **unsigned** APK. You sign it, on your own
+machine.
 
-- The app signing key never exists outside Google's infrastructure, so it cannot
-  be stolen from you, leaked in a backup, or lost.
-- You never handle the one key whose loss is unrecoverable.
-- The only key you are responsible for is the upload key — and that one is
-  replaceable.
+Even in the worst case — the container compromised, a dependency malicious, an
+agent misbehaving — nobody can produce a build that installs as an update to
+your app. Please do not relax this during release week as a convenience. That is
+exactly when it will feel reasonable.
 
-The alternative — generating the app signing key yourself and uploading it —
-only makes sense if you already have a published app signed with an existing
-key, or you need the same key across distribution channels. Neither applies
-here. Choosing it would mean taking custody of an irreplaceable secret for no
-benefit.
+## 5. Generate your key
 
-## Step by step
-
-### 1. Register a Play Console account
-
-- One-time registration fee (USD 25 at time of writing).
-- Choose **personal** or **organization** at registration. This is awkward to
-  change later, so decide deliberately — if the game might ever be published
-  under a company, register the company now.
-- You will go through identity verification. Organizations additionally need a
-  D-U-N-S number, which can take days to obtain. **Start this early** — it is
-  the slowest step and it is pure waiting.
-
-> **Timeline warning, please check this yourself.** Google requires new
-> *personal* developer accounts to run a closed test with a minimum number of
-> testers (20 at time of writing) for a continuous period (14 days) before they
-> can apply for production access. If that still applies, it adds **weeks**
-> between "the build is ready" and "the game is on the store", and it needs real
-> people opted into a test track. Verify the current requirement on the Play
-> Console help pages as soon as you register, because it shapes the release
-> schedule far more than anything the engineering team does. An organization
-> account may not carry the same requirement — worth checking before you choose
-> the account type above.
-
-### 2. Generate your upload key
-
-On **your own machine**, not in the container. You need a JDK installed for
-`keytool`.
+On **your own machine**. You need a JDK for `keytool` — it comes bundled with
+Android Studio if you would rather not install one separately.
 
 ```
 keytool -genkeypair -v \
-  -keystore upload-keystore.jks \
+  -keystore squish-release.jks \
   -storetype PKCS12 \
   -keyalg RSA -keysize 4096 \
   -validity 10000 \
-  -alias upload
+  -alias squish
 ```
 
-- It asks for a **keystore password** and your name/organization details. The
-  name details are not shown to users; they do not need to be perfect.
-- `-validity 10000` is about 27 years. Play requires a key valid well beyond
-  2033; do not shorten this.
-- Use a **long random password from a password manager**, not something you
-  invent. It protects the file if it ever leaks.
+- It asks for a **keystore password**, then for your name and organization
+  details. Those details go into the certificate but are not shown to users;
+  they do not need to be perfect. You cannot change them later without changing
+  the key, so put something you are happy to live with.
+- `-validity 10000` is about 27 years. Do not shorten it. A key that expires is
+  a key you can no longer update with.
+- **Use a long random password from a password manager**, not one you invent and
+  hope to remember. You will not remember it. It belongs in the backup record
+  below, and that is where it is meant to live.
 
-This produces one file: `upload-keystore.jks`. Treat it like the deed to the
-app.
+Write down these three things immediately — **you need all three, and losing any
+one loses the app**:
 
-### 3. Store it properly
+1. The **file** `squish-release.jks`
+2. The **keystore password**
+3. The **alias** (`squish`, above)
 
-- **Password manager** (1Password, Bitwarden, similar) holding both the
-  keystore *file* as an attachment and its password. This is the primary copy.
-- **One offline backup** — an encrypted USB drive or similar, kept somewhere
-  physically different. Cloud sync alone is not a backup; an account compromise
-  or accidental deletion takes both copies at once.
-- **Never** in the project repository, in a chat message, in an email, in a
-  screenshot, or in the development container.
-- Store the password **separately from the file** if you reasonably can.
+Then record the certificate fingerprint, which is not secret and which you will
+want for §8 and §9:
 
-The repository's `.gitignore` has been updated to ignore `*.jks`, `*.keystore`,
-`keystore.properties` and `local.properties` so that an accidental `git add`
-does not commit a key. That is a safety net, not permission to keep the key near
-the project.
+```
+keytool -list -v -keystore squish-release.jks -alias squish
+```
 
-### 4. Enrol in Play App Signing and upload
+Copy the **SHA-256 fingerprint** line into your notes.
 
-Create the app in Play Console, opt into Play App Signing (choosing "let Google
-generate the app signing key"), and upload your first signed app bundle. From
-then on, every upload is signed with the same upload key.
+## 6. Back it up — and verify the backup actually works
 
-### 5. Record the fingerprint
+This is the section people skim, and it is the one that decides whether §2 ever
+happens to you. Please do these in order rather than deciding to get to it after
+release.
 
-After enrolment, Play Console shows the SHA-256 fingerprint of both keys. Save
-them somewhere you will find them again. They are how you verify, later, that a
-build is genuinely yours — and they are not secret, so they can live in ordinary
-notes.
+### 6.1 Make three copies, in at least two places
 
-## If something goes wrong
+| # | Where | What goes there |
+| - | ----- | --------------- |
+| 1 | **Password manager** (1Password, Bitwarden, similar) — attach the `.jks` file to an entry | file + password + alias + fingerprint |
+| 2 | **Encrypted USB drive** kept at home | file + a text file with password, alias, fingerprint |
+| 3 | **A physically different location** — a USB at a relative's house, a safe deposit box, or a sealed envelope with someone you trust | same as #2 |
+
+Why three: a password-manager lockout, a drive failure and a house fire are
+independent events. Two copies in the same building is one copy.
+
+Why the password travels *with* the file in copies 2 and 3: standard advice says
+separate them, but that advice assumes theft is the risk. Here loss is the risk,
+and a backup you cannot open is not a backup. Keep them together and make the
+place itself secure.
+
+### 6.2 Never put it in any of these
+
+- The project repository (the `.gitignore` now blocks the common filenames, but
+  do not rely on that)
+- The development container
+- Email, chat, or a screenshot
+- An unencrypted cloud folder that syncs automatically — sync propagates
+  deletion, so it is not a backup
+
+### 6.3 Verify the backup — the step that is usually skipped
+
+A backup you have never opened is a guess. Test the **copy**, not the original,
+because what you need to know is whether the copy is usable.
+
+1. Copy the `.jks` file **from backup #2** into a temporary folder — ideally on a
+   different computer than the one you created it on.
+2. Look up the password **from the backup record**, not from memory and not from
+   the original.
+3. Run:
+
+   ```
+   keytool -list -v -keystore /path/to/restored-copy.jks -alias squish
+   ```
+
+4. **Success** looks like: it accepts the password and prints certificate details
+   including a SHA-256 fingerprint. Check that fingerprint matches the one you
+   recorded in §5.
+5. **Failure** looks like: "keystore password was incorrect", "Alias does not
+   exist", or a file error. Any of these means that backup is not usable — fix it
+   now, while the original still exists.
+6. Delete the temporary copy.
+
+Do this **when you create the backups**, and again **once a year**. Put the
+annual check in your calendar now. It takes two minutes and it is the only thing
+standing between you and §2.
+
+### 6.4 A note on key rotation, since you may read about it
+
+Android's v3 signature scheme supports rotating to a new key. It is **not a
+recovery path** — rotation requires signing with the *old* key to prove
+continuity. If the old key is gone there is nothing to rotate from. Rotation
+helps if a key is *compromised* and you still have it. It does nothing if it is
+lost. Do not file it mentally as a safety net.
+
+## 7. Sign the APK
+
+The team gives you an unsigned APK. Two routes; pick whichever you find less
+unpleasant.
+
+### Route A — Android Studio (recommended if you are not comfortable in a terminal)
+
+**Build → Generate Signed App Bundle / APK → APK**, choose your keystore file,
+enter the password and alias, select the **release** variant, and ensure
+signature versions **V2** and **V3** are checked. It produces the signed APK.
+
+### Route B — command line
+
+`apksigner` ships with the Android SDK build-tools.
+
+```
+apksigner sign \
+  --ks squish-release.jks \
+  --ks-key-alias squish \
+  --out squish-1.0-signed.apk \
+  squish-1.0-unsigned.apk
+```
+
+It prompts for the password. **Do not pass the password as a command-line
+argument** — it lands in your shell history.
+
+Squish targets Android 10 (API 29) and above, so the modern v2/v3 signature
+schemes apply and legacy v1 JAR signing is unnecessary. The defaults are
+correct; you do not need extra flags.
+
+## 8. Verify what you signed
+
+Always, before sharing:
+
+```
+apksigner verify --print-certs squish-1.0-signed.apk
+```
+
+Confirm it reports the signature as verified, and that the **SHA-256 digest of
+the certificate matches the fingerprint you recorded in §5**. If it does not
+match, you signed with the wrong key — stop and find out which one before it
+reaches anybody.
+
+## 9. Sideloading — what your users will see
+
+Because the app does not come from the Play Store, everyone you share it with
+hits a warning. Worth understanding so you can explain it honestly.
+
+### What actually happens
+
+The recipient downloads the APK and taps it. Android says something close to:
+
+> *"For your security, your phone is not allowed to install unknown apps from
+> this source."*
+
+They must grant permission to **the app doing the installing** — Chrome, Files,
+Drive, WhatsApp — not flip a global switch. This is per-source and per-app, and
+has been since Android 8. They may also see **Play Protect** offer to scan the
+app, which is normal and worth accepting.
+
+### What the warning means, accurately
+
+It does **not** mean Android thinks the app is malicious. It means Android
+cannot vouch for it, because it did not come from a store that reviewed it.
+Android is correctly saying *"I don't know what this is — do you trust where you
+got it?"*
+
+That is a real and sensible protection, not a formality to click past. The
+honest framing: **the warning is about the source, not the file.** They are
+being asked whether they trust you.
+
+### What to tell people you share it with
+
+Something like:
+
+> This is a game I had built. It isn't on the Play Store yet, so your phone will
+> warn you before installing — that warning is Android saying it can't verify
+> apps from outside the store, which is normal for a direct download. It asks for
+> no permissions and has no internet access at all. If you'd rather wait until
+> it's on the Play Store, that's completely reasonable.
+
+Accurate, not pushy. The last sentence matters — some people should not
+sideload, and they should feel fine saying no.
+
+### What a recipient can reasonably check
+
+If someone technically-minded asks how to verify it:
+
+- **Permissions, before installing.** The installer screen lists what the app
+  wants. Squish requests **nothing**, and notably has no internet access. This is
+  checkable by anyone, on the device, without tools — it is the strongest thing
+  you can point at.
+- **The certificate fingerprint.** Publish your SHA-256 fingerprint (§5)
+  somewhere stable and they can compare with `apksigner verify --print-certs`.
+  Be honest about the limit: this only helps if they got the expected
+  fingerprint through a *different* channel than the APK. If an attacker
+  replaced both, they match perfectly and prove nothing. Its real value is
+  confirming a *later* APK came from the same person as the first.
+- **The source.** Ultimately this is the actual control. An APK from a link you
+  personally sent is exactly as trustworthy as you are, and that is the entire
+  security model of direct distribution. Say so plainly rather than implying
+  more.
+
+Suggest people **turn the "install unknown apps" permission back off** for
+whichever app they used, once they are done.
+
+## 10. Updates
+
+Without a store there is no automatic update. To ship a new version:
+
+- Sign it with the **same key** (§2 again).
+- Increment `versionCode` — Android refuses to install over a newer version.
+- Send the new APK out. Recipients install over the existing app and their data
+  is kept, because the signature matches.
+
+There is no way to reach people who miss your message, and no way to pull a bad
+build back. Test before you send.
+
+## 11. If something goes wrong
 
 | Situation | What to do |
 | --------- | ---------- |
-| Lost the upload key or forgot its password | Recoverable. Generate a new one and request an upload key reset through Play Console support. Your app is unaffected. |
-| Upload key possibly stolen | Request a reset immediately. The thief cannot ship to users with it — Google would still have to accept the upload — but revoke it anyway. |
-| Play Console account compromised | This is the serious one. The account, not the key, is what controls what ships. Use a **strong unique password and hardware-backed or app-based 2FA on the Google account from day one**, before there is anything to protect. |
-| App signing key compromised | Only possible if you chose to manage it yourself. If you followed the recommendation above, Google holds it and this is their problem to prevent. |
+| Lost the keystore, but you have a backup | Restore and verify with §6.3. This is why the backups exist. |
+| Lost the keystore and all backups | Unrecoverable. See §2. New key, new identity, recipients uninstall and reinstall, scores lost. |
+| Forgot the password, still have the file | Effectively the same as losing it. There is no password recovery for a keystore. |
+| Keystore leaked or possibly stolen | Serious but not fatal. Generate a new key and rotate (§6.4) — you still hold the old key, so continuity works. Do it promptly. |
+| Not sure which key an APK was signed with | `apksigner verify --print-certs` and compare fingerprints (§8). |
 
-Note the ordering: **your Google account security matters more than the keystore
-file**, because Play App Signing has moved the irreplaceable key to Google.
-Whoever controls the Play Console account controls what reaches your players.
-Enable 2FA before you do anything else.
+## 12. What the team hands you
 
-## What the development team hands you at release
+- An **unsigned** release APK, built reproducibly, plus the exact build command
+  so anyone can rebuild and confirm it matches.
+- This document.
 
-- An **unsigned** Android App Bundle (`.aab`), built reproducibly.
-- The exact build command, so you or anyone else can reproduce it and confirm
-  the artifact matches.
-- Store listing text and assets.
-- A completed Data Safety questionnaire draft — for Squish it declares **no data
-  collected and no data shared**, which is true because the app has no network
-  permission and cannot make network requests.
+You perform the signing. The team never touches the key.
 
-You perform the signing and the upload. The team never touches it.
+**One upside of leaving the Play Store:** because Google is not re-signing your
+app, the APK a user installs is **byte-for-byte the artifact we built and you
+signed**. Under Play App Signing that would not have been true. Reproducibility
+now extends all the way to the user's device, so an independent party can
+rebuild from source and confirm nothing was inserted. That is a genuinely
+stronger position than the Play route offered, and it is worth mentioning if
+anyone asks why they should trust a sideloaded APK.
 
-## One caveat about verifying builds
+## 13. Deferred — Google Play
 
-Because Google re-signs your app under Play App Signing, the APK a player
-downloads is **not byte-identical** to the bundle you uploaded. This is normal
-and expected. If you ever want to verify a build independently, compare against
-the artifact *before* upload, not against what the store serves. The team can
-show you how to reproduce the build and check it matches.
+Not in scope this phase. If the client later decides to publish, revisit before
+doing anything:
+
+- **The key decision at enrolment.** Play App Signing will offer you the choice
+  of uploading your existing key or letting Google generate a new one. Uploading
+  the existing key keeps continuity, so people who sideloaded can update from
+  the Play version. Letting Google generate a new one is safer going forward but
+  makes the Play app a separate identity — sideloaded users would have to
+  uninstall and reinstall, losing their scores. **That trade-off deserves a
+  deliberate decision, not a default accepted in a setup wizard.**
+- **Account lead time is the long pole.** Personal developer accounts created
+  after 13 Nov 2023 must run a closed test with **12 testers for 14 consecutive
+  days** before applying for production access. Organization accounts are exempt
+  but need a D-U-N-S number, which takes days to obtain. Decide the account type
+  deliberately; it is awkward to change later.
+  Source: https://support.google.com/googleplay/android-developer/answer/14151465
+- **Data Safety declaration** must be completed — see `threat-model.md` §10 for
+  what must be true before it can be truthfully filled in.
+- Play requires an **App Bundle** (`.aab`), not an APK. Keep that build path
+  viable.

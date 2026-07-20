@@ -18,6 +18,9 @@ id_rsa*
 *.p12
 *.pfx
 keystore.properties
+
+# Machine-local Android SDK paths. Not a secret and never has been — ignored
+# by long-standing Android convention because the paths differ per machine.
 local.properties
 
 # Dependencies and build output. Seeded up front rather than after an agent

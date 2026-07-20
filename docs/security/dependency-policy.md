@@ -111,8 +111,14 @@ APK where it can be found; a compromised build plugin does not.
 Named separately because it is the realistic failure mode. The pressure to add a
 crash reporter arrives *after* release, when something is wrong and the team
 wants visibility. That is exactly when the privacy posture is discarded without
-a decision being recorded. Any such SDK requires a client decision and a new
-Data Safety declaration — see the tripwires in `threat-model.md` §9.
+a decision being recorded.
+
+**Direct distribution makes this sharper.** With no store, there is no crash
+dashboard and no analytics — the team is blind to field problems by
+construction, and the only signal is a user telling the client something broke.
+That blindness is the accepted cost of the privacy posture, not a gap to be
+closed with a dependency. Any such SDK requires a client decision — see the
+tripwires in `threat-model.md` §9.
 
 ### R7 — No credentials, keystores or signing keys in this container. Ever.
 
@@ -174,14 +180,20 @@ about what it is doing here, because it is easy to over-claim.
   them.
 - **Protection against a compromised signing key** — that is downstream of the
   build entirely.
-- **Byte-identical artifacts for the user.** Two caveats that will otherwise
-  surprise someone:
-  - The signature block differs by construction. Compare the **unsigned**
-    artifact, or compare after stripping signatures.
-  - With **Play App Signing, Google re-signs the app**, so what a user downloads
-    is by definition not byte-identical to what we built. Reproducibility gives
-    us confidence up to the point of upload, and no further. Anyone verifying a
-    Play-distributed APK against our build must account for this.
+- **A byte-identical comparison including the signature.** The signature block
+  differs by construction and is applied by the client outside this build.
+  Compare the **unsigned** artifact, or compare after stripping signatures.
+
+> **The direct-distribution decision strengthens this.** Under the earlier Play
+> plan, Google would have re-signed the app after upload, so what a user
+> installed was by definition not the artifact we built — reproducibility gave
+> us confidence up to the point of upload and no further. Distributing a
+> directly-signed APK removes that break: **the bytes the user installs are the
+> bytes we produced**, modulo the client's signature. An independent party can
+> now rebuild from source and confirm nothing was inserted anywhere in the
+> chain. This is the one place where leaving the Play Store made our security
+> position better rather than worse, and it is worth saying out loud because
+> everything else about that decision cut the other way.
 
 Practical requirements to actually achieve it: no timestamps or build paths in
 outputs, `SOURCE_DATE_EPOCH` respected, deterministic archive ordering, a pinned

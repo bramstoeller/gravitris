@@ -28,8 +28,16 @@ Risk 3 is the non-obvious one and is expanded in §4. It is the reason the
 quite true as stated.
 
 Signing key custody is handled separately in
-`docs/security/signing-and-key-custody.md` — it is client-facing and is handed
-over at release.
+`docs/security/signing-and-key-custody.md` — it is client-facing and must be
+handed over **before** the first APK, not at release.
+
+Since the client has chosen direct APK distribution over the Play Store, key
+custody is no longer merely a handover formality: without Play App Signing there
+is no key reset path, so **losing the keystore is the project's single
+unrecoverable failure mode.** It is not in the table above because it is not a
+defect in the product — it is a risk that lives entirely on the client's
+machine, after handover, where no build check can reach it. §11 covers what the
+distribution change alters in both directions.
 
 ---
 
@@ -39,7 +47,7 @@ Ranked by what an attacker would actually want.
 
 | Asset | Where it lives | Worth attacking? |
 | ----- | -------------- | ---------------- |
-| **The signing key** | Client's custody, never in this container | **Yes.** The only high-value asset in the project. Compromise lets an attacker ship malware as the client, to the client's installed base, with no user-visible warning. |
+| **The signing key** | Client's custody, never in this container | **Yes.** The only high-value asset in the project. Compromise lets an attacker ship malware as the client, to the client's installed base, with no user-visible warning. Under direct distribution there is **no reset path** — see §11. |
 | **The build pipeline** | This container, CI | **Yes.** Code injected here is signed by the legitimate key and inherits all its trust. |
 | **Player's device integrity** | The user's phone | Indirectly — via 1 or 2. |
 | High score, settings | App-private storage on device | **No.** See §4. |
@@ -115,11 +123,14 @@ the app to hold `INTERNET`**.
 
 Impact: low in absolute terms (the data is a score and two flags, going to the
 user's own Google account). But it directly falsifies the project's headline
-claim. The brief's success criterion 5 and the intended Data Safety posture rest
-on "no data collection"; a reviewer or a privacy-minded user who inspects the
-manifest and finds backup enabled will reasonably conclude the claim was not
-checked. It also means that if a future feature ever stores something sensitive,
-it is silently off-device from day one.
+claim. The brief's success criterion 5 rests on "no data collection"; a reviewer
+or a privacy-minded user who inspects the manifest and finds backup enabled will
+reasonably conclude the claim was not checked. It also means that if a future
+feature ever stores something sensitive, it is silently off-device from day one.
+
+Under direct distribution this matters more, not less: the client will be
+vouching for the app personally to each person they share it with (§11), and an
+inaccurate claim made face to face is harder to walk back than a store listing.
 
 Fix — both attributes, on `<application>`:
 
@@ -266,10 +277,14 @@ One line each, as requested. Each of these **invalidates part of this document
 and requires the Security Engineer to be re-staffed** before it ships.
 
 - **Any crash reporter, analytics or ads SDK** → adds `INTERNET`, breaks CHK-1,
-  and turns the Data Safety declaration from "no data collected" into a real
-  disclosure obligation. This is the single most likely way the privacy posture
+  and forecloses the clean Data Safety declaration described in §10 if the
+  client ever publishes. This is the single most likely way the privacy posture
   dies, because it usually arrives as a two-line dependency someone adds to
-  debug a field crash.
+  debug a field crash. **Direct distribution raises the pressure**, not lowers
+  it: with no store analytics and no crash dashboard, the team is blind to field
+  problems by construction, and the temptation to fix that with an SDK is
+  correspondingly stronger. Being blind is the accepted cost of the privacy
+  posture, not a defect to be engineered away.
 - **Leaderboards or cloud save** → introduces a server, accounts, identity,
   authorization and PII in one step. Full threat model required, not an update.
 - **Any content loaded from outside the APK** → creates the first real untrusted
@@ -280,9 +295,28 @@ and requires the Security Engineer to be re-staffed** before it ships.
   none exists.
 - **Play Games Services / Play Billing** → accounts and money.
 
-## 10. Data Safety declaration
+## 10. Data Safety declaration — DEFERRED
 
-With the posture above, the Play Data Safety form should be truthfully:
+**Not in scope this phase.** The client has decided to skip the Play Store and
+distribute a signed APK directly, so there is no Data Safety form to file. This
+section is retained rather than deleted, because the posture it describes is
+what we are building to and it must remain true for the deferred option to stay
+open.
+
+**What must be true before this can be truthfully filled in**, if the client
+later publishes:
+
+- **CHK-1 green** — zero permissions in the merged manifest. If any dependency
+  has contributed `INTERNET` in the meantime, "no data collected" is no longer
+  automatically defensible and every network path needs auditing before the form
+  is signed.
+- **CHK-3 green** — `allowBackup="false"`. S-1 is the detail most likely to make
+  the declaration inaccurate without anyone noticing, since it is a platform
+  default rather than something we chose.
+- **No SDK from §9 has been added** — a crash reporter or analytics library
+  turns this from a nil return into a real disclosure obligation.
+
+Given those, the declaration would be:
 
 - **Data collected: none.** No data types, no purposes.
 - **Data shared: none.**
@@ -290,17 +324,52 @@ With the posture above, the Play Data Safety form should be truthfully:
 - **Data deletion:** not applicable — no data leaves the device; uninstalling
   removes it.
 
-This is only truthful if CHK-1 and CHK-3 are green. Auto Backup (S-1) is the
-detail most likely to make the declaration inaccurate without anyone noticing,
-since it is a platform default rather than something we chose.
-
 > Google's Android vitals collects crash and ANR data at the platform level and
 > surfaces it in Play Console. My understanding is that this is Google's own
-> platform collection and is not declarable by us, but the Product Lead should
-> confirm the current Play policy wording at the release gate rather than take
-> this document's word for it — see open questions in the handoff.
+> platform collection and is not declarable by us, but this should be confirmed
+> against current Play policy wording at the time of publishing rather than
+> taken from this document. Moot while distribution stays direct — there is no
+> Play Console to collect it.
 
-## 11. What blocks release
+Key custody and the deferred-publishing checklist are in
+`signing-and-key-custody.md` §13.
+
+## 11. Direct distribution — what changes
+
+The client distributes a signed APK directly; users sideload it. Security
+consequences, both directions:
+
+**Weaker:**
+
+- **No key reset path.** Play App Signing would have let Google hold the real
+  signing key and reset a lost upload key. Without a Play Console account the
+  client holds the only copy of the only key, and losing it means the app can
+  never be updated under the same identity. This is now the project's single
+  unrecoverable failure mode. Fully covered, with backup and verification
+  procedure, in `signing-and-key-custody.md` §2 and §6. It is a custody problem,
+  not a code problem, and nothing in the build can mitigate it.
+- **No store review, no Play Protect vetting at scale, no automatic updates.**
+  If a bad build ships there is no recall mechanism — only telling people.
+- **Users must enable "install from unknown sources"**, a real protection they
+  are being asked to relax. Guidance on explaining this honestly, and on what a
+  recipient can reasonably check, is in `signing-and-key-custody.md` §9.
+
+**Stronger:**
+
+- **The artifact the user installs is the artifact we built.** Google is not
+  re-signing anything, so reproducibility now extends all the way to the
+  device — an independent party can rebuild from source and confirm nothing was
+  inserted. Under Play App Signing that chain was broken at upload. This
+  materially increases what our supply-chain controls actually buy.
+- **The permission list is inspectable on-device before install.** "This app
+  requests no permissions" is visible to every recipient on the installer
+  screen, with no tooling. CHK-1 is what keeps that true, and it is now a
+  user-facing claim rather than an internal one.
+
+CHK-1 through CHK-7 are unaffected by the distribution change and stand exactly
+as specified in §6.
+
+## 12. What blocks release
 
 Per my remit: critical and high findings block release.
 
@@ -308,10 +377,11 @@ Per my remit: critical and high findings block release.
 - **No high findings in the app.** The High-severity supply-chain risk is a
   standing risk managed by the dependency policy, not an open defect — it does
   not block, provided the policy's controls are actually implemented.
-- **S-1 (Medium)** does not formally block release, but it must be fixed before
-  any public claim that no data leaves the device. Since that claim is in the
-  brief's success criteria, in practice it should be treated as release-blocking
-  for the *store listing*, not for the binary.
+- **S-1 (Medium)** does not formally block the binary, but it must be fixed
+  before any public claim that no data leaves the device. That claim is in the
+  brief's success criteria and, under direct distribution, is likely to be made
+  verbally by the client to each person they share the APK with — which is
+  harder to correct later than a store listing. Fix it before first handover.
 
 Nothing found here is exploitable in anything currently running, because nothing
 is running. No escalation required.
