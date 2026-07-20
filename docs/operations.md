@@ -23,7 +23,8 @@ make dev     # builds the debug APK; installs+launches it if a device is
 ```
 
 `make help` lists every target (`setup`, `dev`, `test`, `lint`, `build`,
-`apk`, `clean`, `doctor`). All of them wrap `./gradlew` — nothing here is
+`apk`, `clean`, `doctor`, `emulator-setup`, `emulator`, `screenshot`). All of
+them wrap `./gradlew` or a script under `scripts/` — nothing here is
 Makefile-specific magic; anyone who prefers Gradle directly can run
 `./gradlew check` or `./gradlew :app:assembleDebug`.
 
@@ -126,28 +127,102 @@ needs to require the `build-and-test` check to pass before merging to `main`,
 in the repository's Settings → Branches, for "blocks merge on failure" to
 actually be true rather than just advisory.
 
-## Why there is no emulator, and no instrumented Android tests
+## Emulator — correctness testing only
 
-This container has no `/dev/kvm` and no `/dev/dri`. Any Android emulator here
-would run under full software CPU emulation with a software GL rasterizer.
-Two consequences, both permanent for this container:
+**This never measures performance. No frame time, FPS, or timing number
+that ever comes out of this emulator may be cited as evidence of anything
+about how the product performs.** The client's own phone is the only
+performance instrument this project recognizes — this is a standing
+constraint in the brief, not a suggestion. What the emulator is for: does it
+launch, does it render, does it look right. `scripts/emulator-screenshot.sh`
+never prints a frame-time or FPS number for exactly this reason.
 
-- **No performance number from an emulator here is ever valid**, for
-  anything — not solver timing, not frame rate, not shader cost. This is a
-  hardware fact about the container, not a temporary limitation, and no
-  future change to this project should cite an emulator frame time as
-  evidence of anything.
-- **Correctness-only use (launch, tap, screenshot, instrumented test)** is
-  technically available but was evaluated and **not set up**. See handoff
-  0005 for the reasoning: the part of this product that most needs
-  deterministic, automated testing (`:core-sim` — physics and game rules) is
-  already fully covered by plain JVM tests with no device or emulator
-  involved at all (that is the entire point of ADR 0008). The remaining
-  surface an emulator could check — does `:app` launch, does a tap register —
-  is thin at Stage 0 (one placeholder screen) and the client already has the
-  one device that matters for it. Revisit only if `:app` grows enough
-  instrumented-test surface that waiting for the client's phone becomes the
-  actual bottleneck; it is not today.
+`/dev/kvm` and `/dev/dri` are passed into this container (they were not,
+earlier in the project — see handoff 0005, which recommended against an
+emulator on that basis; that recommendation no longer applies to whether an
+emulator can exist, only to what it's worth here, below).
+
+```sh
+make emulator-setup   # once: installs the pinned emulator + system image,
+                       # creates the AVD (idempotent, ~1.5GB download)
+make screenshot        # build the debug APK, boot, install, launch, wait
+                       # for the first frame, save a PNG
+make emulator          # boot the AVD with a window, for poking at it by hand
+```
+
+**x86_64, not arm64.** The client's phone is `arm64-v8a`, but neither
+`:core-sim` (pure Kotlin/JVM, ADR 0008 forbids an Android dependency, let
+alone native code) nor `:app` has any NDK/JNI code — confirmed, not assumed:
+neither module declares a `ndk {}` block or ships a `jniLibs/` directory.
+Nothing in this build is ABI-sensitive. x86_64 runs under this container's
+`/dev/kvm` at native speed; an arm64 system image on an x86_64 host gets no
+KVM acceleration (much slower binary translation) for zero correctness
+benefit. Revisit if the app ever gains native code.
+
+**API 36 (Android 16), not minSdk 29.** minSdk is the floor this build still
+supports, not the version to test rendering against. The client's phone
+runs Android 16 — an API-29 image would not catch anything specific to the
+OS version the client actually has.
+
+### What was actually found setting this up
+
+Two independent, and separately important, findings — read both before
+trusting anything this emulator shows you:
+
+1. **Hardware GL is not actually available in this container**, despite
+   `/dev/dri` being present and readable. Confirmed two ways:
+   - The native host GL stack (Mesa, via `eglinfo -B`) falls back to
+     `llvmpipe` (software) — the AMD GPU's own kernel driver refuses the
+     acceleration query (`amdgpu_query_info(ACCEL_WORKING)` fails with
+     `EACCES`), independent of Android entirely.
+   - The emulator's own hardware-GL capability check reaches the same
+     conclusion and says so directly: `ERROR | Your GPU cannot be used for
+     hardware rendering. Consider using software rendering.`
+   - `scripts/emulator-screenshot.sh` tries `-gpu host` first, detects this
+     failure from the emulator's own log rather than waiting for a boot that
+     has already failed, and falls back to `-gpu swiftshader_indirect`
+     (software) — printing an unmissable `GPU status: SOFTWARE (SwiftShader)`
+     line rather than silently proceeding as if it got hardware rendering.
+     If a future container genuinely has working hardware GL, the script
+     will report `hardware GL` instead and nothing else needs to change.
+
+2. **The emulator itself crashes on a majority of boot attempts in this
+   container** — a `SIGSEGV` inside `qemu-system-x86_64-headless`
+   (gfxstream), roughly 15-20 seconds into "performing a full startup",
+   reproduced with `strace` attached to confirm it is a real crash and not a
+   script bug. This happens under **both** `-gpu host` and
+   `-gpu swiftshader_indirect`, and **with or without** `-no-accel` (i.e. it
+   is not specific to KVM or to the GPU question above) — it is some other
+   incompatibility between this emulator build (36.6.11) and this
+   container's sandboxing that was not fully root-caused. One fix was
+   found and kept (`QT_QPA_PLATFORM=offscreen` — the emulator's Qt UI layer
+   initializes even in `-no-window` mode and segfaults immediately without a
+   display or an offscreen platform plugin), but it reduces the crash rate
+   rather than eliminating it. `scripts/emulator-screenshot.sh` retries up
+   to 3 times per GPU mode before giving up and reporting failure plainly —
+   this is a concession to an unresolved container-level issue, not evidence
+   the script is flaky.
+   
+   **Practical effect: `make screenshot` may well fail outright in this
+   container right now**, separate from and in addition to the
+   software-rendering finding above. Both are recorded here so the next
+   person doesn't have to re-derive either from scratch. See handoff 0007
+   for the full diagnostic trail (the `strace` excerpt, the `eglinfo`
+   output, the exact log lines) if it needs to be picked up again — likely
+   next steps: try an older emulator revision, or ask whoever administers
+   this container about the seccomp/capability profile QEMU is running
+   under.
+
+The part of this product that most needs deterministic, automated testing
+(`:core-sim` — physics and game rules) is already fully covered by plain JVM
+tests with no device or emulator involved at all (the entire point of ADR
+0008) and is unaffected by any of the above.
+
+This is not wired into CI: CI runners have no `/dev/kvm` and no `/dev/dri`,
+so an emulator there would be slower and no more informative than
+JVM tests already are, and would inherit the crash above with no way to
+diagnose it interactively. `make screenshot` is a local, this-container-only
+tool for the person doing rendering work, same spirit as `make dev`.
 
 ## When something breaks
 
