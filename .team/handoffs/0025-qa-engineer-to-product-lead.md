@@ -1,4 +1,4 @@
-# 0024 — QA Engineer → Product Lead
+# 0025 — QA Engineer → Product Lead
 
 Date: 2026-07-20
 Branch: `test/core-sim-hardening-v2` (cut fresh from `origin/main` @ `101aea9`).
