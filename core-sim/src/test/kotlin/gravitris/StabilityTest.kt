@@ -80,11 +80,17 @@ class StabilityTest {
     @Test
     fun `spongy and firm material both settle`() {
         // ADR 0001's headline finding is that "spongy" is not threatened by the
-        // budget, and ADR 0003's is that 8 substeps is the lowest count that
-        // settles *across the whole stiffness range*. If only the middle of the
-        // range settled, stability would depend on a compliance dial the
-        // designer expects to be free — which is the specific failure the
-        // substep floor exists to prevent.
+        // budget. The property worth guarding is that the whole stiffness range
+        // settles at the shipped substep count: if only the middle of the range
+        // settled, stability would depend on a compliance dial the designer
+        // expects to be free.
+        //
+        // ADR 0003 originally read "8 is the lowest count that settles across
+        // the whole stiffness range" off its table. Amendment 1 withdraws that
+        // inference — the apparent stiffness-dependence was one unlucky
+        // metastable configuration in a chaotic pile, not a real trend. The
+        // property is still worth asserting; the number 8 is not what makes it
+        // true.
         for (compliance in floatArrayOf(1e-8f, 1e-6f, 1e-5f)) {
             val config = config().copy(
                 distanceCompliance = compliance,
@@ -109,7 +115,8 @@ class StabilityTest {
      * "has not been measured. It should be checked at Milestone 1." Both
      * shapes are measured here. The wide well turns out to be the *gentler*
      * of the two, so the ADR's conclusions are conservative in the direction
-     * it hoped.
+     * it hoped. Independently reproduced in the spike and recorded as ADR 0003
+     * Amendment 2; the question is closed.
      */
     private fun deepPileConfig() = SimConfig(lattice = 5, wellWidth = 5f, wellHeight = 60f)
 
@@ -133,13 +140,24 @@ class StabilityTest {
         // if someone "optimises" substeps down, the deep pile stops being a
         // pile at all.
         //
-        // NOTE: this measures the *direction* of ADR 0003's finding, not its
-        // table. Measured here, the floor sits between 2 and 4 substeps, not
-        // at 8: 4, 6, 8, 12 and 16 all settle in both scene shapes with no
-        // trend, and only 2 fails. The shipped default stays at 8 because it
-        // is pinned by docs/contracts.md and comfortably affordable, but the
-        // disagreement with ADR 0003's table is flagged for the Architect in
-        // handoff 0006 rather than quietly encoded here.
+        // This asserts the *cliff*, not the boundary, and that is deliberate.
+        //
+        // Measured here, the floor sits between 2 and 4 substeps, not at 8:
+        // 4, 6, 8, 12 and 16 all settle in both scene shapes with no trend,
+        // and only 2 fails. That contradicted ADR 0003's table, so it was
+        // escalated rather than quietly encoded. **Settled by ADR 0003
+        // Amendment 1**: the architect re-ran the spike, both solvers agree,
+        // and the original table was reading noise in a pile that had not
+        // finished settling. The floor is ~3-4.
+        //
+        // 8 stays — as ~2x engineering margin over that floor, not as the
+        // floor itself — because the failure below it is catastrophic rather
+        // than graceful (eight orders of magnitude, in both implementations)
+        // and the margin costs ~0.25 ms/frame.
+        //
+        // So there is no boundary test to write here. Between 4 and 8 there is
+        // no signal, and an assertion that 7 fails would be asserting noise.
+        // 2-vs-8 is the only comparison with a reproducible answer.
         val config = deepPileConfig()
         val settled = energyAfterSettling(config.copy(substeps = 8))
         val unsettled = energyAfterSettling(config.copy(substeps = 2))

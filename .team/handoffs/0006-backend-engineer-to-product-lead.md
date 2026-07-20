@@ -73,6 +73,21 @@ The spike README says all three are easy to reproduce. Each has a named guard:
 
 ## ⚠ ADR 0003's substep table does not reproduce. Please route to the Architect.
 
+> **RESOLVED 2026-07-20 — ADR 0003 Amendments 1–3, architect handoff 0008.**
+> The escalation below was correct and the ADR was wrong. The architect re-ran
+> the spike: both solvers agree exactly, the disagreement was between *scenes*,
+> and the original table read noise in a pile that had not finished settling.
+> **The floor is ~3–4. 8 stays, recorded as ~2x engineering margin rather than
+> as the measured floor.** No code and no contract moved. Amendment 2 confirms
+> the wide-well finding below; Amendment 3 corrects the per-frame broadphase
+> reasoning I flag further down. Nothing in this section is open any more —
+> it is kept as the record of what was measured and when.
+>
+> One consequence for QA, from handoff 0008: **do not write a boundary test.**
+> Between 4 and 8 there is no signal in either implementation, so asserting
+> that 7 fails would be asserting noise. Assert the cliff at 2, which
+> reproduced across two implementations to within ~15%.
+
 This is the finding I am least comfortable sitting on. Measured residual
 kinetic energy after 900 frames, my implementation:
 
