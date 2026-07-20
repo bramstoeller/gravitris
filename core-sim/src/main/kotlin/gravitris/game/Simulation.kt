@@ -244,6 +244,7 @@ class Simulation(config: SimConfig) {
         override val bodyCount: Int get() = world.bodyCount
         override val bodyArchetype: IntArray get() = world.bodyArchetype
         override val bodyLattice: Int = config.lattice
+        override val particleCapacity: Int = world.particleCapacity
         override val triangleIndices: IntArray get() = world.triangleIndices
 
         // Stage 3. Zero fill and -1 fill are the documented "nothing is

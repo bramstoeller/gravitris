@@ -80,6 +80,22 @@ interface SimState {
     /** Particles per piece edge; the same for every body in a run. */
     val bodyLattice: Int
 
+    /**
+     * Upper bound on [particleCount] for this simulation's lifetime.
+     *
+     * Body capacity is derived from the well's area rather than configured
+     * (`SimConfig` carries no capacity field, and adding one would cross a
+     * module boundary), so `:app` cannot compute it without reproducing the
+     * derivation — and a reproduced derivation is one that drifts silently the
+     * first time the original changes. The renderer needs a real bound to size
+     * its vertex and index buffers against and to know when the well is full,
+     * so the bound is published rather than guessed.
+     *
+     * Additive per `docs/contracts.md` §5: adding a field to `SimState` does
+     * not cross the module boundary.
+     */
+    val particleCapacity: Int
+
     // --- rendering topology (static per tier, ADR 0007) ---
     /**
      * Body-local triangle indices, `0 until bodyLattice * bodyLattice`. Valid
