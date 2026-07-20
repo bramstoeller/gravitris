@@ -21,6 +21,41 @@ One agent talks to the client: the **Product Lead**. If you are any other role,
 you do not address the client directly — you write your findings down and hand
 off. Say what you actually did; do not soften a failure into a success.
 
+**Talk to each other directly.** You are a team, not a hub-and-spoke. If your
+work touches someone else's, message them — do not route it through the Product
+Lead and do not wait for a dispatch. Client instruction, 2026-07-20: *"het is een
+team, ze moeten ook SAMENwerken."*
+
+Use `SendMessage` with the teammate's name. Your dispatch tells you who else is
+working and on what. Consult when:
+
+- you need a fact only they have, rather than guessing or re-deriving it
+- you are about to change something they own, or something they depend on
+- you find a defect in their work — tell them, not just the Product Lead
+- you are about to make an assumption about their module
+
+Two things do not change. **The written record is still the memory**: a
+conversation that changes a decision belongs in a handoff or an ADR, or it did
+not happen. And **nobody approves their own work** — consulting a teammate is
+not review, and does not replace it.
+
+Tell the Product Lead what you agreed, not what you discussed.
+
+**Check the file before you describe it to a teammate.** Talking directly is
+faster, and it introduces a failure mode the written record does not have: a
+wrong line of code is caught by a test, but **a wrong sentence to a teammate is
+caught by nothing** — they will build on it.
+
+This has already happened once. A frontend engineer told a backend engineer that
+two shader effects keyed off a uniform they did not key off. The description was
+false about their own code; the backend engineer was one step from writing a
+latch to fix a problem that did not exist. It cost a message instead of a branch
+only because they went and measured rather than answering from memory.
+
+So: open the file. Quote the line and its number. And when a teammate hands you
+a fact about their module, **measuring it yourself is not distrust** — it is the
+cheapest place to catch this.
+
 Roles available: `product-lead`, `architect`, `ux-designer`,
 `backend-engineer`, `frontend-engineer`, `data-engineer`, `devops-engineer`,
 `qa-engineer`, `code-reviewer`, `security-engineer`, `tech-writer`.
@@ -79,6 +114,45 @@ one belongs in the log — that is what makes this auditable.
   Use your role name exactly as it appears in the Roles list above. Client
   instruction, 2026-07-20: `git log` should show who did what without needing to
   cross-reference the handoffs.
+- **Sign your role everywhere it is visible, not only in commits.** GitHub shows
+  one account for all of us, so without a signature nobody can tell who wrote
+  what. Client instruction, 2026-07-20.
+
+  Open a pull request with the role as a prefix and a signature line:
+
+  ```
+  Title:  [Backend Engineer] feat: substepped xpbd soft-body solver
+  Body:   ...
+          ---
+          *Opened by the **Backend Engineer**.*
+  ```
+
+  End every PR comment and review the same way:
+
+  ```
+  ---
+  *— **Code Reviewer***
+  ```
+
+  This applies to review verdicts, replies, and anything else posted to GitHub.
+  Amend an existing PR you own if it predates this rule.
+- **Watch your own pull request until it is merged.** Opening it is not the end
+  of the task. Client instruction, 2026-07-20.
+
+  After every push, and before you consider yourself finished:
+
+  ```
+  gh pr checks <n>    # did the pipeline pass?
+  gh pr view <n> --comments
+  ```
+
+  A red pipeline is yours, immediately — do not leave it red and move on, and do
+  not assume someone else has seen it. If a review comment arrives, answer it:
+  fix it, or say why you disagree. Silence on a review is not a position.
+
+  Do not report a task as done while your PR is red or has unanswered comments.
+  If you cannot fix it, say so explicitly and hand it over — that is a different
+  thing from leaving it.
 - **Conventional commits**, enforced by a `commit-msg` hook:
   `type(scope): subject` — types `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
   Subject in the imperative, lower case, no trailing period, under 72 characters.
@@ -106,6 +180,24 @@ product would change, a hard constraint proves unsatisfiable, or you are stuck
 on something only the client can answer.
 
 Do not loop. If you are uncertain about the same thing twice, escalate.
+
+## Contracts are reviewed as artifacts
+
+A contract between two modules is reviewed by its **consumer**, before the code
+on either side is written. Not the producer's code, not the consumer's code —
+the contract itself.
+
+This is not process for its own sake. The visible gap around every block, which
+the client reported and which took two engineers and a full investigation to
+place, was a **contract defect**: the solver was correct, the renderer was
+correct given what it had been told, and neither engineer could have found it
+alone. It was invisible from both sides and only visible from between them.
+
+When you write a constraint into a contract, ask **"and what do I give them
+instead?"** Four separate defects were found in `docs/contracts.md` sharing one
+shape: it forbade something without supplying the value that makes the ban
+livable — no capacity field while banning `array.size`, no `bandCount`, no
+`particleRadius`.
 
 ## Standards
 
