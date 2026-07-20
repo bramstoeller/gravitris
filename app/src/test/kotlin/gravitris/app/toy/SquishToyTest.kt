@@ -227,8 +227,18 @@ class SquishToyTest {
     }
 
     /**
-     * Milestone 1 is explicitly the physics and nothing else. If any of these
-     * start reporting something, a game rule has been built by accident.
+     * The toy stages pieces itself and never calls [Simulation.start], so no
+     * game *rule* runs: nothing scores, levels, locks, clears or ends.
+     *
+     * Coverage bands are the deliberate exception, and the reason is worth
+     * stating because this assertion used to demand `bandFill == 0`. Stage 3A
+     * moved band occupancy onto the always-on per-tick path — it is a
+     * *measurement* of the world, like `kineticEnergy`, not a rule — precisely
+     * so the gel shader reads live fill from this toy without the mechanic
+     * running (backend handoff 0019). So `bandFill` is expected to be non-zero
+     * once material settles; what proves no *rule* fired is that
+     * `bandClearProgress` never leaves -1 (no clear) and score/level/phase/
+     * landing are all inert.
      */
     @Test
     fun `no game rules have appeared`() {
@@ -239,9 +249,8 @@ class SquishToyTest {
         assertEquals(1, toy.state.level)
         assertEquals(gravitris.game.Phase.Playing, toy.state.phase)
         assertFalse(toy.state.landing.valid)
-        for (b in 0 until toy.state.bandFill.size) {
-            assertEquals(0f, toy.state.bandFill[b])
-            assertEquals(-1f, toy.state.bandClearProgress[b])
+        for (b in 0 until toy.state.bandClearProgress.size) {
+            assertEquals(-1f, toy.state.bandClearProgress[b], "no clear may run in the toy")
         }
     }
 
