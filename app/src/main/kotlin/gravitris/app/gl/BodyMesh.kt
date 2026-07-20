@@ -175,6 +175,16 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
             return 0
         }
 
+        // The shell caps bodies at the figure these buffers were sized for, so
+        // this cannot fire today. It is here because the alternative failure is
+        // an array index exception thrown from the GL thread, which takes the
+        // app down with a message that says nothing about the actual cause.
+        check(particles <= maxParticles) {
+            "the simulation has $particles particles but the mesh was sized for " +
+                "$maxParticles ($maxBodies bodies x $particlesPerBody); the shell's body cap " +
+                "and the buffer sizing have diverged"
+        }
+
         val cursor = VertexFill.fill(state, alpha, vertexScratch)
 
         vertexBuffer.position(0)
