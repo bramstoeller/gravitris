@@ -14,6 +14,26 @@ package gravitris.app.gl
  * development — it would surface as a black screen on the client's phone, with
  * no way to bisect it from here. Testing the topology directly is the only
  * verification available before the APK leaves the container.
+ *
+ * ## Why this is not simply `SimState.triangleIndices`
+ *
+ * The core publishes the same topology, and it would be tempting to upload
+ * that array directly. The index buffer is built once in `onSurfaceCreated`,
+ * which runs before the well has been laid out and therefore before a
+ * `Simulation` exists to ask — so the shell has to be able to derive the
+ * pattern from the lattice size alone.
+ *
+ * That leaves two definitions of one thing, which is exactly how a renderer
+ * quietly stops drawing what the solver is solving. `LatticeTopologyTest`
+ * closes it by asserting this function reproduces `SimState.triangleIndices`
+ * **index for index**, so the two cannot diverge without a red build.
+ *
+ * Matching exactly, rather than merely covering the same cells, is worth the
+ * test: the solver's two area constraints per cell are defined on *these two
+ * triangles*. Splitting a cell along the other diagonal would render a
+ * quadrilateral whose halves are not the halves whose areas the solver
+ * constrains, so `particleCompression` — the one shading input this build
+ * carries — would be describing a triangle that is not on screen.
  */
 object LatticeTopology {
 
@@ -29,11 +49,13 @@ object LatticeTopology {
      * Body `n`'s indices are body 0's pattern offset by `n * lattice^2`, which
      * is what lets every body share one vertex buffer and one draw call.
      *
-     * Winding is consistently counter-clockwise in a y-up world space. Face
-     * culling is disabled at Stage 1 (the geometry is 2D and opaque), so
-     * winding does not currently affect what is drawn — but it will the moment
-     * anything wants a front/back distinction, and getting it consistent now
-     * costs nothing.
+     * Each cell is split along its bottom-left/top-right diagonal, which is
+     * the split the solver's area constraints use. Winding is consistently
+     * counter-clockwise in a y-up world space. Face culling is disabled (the
+     * geometry is 2D and opaque), so winding does not currently affect what is
+     * drawn — but the solver relies on it: its rest areas are signed, so a
+     * clockwise triangle would make an area constraint fight its own rest
+     * value.
      */
     fun buildIndices(maxBodies: Int, lattice: Int): ShortArray {
         require(lattice >= 2) { "A lattice needs at least 2 particles per edge, got $lattice" }
@@ -59,13 +81,15 @@ object LatticeTopology {
                     val topLeft = bottomLeft + lattice
                     val topRight = topLeft + 1
 
+                    // Split on the bottom-left/top-right diagonal, matching the
+                    // solver's two area constraints per cell exactly.
                     indices[cursor++] = bottomLeft.toShort()
                     indices[cursor++] = bottomRight.toShort()
-                    indices[cursor++] = topLeft.toShort()
-
-                    indices[cursor++] = topLeft.toShort()
-                    indices[cursor++] = bottomRight.toShort()
                     indices[cursor++] = topRight.toShort()
+
+                    indices[cursor++] = bottomLeft.toShort()
+                    indices[cursor++] = topRight.toShort()
+                    indices[cursor++] = topLeft.toShort()
                 }
             }
         }
