@@ -35,6 +35,23 @@ class Simulation(private val config: SimConfig) {
     private val world = SoftBodyWorld(config)
     private val solver = XpbdSolver(world)
 
+    /**
+     * Where a new piece's centre sits: as high as it can while still being
+     * wholly inside the well.
+     *
+     * This puts the piece's material in the topmost bands, which is what
+     * ADR 0005 requires of it — its overflow test is the fill of the spawn
+     * band, and that only means anything if the spawn region *is* one of the
+     * coverage bands. [SimState.spawnBandIndex] publishes which one.
+     *
+     * **Declared before [stateImpl] deliberately.** `State` derives
+     * [SimState.spawnBandIndex] from this at construction, and Kotlin
+     * initialises properties in declaration order — computing it after the
+     * state would read a zero and publish the floor band, not the spawn band.
+     */
+    private val spawnCenterY: Float =
+        config.wellHeight - 0.5f * world.pieceWidth - world.particleRadius
+
     private val stateImpl = State(config)
 
     /** Scratch for rotation rollback. Sized once; [applyRotate] allocates nothing. */
@@ -414,18 +431,6 @@ class Simulation(private val config: SimConfig) {
         stillTicks = 0
         touchedTicks = -1
     }
-
-    /**
-     * Where a new piece's centre sits: as high as it can while still being
-     * wholly inside the well.
-     *
-     * This puts the piece's material in the topmost bands, which is what
-     * ADR 0005 requires of it — its overflow test is the fill of the spawn
-     * band, and that only means anything if the spawn region *is* one of the
-     * coverage bands. [SimState.spawnBandIndex] publishes which one.
-     */
-    private val spawnCenterY: Float =
-        config.wellHeight - 0.5f * world.pieceWidth - world.particleRadius
 
     /**
      * Places a piece with its centre at ([centerX], [centerY]) and makes it
