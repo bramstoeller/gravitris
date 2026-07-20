@@ -60,6 +60,9 @@ class GameRenderer(
      *  well does not throw the player's stack away. */
     private var toyConfig: SimConfig? = null
 
+    /** [SquishToy.resets] as last seen, to notice the well being emptied. */
+    private var observedResets = 0
+
     private val inputFrame = InputFrame()
     private val mesh = BodyMesh(maxBodies = Tunables.TOY_MAX_BODIES, lattice = Tunables.TOY_LATTICE)
     private val wellFrame = WellFrame()
@@ -225,6 +228,14 @@ class GameRenderer(
 
         val alpha = advanceSimulation(toy, frameStart)
 
+        // The toy empties the well on its own when material reaches the top.
+        // The mesh caches archetypes against the body count, which is sound
+        // while bodies are only ever added and wrong the moment they are not.
+        if (toy.resets != observedResets) {
+            observedResets = toy.resets
+            mesh.invalidateArchetypes()
+        }
+
         val particles = mesh.upload(toy.state, alpha)
 
         // Everything above is our own work: stepping the simulation and
@@ -315,6 +326,7 @@ class GameRenderer(
 
         toyConfig = config
         toy = SquishToy(config, maxBodies = Tunables.TOY_MAX_BODIES)
+        observedResets = 0
         mesh.invalidateArchetypes()
         accumulatorNanos = 0L
         lastFrameNanos = 0L
