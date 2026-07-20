@@ -23,13 +23,25 @@ substeps per 60Hz tick, plus a small velocity damping term.**
 
 Four parts, each measured.
 
-**1. Broadphase: uniform grid, counting sort, rebuilt once per frame.** Cell size
-equals one particle diameter. Rebuilt per *frame*, not per substep; narrowphase
-runs per substep against the frame's grid. Particles move a fraction of a cell
-per substep, so this is safe, and it moves the rebuild cost off the substep
-multiplier. The rebuild allocates nothing (cell arrays are retained and refilled)
-— a per-frame `IntArray` in the first draft showed up immediately in the
-allocation check and was hoisted.
+**1. Broadphase: uniform grid, counting sort, rebuilt every substep.** Cell size
+equals one particle diameter. The grid is rebuilt at the top of *every substep*
+(`XpbdSolver.step`, `grid.build` inside the substep loop), and the narrowphase
+centres a 3×3 stencil on the cell a particle was bucketed into at that rebuild.
+The rebuild allocates nothing (cell arrays are retained and refilled) — a
+per-frame `IntArray` in the first draft showed up immediately in the allocation
+check and was hoisted. The extra rebuilds cost +2.1% per step on the ADR 0001
+reference scene (468 → 478 µs), a relative figure that survives device derating.
+
+> **Superseded — original decision, kept for the record.** This ADR first
+> specified the grid "rebuilt per *frame*, not per substep; narrowphase runs per
+> substep against the frame's grid. Particles move a fraction of a cell per
+> substep, so this is safe, and it moves the rebuild cost off the substep
+> multiplier." That per-frame bound is false for the closing speeds this game
+> actually produces, and it is not quality-tier safe: at the ADR 0009 lattice-6
+> tier the cell shrinks until a piece at terminal speed outruns the stencil
+> within one frame and its contact is missed. **See Amendment 3** for the
+> coupling, the before/after measurements, and the fix (commit `0571697`,
+> guarded by `BroadphaseMarginTest`).
 
 **2. Contacts are rigid, not compliant.** Bodies are soft because their *interior*
 constraints are compliant; the non-penetration constraint itself is solved with
@@ -134,3 +146,71 @@ That is a *harder* compression case, so the substep floor is conservative — bu
 wide well produces more simultaneous contacts per body than a narrow tower, and
 that specific configuration has not been measured. It should be checked at
 Milestone 1.
+
+## Amendments
+
+### Amendment 3 — the broadphase is rebuilt every substep (2026-07-20)
+
+Supersedes §1's "rebuilt once per frame". This change has shipped (commit
+`0571697`, on `main`) and the client has approved the resulting feel; §1 above is
+updated to match, and the original per-frame reasoning is preserved there as a
+superseded note so the decision stays auditable.
+
+**Provenance — this is a reconstruction.** Three surviving documents cite "ADR
+0003 Amendment 3" — the QA review (`reviews/qa-broadphase-margin.md`), the
+QA → Backend handoff (0020), and the KDoc of `BroadphaseMarginTest` — but no
+Amendment text was ever committed to this file on any branch. It was written
+informally, or only spoken, and lost. This section reconstructs it from those
+three references so that nothing cites a document which does not exist; the
+citations now resolve here. It is numbered 3 to match them — there are no
+Amendments 1 or 2 on record. Because it is a reconstruction, the wording is new
+even where the reasoning is not.
+
+**The coupling Amendment 3 named.** The broadphase cell equals one particle
+diameter, and the narrowphase centres a 3×3 stencil on the cell a particle was
+bucketed into — so it tolerates about one cell of drift between rebuilds. The
+particle radius, and therefore the cell, *shrinks as the ADR 0009 lattice count
+grows* (lattice 4 → 0.600, lattice 5 → 0.450, lattice 6 → 0.360 well units). At a
+fixed terminal speed a piece therefore crosses more cells per frame at higher
+detail: 0.83, then 1.11, then **1.39 cells/frame** at lattice 6. Past one cell
+the arriving piece falls outside the stencil and its contact is missed for that
+frame. Amendment 3 predicted exactly this — shrinking the radius eats the drift
+margin — and asked that any change to the particle radius **re-trigger the
+non-tunnelling test**, which until then exercised only lattice 5.
+
+**Why the per-frame ADR was wrong, measured both ways.** Nothing re-triggered
+that test, so the high-detail tier shipped unguarded. Rebuilding once per frame
+penetrated deeply at lattice 6 while lattice 4 and 5 stayed rigid — a clean
+cliff, bit-identical across runs, which is the signature of a missed pair, not a
+stiffness limit:
+
+| broadphase rebuild | lattice 4 | lattice 5 | lattice 6 | rigid budget |
+| ------------------ | --------- | --------- | --------- | ------------ |
+| once per frame     | 0.40%     | 0.86%     | **39.2%** | 15% |
+| every substep      | 0.40%     | 0.86%     | **0.90%** | 15% |
+
+Deepest inter-body penetration as a fraction of a particle diameter, at the frame
+boundary (Backend Engineer's harness, handoff 0023). QA independently measured
+the per-frame lattice-6 case at 43.7% on an 8-body pile — same order — and pinned
+it as a Major defect (handoff 0020, `reviews/qa-broadphase-margin.md`).
+
+**Decision.** Rebuild the grid **every substep**, not once per frame. Per substep
+the closing bound holds with margin: a piece moves at most `MAX_SPEED * h` =
+0.0625 well units, closing 0.125 against the 0.36-unit lattice-6 cell — a 2.9×
+margin — so the missed pair cannot occur. This shipped in commit `0571697`
+(`fix(core-sim): rebuild the broadphase every substep`), which was made to fix a
+*separate symptom of the same mechanism* — fast drags and hard drops closing
+faster than ~35 units/s were manufacturing ejection at the terminal cap — and
+closed the lattice-6 coupling as a consequence. Cost: +2.1% per step (§1).
+
+**Consequences.** The rebuild cost now rides the substep multiplier, which §1's
+original version deliberately avoided — accepted, because 2.1% buys a guarantee
+the per-frame version could not make at any lattice. The guarantee is that
+contact rigidity (§2) is independent of the ADR 0009 quality tier: a tier changes
+render detail only, never what happens in the game. `BroadphaseMarginTest`
+(`a hard drop stays rigid at every quality tier` — all three tiers, 15% budget)
+is the standing guard Amendment 3 asked for, now live in `:core-sim`. One
+residual coupling is on record: that guard drops at a hard-coded 30 units/s equal
+to today's `MAX_SPEED`; if `MAX_SPEED` is ever raised, the guard's drop speed
+must be raised with it, or it will test a slower-than-terminal drop (handoff
+0023).
