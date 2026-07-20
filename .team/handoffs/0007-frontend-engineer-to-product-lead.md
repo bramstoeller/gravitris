@@ -2,22 +2,29 @@
 
 **Stage 1, Track B — the `:app` shell.**
 Branch `feat/app-shell`, based on `chore/build-foundation`.
-Commits `fcded24..d546475` (5 commits). Pushed to `origin` after each.
+Commits `fcded24..1a4c852` (7 commits). Pushed to `origin` after each.
+
+*Updated after the Product Lead's decisions on the three items raised below.
+Compression darkening is built (§1 resolved); the readout is labelled as a
+baseline (§3); the CHK-1 change is untouched pending security review (§2).*
 
 ---
 
 ## What exists now
 
 `make build` produces an installable debug APK at
-`app/build/outputs/apk/debug/app-debug.apk`. `make test` runs 80 JVM tests in
+`app/build/outputs/apk/debug/app-debug.apk`. `make test` runs 84 JVM tests in
 `:app` (plus the existing 1 in `:core-sim`), all passing, together with lint
 and the merged-manifest security checks.
 
 Launching it gives you one piece falling into an empty well. Drag anywhere on
 screen to move it, tap to rotate, flick down to hard-drop. It squashes on
-impact, the phone buzzes in proportion to how hard it landed, and the
-bottom-left corner shows live frame timings. Landed pieces stay, so the well
-fills as you play; at 60 bodies it resets.
+impact, compressed material visibly darkens, the phone buzzes in proportion to
+how hard it landed, and the bottom-left corner shows live frame timings. Landed
+pieces stay, so the well fills as you play; at 60 bodies it resets.
+
+**Volume-up toggles the compression darkening on and off.** That is the
+measurement control — see below.
 
 | Area | Where |
 | ---- | ----- |
@@ -33,21 +40,30 @@ fills as you play; at 60 bodies it resets.
 
 ## The frame-time readout — how to read it
 
-Five lines, bottom-left, monospace, ~55% opacity:
+Six lines, bottom-left, monospace, ~55% opacity:
 
 ```
+stage1 baseline - not a verdict
  16.7ms mean  17.9ms p95
   4.1ms cpu   31.2ms max
   59.9 fps        2 jank/s
   1920 tri       60 bodies
-  11.7 KB/frame  haptics:scaled
+  17.6 KB/f  shade:on  haptics:scaled
 ```
+
+The first line is there because someone will photograph this readout and paste
+it into a discussion without the surrounding context. A good number here means
+"nothing is structurally wrong yet", not "we have headroom", and the caveat
+needs to travel with the numbers rather than living only in this handoff.
 
 - **mean / p95 / max** — frame-to-frame wall time over the trailing second.
 - **jank/s** — frames in the last second that missed 16.7ms.
 - **cpu** — time spent stepping the simulation and filling the vertex buffer,
   i.e. everything before we hand work to the driver.
 - **tri / bodies / KB per frame** — how much geometry produced those numbers.
+- **shade:on / shade:off** — whether the compression darkening term is active.
+  Frame times are not comparable across the two, which is the entire point of
+  the toggle.
 - **haptics:scaled** vs **haptics:fixed** — whether the device has vibration
   amplitude control.
 
@@ -58,9 +74,12 @@ authority of a measurement. The *statistics* are computed from every single
 frame, so a lone 40ms hitch still shows in `max` and `jank` even while `mean`
 stays green. That is the specific dishonesty I built this to avoid.
 
-**What to ask the client for:** the five lines, photographed or read out, at
-three moments — an empty well, a half-full well, and a full one. The `bodies`
-count makes those three comparable.
+**What to ask the client for:** the readout, photographed or read out, at three
+moments — an empty well, a half-full well, and a full one. The `bodies` count
+makes those three comparable. **Then, with a full well, press volume-up and
+take the numbers again.** That second pair is the cost of the compression term,
+and it is the only calibration we will have for what Stage 3's shading is
+likely to cost.
 
 ---
 
@@ -73,16 +92,21 @@ reasoning, and I want it read as such.
 What I can say with confidence:
 
 - **Bandwidth is a non-issue, confirmed.** ADR 0007 estimated ~36 KB/frame; the
-  Stage 1 vertex format is leaner (position only in the dynamic buffer, 8 bytes
-  per particle) at **~11.7 KB/frame at full occupancy**, about 0.7 MB/s. This
-  should be struck off the risk list rather than re-examined.
+  Stage 1 dynamic vertex is 12 bytes per particle (position plus compression),
+  giving **~17.6 KB/frame at full occupancy**, about 1.05 MB/s. Even with all
+  of Stage 3's varyings added this stays a rounding error. This should be
+  struck off the risk list rather than re-examined.
 - **Geometry is trivial.** 1920 triangles and one draw call for the entire
   stack. No mobile GPU from the last decade cares about this.
-- **The remaining risk is entirely fragment cost, and Stage 1 cannot measure
-  it.** The Stage 1 fragment shader is one flat varying, one uniform lookup, one
-  write — about as cheap as a fragment shader can be. So the number the client
-  reports is a **floor**: the cost of geometry, overdraw and compositing with
-  effectively zero per-pixel work.
+- **The remaining risk is still overwhelmingly fragment cost, and Stage 1
+  measures only a sliver of it.** The Stage 1 fragment shader is a palette
+  lookup plus one multiply-and-clamp. So the number the client reports is a
+  **floor**: geometry, overdraw and compositing with almost no per-pixel work.
+- **The one new datum is what a single fragment term costs**, via the volume-up
+  toggle. That is a much weaker signal than a Stage 3 measurement, but it is not
+  nothing: if one clamp and one multiply already move the frame time
+  measurably, the procedural gel, subsurface, grain and band glow will not fit,
+  and we would want to know that before Stage 3 rather than after.
 
 **That floor is still worth having, and it is the main reason to ship this
 build.** It answers three things a Stage 3 measurement could not separate:
@@ -107,10 +131,46 @@ it as an upper bound on GPU cost, not a measurement of it.
 
 ---
 
-## The one thing needing a decision before merge
+## The compression darkening term — approved and built
+
+`Tunables.COMPRESSION_GAIN` / `COMPRESSION_MAX_DARKEN`,
+`gl/Shaders.kt`, and `particleCompression` through the harness and the vertex
+buffer.
+
+- **Scope held exactly where the Product Lead set it:** compression to
+  darkness, nothing else. No rim light, no gradient, no grain. The base colour
+  stays genuinely flat — `vArchetype` is still a `flat` varying, so the palette
+  lookup is constant across each triangle and only the physical quantity is
+  interpolated.
+- **Capped at 55% darkening**, because hue is the primary identity cue
+  (`piece-identity.md`) and has to survive deformation. Letting it reach black
+  would destroy that cue exactly where pieces pile up and need it most.
+- **Toggleable via volume-up**, with the frame history reset on toggle so the
+  first second after a switch does not report a blend of both configurations. A
+  hardware key rather than a screen control because the control scheme is
+  drag-anywhere and any on-screen toggle would carve a dead zone out of the
+  play area — worst of all in the bottom-left corner, where the readout sits
+  and where a thumb rests.
+
+Writing this found a fourth bug, and it is the interesting one: **the harness's
+squash was exactly area-preserving**, so `particleCompression` sat at a constant
+1.0 and the new shading term was wired to a dead quantity — it would have
+compiled, shipped, and darkened nothing. A test asserting that a hard landing
+produces visible compression caught it. The harness now bulges sideways by less
+than would conserve area, which is also the more physical behaviour: ADR 0001's
+area constraints are compliant, not rigid.
+
+Measured range in the harness is compression 0.57–1.16, giving a peak darkening
+of 51% against the 55% cap — proportional across almost the whole range, with
+the cap acting as a safety rail rather than the normal operating point.
+
+---
+
+## The one thing still needing a decision before merge
 
 **I added `android.permission.VIBRATE`, which required changing the security
-check the client specifically asked to have enforced.**
+check the client specifically asked to have enforced.** Per the Product Lead
+this is with the Security Engineer and I have not touched it since.
 
 `Vibrator.vibrate()` requires it. The only permission-free alternative,
 `View.performHapticFeedback()`, plays a fixed canned effect with no amplitude
@@ -141,14 +201,15 @@ feel identical.
 
 ## Deviations from spec, and why
 
-**1. Two vertex buffers, not one interleaved (ADR 0007 §1).** Positions are
-dynamic and rewritten every frame; archetype indices are static per body and
-rewritten only when the set of bodies changes. Interleaving would re-upload
-1500 identical integers per frame. This does not conflict with Stage 3: every
-varying ADR 0007 adds later (`vCompression`, `vEdge`, `vContact`, `vBodyUv`) is
-per-particle and per-frame, so all of them join the dynamic buffer — the
-interleaving the ADR protects is unaffected. Archetype was the one member of
-that list that was never dynamic.
+**1. The archetype attribute is split out of the interleaved buffer (ADR 0007
+§1).** The dynamic buffer is interleaved exactly as the ADR specifies —
+position and compression today, joined by `vEdge`, `vContact` and `vBodyUv` at
+Stage 3, all of them per-particle and per-frame. Only the archetype index lives
+in a second, static buffer, because a body's archetype never changes while that
+body exists and interleaving it would mean re-uploading 1500 integers per frame
+that are bit-identical to the ones already there. It is the one member of ADR
+0007's varying list that was never dynamic, so pulling it out costs one extra
+buffer binding at setup and nothing per frame.
 
 **2. Crossing touch slop does not spend the slop distance.** `gestures.md`
 specifies the 8dp slop and the 1:1 drag mapping but not what happens to the
@@ -172,8 +233,10 @@ would. Recorded rather than solved.
 
 ## What I deliberately did not do
 
-- **No shading of any kind.** Flat colours only, per the hard constraint. See
-  the open question below — this has a consequence worth a decision.
+- **No shading beyond the single compression term.** No gel, subsurface, rim
+  light, grain, dithering or band glow. The `Shaders.kt` header states the
+  boundary so the next person to open it does not treat one approved term as
+  permission for a second.
 - **No landing silhouette, screen shake, band glow, or impact propagation** —
   Stages 3 and 4.
 - **No game logic**: no scoring, clearing, losing, spawn sequence or difficulty
@@ -194,20 +257,24 @@ would. Recorded rather than solved.
 
 ## What I considered and rejected
 
-**Uploading the full ADR 0007 vertex format now** (compression, edge, contact,
-UV) even though the flat shader ignores them, so the per-frame buffer-fill cost
-would be Stage-3-realistic from day one. Rejected: it is dead code by the
-constitution's rule, and the arithmetic gets us the same information — Stage 3's
-dynamic buffer will be roughly 3x this one's, and the readout reports KB/frame
-so that scaling can be checked rather than assumed. I think this was close, and
-if the Product Lead would rather have the pessimistic number measured than
-computed, it is about twenty lines to add.
+**Uploading the *remaining* ADR 0007 varyings now** (edge, contact, UV) even
+though nothing reads them, so the per-frame buffer-fill cost would be
+Stage-3-realistic from day one. Rejected: dead code by the constitution's rule,
+and the arithmetic gets us the same information — the readout reports KB/frame,
+so Stage 3's larger vertex can be checked against it rather than assumed.
+Compression is in the buffer because it is *used*, not to pre-empt Stage 3.
 
-**Using `vCompression` to darken squashed material at Stage 1.** ADR 0007 calls
-it "the cheapest available route to the brief's requirement that the blocks read
-as heavy". Rejected because the Stage 1 constraint is explicit that flat colour
-exists so the physics can be felt without art confusing the judgement. But see
-the open question — I am not fully comfortable with this one.
+**A screen-corner tap target for the shading toggle.** Rejected: the control
+scheme is drag-anywhere, so any touch-consuming element creates a dead zone,
+and the only sensible place to put it is the bottom-left corner where the
+readout already sits and where a thumb naturally rests. A volume key costs the
+gameplay nothing and is easier to describe to the client.
+
+**Interpolating compression between simulation ticks**, alongside the position
+lerp. Rejected: compression is a ratio *derived* from positions, so lerping it
+in parallel with the positions it came from would disagree with the geometry
+actually being drawn. The error is invisible at 60Hz and the honest value is
+also the cheaper one.
 
 **Writing a soft-body solver in the harness to make the demo feel real.**
 Rejected outright: it is Track A's job, doing it badly would produce a false
@@ -232,16 +299,19 @@ one.
 
 ## Things I am uneasy about
 
-**1. Flat colour may make the demo unreadable in the way that matters most.**
-With one flat colour per body, interior deformation is invisible — only the
-silhouette carries the squash. The client is being asked "does this feel
-heavy", and a large part of that answer is visual. I obeyed the constraint
-rather than quietly compromising it, but I think there is a real risk the
-Milestone 1 demo under-sells the physics for want of about six lines of shader.
-**A single compression-driven darkening term is not "procedural shading" in the
-gel/subsurface/rim-light sense the constraint is aimed at, and it is a rendering
-response to a physical quantity rather than an animation.** I would like a
-decision on this rather than making it myself.
+**1. The compression gain is tuned against a fake distribution.** This is now my
+biggest worry and it replaces the flat-colour concern, which the Product Lead
+resolved. `COMPRESSION_GAIN = 1.2` was chosen so the harness's compression
+range (0.57–1.16) maps across the darkening range without slamming into the
+cap. **The real solver's distribution will be different**, and I have no way to
+predict it from here. If it is narrower the effect will be invisible and
+someone will conclude the term does not work; if it is wider everything will sit
+clamped at the ceiling and the material will read as uniformly dark mud.
+
+Either failure looks like "the shading is wrong" when it is actually one number
+that needs retuning. Whoever integrates `:core-sim` should print the observed
+compression range before judging the look — it is one constant and the comment
+on it says so.
 
 **2. Nothing here has rendered a frame.** The GL code is written from the spec
 and reviewed against it, but never executed. I mitigated what I could — the
@@ -254,14 +324,25 @@ attribute path are all unverified. **If the first install is a black screen,
 that is where to look**, and `GlProgram` throws with the driver's info log
 attached specifically so the reason reaches logcat.
 
-**3. Two real bugs were found by tests, not by review.** A `Long.MIN_VALUE`
+One specific new hazard from the compression work: the well frame shares the
+shader program but has no compression attribute array, so it relies on
+`glVertexAttrib1f` supplying a constant 1. If that is wrong on some driver the
+walls will render darkened rather than in `color-surface`. Cosmetic, obvious on
+sight, and worth knowing the cause of.
+
+**3. Three real bugs were found by tests, not by review.** A `Long.MIN_VALUE`
 sentinel in the rotate debounce overflowed, which would have swallowed the first
 touch of every session and then every touch after it — total, silent input
-failure. And the gesture recogniser was being configured from a UI-thread read
-of a GL-thread-owned layout, which could have set drag sensitivity ~40x too
-high. Both are fixed and covered. I mention them because both were in code I had
-already read and thought was correct, which is my honest calibration on how much
-of the rest is unverified.
+failure. The gesture recogniser was being configured from a UI-thread read of a
+GL-thread-owned layout, which could have set drag sensitivity ~40x too high. And
+the harness's squash was exactly area-preserving, which held compression at a
+constant 1.0 and would have shipped a shading term that darkened nothing.
+
+All three are fixed and covered. I keep mentioning this because all three were
+in code I had already read and believed correct — including, in the third case,
+code I had written that same hour specifically to make deformation visible. That
+is my honest calibration on how much of the unexecuted GL path is likely to be
+wrong.
 
 **4. The haptic curve is untested on hardware.** The energy→duration/amplitude
 mapping is exactly as specified and unit-tested, but whether 10ms at amplitude
@@ -274,14 +355,40 @@ impact feels the same we can tell hardware from curve without a day of retuning.
 
 ## Open questions
 
-1. **Does a compression-driven darkening term get pulled forward to Stage 1?**
-   (Uneasy point 1. Needs Product Lead, probably with UX.)
+1. **Security-engineer sign-off on the CHK-1 allowlist change.** Blocks merge.
+   Untouched since the Product Lead sent it for review.
 2. **Does the slop-crossing behaviour match UX's intent?** (Deviation 2.)
-3. **Security-engineer sign-off on the CHK-1 allowlist change.** Blocks merge.
+3. **Does UX want a say on the compression darkening's strength and cap?** It
+   is currently an engineering judgement — 55% maximum darkening, chosen so hue
+   survives. It is one constant if they want it different, but it interacts
+   with `piece-identity.md`'s lightness ladder, which I did not want to
+   re-derive unilaterally.
 4. **Is `bodyLattice` fixed at 5 for Milestone 1**, or does the startup quality
    calibration (ADR 0009) need to select it? The renderer takes lattice as a
    constructor parameter and the topology is built per lattice size, so
    supporting 4/5/6 is small — but nothing selects it today.
+
+---
+
+## One note on commit attribution
+
+CLAUDE.md says "the commit *author* is the role that did the work; the
+committer stays the team identity" — but the command it then gives,
+`git -c user.name=... -c user.email=... commit`, sets **both** author and
+committer to the role. The two halves of that instruction contradict each
+other.
+
+I used the documented command, so `1a4c852` has Frontend Engineer as both
+author and committer. I noticed afterwards, amended it to keep `AI Team` as
+committer, and then could not push that without a force-push — correctly
+blocked, since the commit was already published and the constitution forbids
+rewriting published history. So I reset to the pushed version and left it.
+
+Flagging it because every other role is following the same documented command,
+so the repo will be internally consistent either way — but if the intent is
+genuinely that the committer stays `AI Team`, the command in CLAUDE.md needs to
+become `git commit --author="Role <role@ai-team.local>"`, and that is a change
+to the constitution rather than something I should make on my own.
 
 ---
 
@@ -298,3 +405,10 @@ impact feels the same we can tell hardware from curve without a day of retuning.
   inline any of them back.
 - The vertex format is the thing Stage 3 will need to grow. `BodyMesh` and
   `Shaders` are the only two files involved.
+- **Before judging how the compression darkening looks, check
+  `Tunables.COMPRESSION_GAIN` against the real solver's compression range.** It
+  is tuned to the harness's distribution and there is no reason the solver's
+  should match. See uneasy point 1.
+- The `Shaders.kt` header states the boundary of the approved shading term.
+  Compression to darkness, nothing else — a second term means Stage 3 has
+  started, and that is a scheduling decision rather than a code one.
