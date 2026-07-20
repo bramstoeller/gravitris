@@ -117,7 +117,51 @@ data class SimConfig(
     val initialFallSpeed: Float = 1.5f,
 
     val seed: Long = 0L,
+
+    /**
+     * Safety valve for frame overrun (ADR 0013). Beyond this many catch-up
+     * ticks in one frame, the excess wall-clock time is DISCARDED — the only
+     * place time dilation is permitted, and it means the device is below the
+     * hardware floor. Bounded rather than unbounded because unbounded catch-up
+     * death-spirals into a freeze, which serves the client worse than judder.
+     */
+    val maxCatchupTicks: Int = 8,
 )
+
+/**
+ * Owns the accumulator and the frame-overrun policy (ADR 0013).
+ *
+ * Lives in :core-sim rather than in the render loop deliberately: "wall-clock
+ * time is never dilated" is a CLIENT REQUIREMENT, and putting the policy here
+ * makes it JVM-testable and stops it being reverted by someone tidying the
+ * render loop. A test feeds it a pathological delta sequence and asserts that
+ * simulated time equals wall-clock time.
+ *
+ * DO NOT clamp the incoming delta. That is what caused the defect ADR 0013
+ * supersedes.
+ */
+class FrameDriver(private val sim: Simulation, private val config: SimConfig) {
+    /**
+     * Feed the real elapsed time since the last rendered frame. Runs as many
+     * whole ticks as that time affords; returns the render interpolation alpha.
+     *
+     * Catch-up runs N NORMAL ticks — it never enlarges the step, so it cannot
+     * destabilise the solver (h is invariant).
+     */
+    fun advance(frameDeltaSeconds: Float, input: InputFrame): Float
+
+    /** Call on resume. Drops accrued time instead of catching up across a
+     *  backgrounded period — the game is paused while backgrounded. */
+    fun resetAccumulator()
+
+    /**
+     * Ticks discarded because MAX_CATCHUP_TICKS was hit — the ONLY place
+     * wall-clock honesty breaks. Non-zero means the device is below the
+     * hardware floor, not that the game hiccuped. Surfaced so it is observable
+     * rather than silent; a session with a non-zero count is not replayable.
+     */
+    val droppedTicks: Long
+}
 
 class Simulation(config: SimConfig) {
     val state: SimState
@@ -360,6 +404,23 @@ earlier position and it matters twice over:
 `SimConfig` therefore carries **no accessibility fields**.
 
 ---
+
+## 4c. Frame loop — what `:app` must and must not do (ADR 0013)
+
+The frame-overrun policy is a `:core-sim` decision, but `:app` drives it. The
+frontend's obligations are small and specific:
+
+| do | do not |
+| -- | ------ |
+| Pass the **real** elapsed frame delta to `FrameDriver.advance` | Clamp, smooth or cap the delta before passing it — that reintroduces time dilation |
+| Call `resetAccumulator()` on resume | Let a backgrounded period accumulate and catch up |
+| Pause the game on `onPause` / back (ADR 0010) | Keep stepping while backgrounded |
+| Render once per display frame, using the returned alpha | Assume one tick per rendered frame — there may be 0, 1 or several |
+| Let frame rate drop under load | Reduce simulation work to hold frame rate |
+
+Nothing else changes on the frontend side. Render-side quality scaling (ADR 0009)
+remains the only runtime lever, and it is the primary mitigation for weak
+hardware — the likely bottleneck there is the fragment shader, not the solver.
 
 ## 5. Ownership
 

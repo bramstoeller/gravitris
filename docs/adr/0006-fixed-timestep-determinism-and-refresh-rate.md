@@ -1,6 +1,7 @@
 # 0006. Fixed 60Hz timestep, deterministic simulation, 60Hz render on a 120Hz panel
 
-Status: proposed
+Status: proposed — **the accumulator clamp below is superseded by ADR 0013.**
+The fixed timestep, determinism and 60Hz-render decisions stand unchanged.
 Date: 2026-07-20
 
 ## Context
@@ -53,6 +54,12 @@ Two rules protect this and must be enforced in review:
 - **No concurrency in the constraint solve.** Gauss-Seidel is order-dependent
   (ADR 0003); parallelising it without graph colouring changes results run to run.
 
+**Clarified by ADR 0013:** this is a *fixed-tick-sequence* property, not a
+real-time one. A recorded sequence of `(tick index, InputFrame)` replays
+bit-identically anywhere; a recorded real-time session does **not** reproduce
+across devices, because how many ticks fall in a rendered frame depends on the
+wall clock. **QA fixtures must be tick-indexed.**
+
 What this buys: the simulation contract becomes *same seed + same input sequence
 = same final state*, so QA can record an input sequence and replay it as a
 regression test, on the JVM, with no device and no renderer. Physics bugs become
@@ -63,14 +70,23 @@ pinned configuration, not a tunable.
 **3. Render decoupled with interpolation.** The classic accumulator:
 
 ```
-accumulator += min(frameDelta, MAX_FRAME_DELTA)   // clamp: no spiral of death
+accumulator += min(frameDelta, MAX_FRAME_DELTA)   // SUPERSEDED — see ADR 0013
 while (accumulator >= TICK) { sim.step(input); accumulator -= TICK }
 alpha = accumulator / TICK
 render(lerp(previousPositions, currentPositions, alpha))
 ```
 
-Frame delta is clamped to at most 4 ticks so a stall cannot cascade into a death
-spiral of catch-up steps. Interpolation costs almost nothing here: the solver
+~~Frame delta is clamped to at most 4 ticks so a stall cannot cascade into a death
+spiral of catch-up steps.~~
+
+> ⚠ **Superseded by ADR 0013.** That clamp **discards wall-clock time by
+> construction**: on a device that overruns, real time passes which the simulation
+> never receives, so the game runs in slow motion. The client has ruled that out
+> explicitly — *"Frames skippen is prima, of een lagere frame rate, maar niet
+> vertragen."* This was not a gap in this ADR; it was a defect in it. I added the
+> clamp to prevent a death spiral without noticing what it cost. ADR 0013 removes
+> it, handles backgrounding by pausing instead, and bounds catch-up with a counted
+> safety valve. Interpolation costs almost nothing here: the solver
 already retains previous positions for its own integration, and the vertex buffer
 is rebuilt every frame anyway (ADR 0007), so it is one lerp during the buffer
 fill.

@@ -56,10 +56,11 @@ the simulation never calls back.
 
 ```
 each display frame:
-  accumulator += clamp(frameDelta, max 4 ticks)
-  while accumulator >= 1/60:
+  accumulator += frameDelta       // NEVER clamped — clamping is slow motion (ADR 0013)
+  ticks = 0
+  while accumulator >= 1/60 and ticks < maxCatchupTicks:
       sim.step(inputFrame)        // fixed tick, 8 substeps, deterministic
-      accumulator -= 1/60
+      accumulator -= 1/60; ticks++
   render(sim.state, alpha = accumulator / tick)
 ```
 
@@ -128,3 +129,4 @@ remaining 10.55 ms is not treated as spare.
 | [0010](adr/0010-android-platform-baseline.md) | API 29–36, edge-to-edge, universal APK |
 | [0011](adr/0011-piece-geometry-and-a-single-pinned-lattice.md) | Piece size = material extent; lattice pinned at 4 |
 | [0012](adr/0012-explicit-restitution-and-mass-independent-compliance.md) | Explicit restitution; compliance not scaled with mass |
+| [0013](adr/0013-frame-overrun-policy-no-time-dilation.md) | Frame overrun never dilates wall-clock time |
