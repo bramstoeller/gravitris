@@ -67,10 +67,10 @@ one belongs in the log — that is what makes this auditable.
   `docs/<slug>`.
 - Parallel agents use worktrees: `git worktree add /work/.worktrees/<slug> -b feat/<slug>`.
   Remove the worktree when the branch merges.
-- **Commit under your own role.** The commit *author* is the role that did the
-  work; the committer stays the team identity. Pass it explicitly on every
-  commit, because worktrees share one `.git/config` and a repo-level identity
-  would be wrong for whoever is not currently holding it:
+- **Commit under your own role.** Both author and committer are the role that
+  did the work. Pass it explicitly on every commit, because worktrees share one
+  `.git/config` and a repo-level identity would be wrong for whoever is not
+  currently holding it:
 
   ```
   git -c user.name="Backend Engineer" -c user.email="backend-engineer@ai-team.local" commit -m "..."
