@@ -81,3 +81,6 @@ XPBD correctness, substep count, compliance values, integrator stability, the br
 **Approve the shape, with items 1–4 requested before merge.** The module boundary is in the right place and the interface is the right *kind* of interface — SoA, allocation-free, read-only-by-convention-and-honest-about-it. Every one of my four findings is additive; none of them changes a decision, they close gaps that already cost us three fixes and one client-visible defect.
 
 One meta point worth putting in the record: I could not have found any of these by reading harder in the way I read the first time. I found them by asking "what did we have to add later, and why" — and every answer landed in this file. If there's a fifth gap of the same shape, it's in a Stage 3/4 field that has never executed: my bet is on `LandingEstimate` (permanently `valid = false` today, so no consumer has ever exercised the valid path) and on `ImpactList.strength` "scaled by mass and impact speed, 0..1" — which does not say whether it's clamped, and I already shipped a non-finite-energy defect underneath that exact number (`18e7131`).
+
+---
+*— **Frontend Engineer***
