@@ -1,6 +1,7 @@
 # 0009. Reference device, the 2020 floor, and how quality scales
 
-Status: proposed
+Status: proposed — **derating measured and tiers superseded 2026-07-20, see
+"Amendment 1". The three-tier system is replaced by ADR 0011.**
 Date: 2026-07-20
 
 ## Context
@@ -70,11 +71,11 @@ other:
   changes simulation results (ADR 0006's determinism contract), so it would alter
   feel and invalidate replay fixtures — and the failure below the floor is a cliff,
   not a slope.
-- **Now available:** there is real headroom. Re-pinning globally from 8 to 6
-  would still leave margin over the measured floor and would return ~0.12 ms/frame.
-  That is a legitimate lever if on-device measurement proves tight — but it is a
-  **build-time re-pin with replay fixtures regenerated**, not a runtime scale, and
-  it should be spent only after render-side scaling has been exhausted.
+- ~~**Now available:** there is real headroom. Re-pinning globally from 8 to 6
+  would still leave margin over the measured floor and would return ~0.12 ms/frame.~~
+  **Withdrawn 2026-07-20 — see Amendment 1.** On device, 6 substeps measures
+  *worse* than 8 in the marginal cases. There is no substep headroom. Substeps
+  stay at 8 and are not a lever of any kind, build-time or runtime.
 
 Particle count cannot change mid-game either: bodies already exist in the well
 with a fixed lattice, and re-meshing a deformed body mid-run would visibly pop.
@@ -103,6 +104,55 @@ If render-side scaling cannot hold 60fps, the correct response is to drop a tier
 The CPU side is comfortable. **The unmeasured risk in this product is now the
 fragment shader, not the solver** — which is a reversal of the assumption the
 project started with, and the UX Designer should know it.
+
+## Amendment 1 — the derating is 12.06x, and the tiers do not survive it (2026-07-20)
+
+**The blocker is closed. Measured host→device derating: 12.06x.** My estimate was
+**3–7x**. I was wrong, and wrong in the optimistic direction by roughly 2x at the
+pessimistic end of my own band.
+
+Worth being precise about the failure: I did not merely land outside my range, I
+landed outside it on the side that costs headroom, on the project's tightest
+budget. The band was drawn from two multiplied estimates (2.5–3.5x CPU, 1.3–2x
+ART) and the true combined factor exceeded the product of both maxima. Compounding
+two uncertain factors and quoting the result as a range implied more confidence
+than two guesses multiplied together deserve.
+
+Re-deriving the tiers from the real number:
+
+| lattice | particles | host ms | device ms | +3% at 1e-4 | frame left |
+| ------- | --------- | ------- | --------- | ----------- | ---------- |
+| 3 | 540 | 0.265 | 3.20 | 3.29 | 13.38 |
+| **4** | **960** | **0.493** | **5.95** | **6.12** | **10.55** |
+| 5 | 1 500 | 0.846 | 10.20 | 10.51 | 6.16 |
+| 6 | 2 160 | 1.282 | 15.46 | 15.92 | 0.75 |
+
+**Only lattice 4 is viable.** Lattice 6 leaves 0.75 ms for everything that is not
+the solver; lattice 5 leaves 6.16 ms for a fragment shader that is still
+unmeasured and is the largest remaining risk. The three-tier system is therefore
+**superseded by ADR 0011**, which pins the lattice at 4 and — because tiering was
+also silently varying piece size by 11% — removes a gameplay leak along with it.
+
+What survives from this ADR unchanged:
+
+- The Fairphone 6 as reference device, and the honesty position on the 2020 floor.
+- **Runtime scaling is render-side only.** This is now the *sole* scaling
+  mechanism rather than one of two.
+- The pushback on scaling substeps — reinforced below.
+
+**The ADR 0002 trigger fired, and the cheap prescribed response was sufficient.**
+That trigger read: "at Milestone 1, if simulation at the default tier exceeds
+8 ms/frame … drop to the low tier; if still short, arm64-v8a-only NDK". The old
+default measures 10.51 ms, so it fired; dropping a tier gives 6.12 ms, so it
+stops there. **No NDK.** Writing the trigger and its response in advance is the
+part of this that worked, and it is worth repeating on the next uncertain number.
+
+**The 8→6 substep lever I opened is withdrawn.** ADR 0003 Amendment 1 offered
+re-pinning substeps from 8 to 6 as available headroom. **6 substeps measures
+*worse* than 8 in the marginal cases**, so it is not available. My own caveat in
+handoff 0008 — that I had not measured 6 as carefully as I should before anyone
+spent it — was correct, and it should have been enough reason not to advertise
+the lever at all. Substeps stay at 8, and there is no substep headroom.
 
 ## Alternatives considered
 

@@ -61,6 +61,22 @@ spike settles cleanly at compliance 1e-8 (firm), 1e-6 (medium) and 1e-5 (spongy)
 softness is the substep floor (ADR 0003), and that floor is affordable. The
 Product Lead's central worry does not survive measurement.
 
+> **Amended 2026-07-20 — the independence claim was overstated.** Moving
+> compliance 1e-6 → 1e-4 on device measured **+3%**, not zero.
+>
+> The *constraint solve* is genuinely compliance-independent — same constraints,
+> same arithmetic. What I missed is a second-order coupling through contacts:
+> **softer material deforms more, overlaps more, and therefore generates more
+> contact pairs per frame** for the narrowphase to resolve. Compliance does not
+> change the cost of a contact; it changes how many there are.
+>
+> The headline conclusion survives — 3% is not what would turn "spongy" into
+> "slightly springy", and the client has the softer material they wanted. But
+> "independent" should have been "independent to within a few percent, via
+> contact count". With the derating measured at 12.06x (ADR 0009) and no spare
+> frame budget, that distinction is now load-bearing, and an absolute claim that
+> is 97% true is the kind that gets spent as if it were 100% true.
+
 **Layout: SoA is adopted, but not for the reason the brief gives.** Measured
 SoA vs an array-of-objects mirror on identical constraint work:
 

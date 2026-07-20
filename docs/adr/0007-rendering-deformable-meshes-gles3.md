@@ -21,6 +21,24 @@ the look itself.
 buffers; a uniform block for per-body parameters; and band fill delivered as a
 small array the fragment shader samples by world height.**
 
+**0. Where the rendered surface sits — added 2026-07-20 after this was found
+missing.** The mesh is **not** drawn through particle centres. Each boundary
+vertex is offset **outward by one particle radius** along its outward normal, so
+the rendered silhouette coincides with the *collision* surface.
+
+This ADR never specified it, and that omission shipped: bodies were drawn one
+particle radius small on every side, which read to the client as a visible gap
+around every block. The physics was correct throughout — bodies touch to within
+float noise — and the defect was entirely in rendering.
+
+The rule, stated so it cannot be missed again: **a body's visual extent is its
+material extent, `PIECE_EXTENT` (ADR 0011), not its lattice extent.** The same
+applies to the landing silhouette, which must project the material extent or it
+will promise a fit the piece cannot make.
+
+Interior vertices need no offset; only the boundary ring does, and `particleEdge`
+already identifies it.
+
 **1. Geometry upload.** All bodies share a single interleaved VBO. Each frame the
 renderer walks the simulation's position arrays, applies the ADR 0006
 interpolation lerp, and fills the buffer, then uploads with buffer orphaning

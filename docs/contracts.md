@@ -36,9 +36,44 @@ data class SimConfig(
     val linearDamping: Float = 0.005f,
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
+    /**
+     * Restitution (ADR 0012). Bounce is currently MANUFACTURED — velocity is
+     * derived from position after the contact solve, so resolved penetration
+     * becomes outward velocity, and softer material bounces more as a side
+     * effect. This makes it an explicit dial instead.
+     *
+     * The client likes some bounce, so the target is not 0; the point is that
+     * tuning compliance stops silently changing it.
+     */
+    val restitution: Float = 0.10f,
 
-    // --- quality tier (ADR 0009) ---
-    val lattice: Int = 5,               // particles per piece edge: 4 | 5 | 6
+    // --- piece geometry (ADR 0011) ---
+    /**
+     * PINNED at 4. The three-tier quality system is superseded: with the
+     * derating measured at 12.06x, lattice 5 costs 10.51 ms and lattice 6
+     * costs 15.92 ms against a 16.67 ms frame, so only 4 is viable.
+     *
+     * Changing this is a build-time re-pin with tuning re-calibrated, never a
+     * runtime tier.
+     */
+    val lattice: Int = 4,
+    /**
+     * The piece's MATERIAL extent in world units — outer edge to outer edge,
+     * including the particle radius on each side. This is the gameplay
+     * constant, not the lattice extent.
+     *
+     * spacing = pieceExtent / lattice ; particleRadius = spacing / 2
+     *
+     * Defined this way so the lattice is a pure implementation detail: changing
+     * it preserves piece size exactly. Defining geometry by lattice extent
+     * instead made piece size vary 11% across tiers, so a *performance* setting
+     * silently changed how many pieces fit per row. See ADR 0011.
+     *
+     * LOAD-BEARING: the clear threshold, pieces-per-row and the landing
+     * silhouette are all calibrated against this value. Changing it invalidates
+     * that tuning.
+     */
+    val pieceExtent: Float = 2.40f,
 
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
     val wellWidth: Float = 10f,
@@ -64,6 +99,20 @@ data class SimConfig(
 
     // --- difficulty ramp ---
     val initialPieceMass: Float = 1f,
+    /**
+     * Stage 4, currently unread. DO NOT SET THIS from a guess.
+     *
+     * XPBD deformation is proportional to mass at fixed compliance — that is
+     * Hooke's law and it is the brief's mechanic (heavier pieces, more sag).
+     * Compliance is deliberately NOT scaled with mass (ADR 0012), because doing
+     * so would cancel that mechanic. The cost is that mass has a stability
+     * ceiling, and where it sits at the shipping compliance of 1e-4 is UNKNOWN
+     * — the 1-8x sweep was run at 1e-6, a hundredfold stiffer.
+     *
+     * Measure the stable range AFTER the restitution fix lands (it removes a
+     * chunk of the high-mass instability), then set this and a hard mass cap
+     * inside it.
+     */
     val massPerLevel: Float = 0.5f,
     val initialFallSpeed: Float = 1.5f,
 

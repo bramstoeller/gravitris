@@ -102,12 +102,15 @@ Measured in `/work/spike/solver-budget/` (host x86-64, HotSpot, single-threaded)
 | Allocation per frame | 0 bytes |
 | Determinism | bit-identical replay |
 
-**Estimated** on the reference device (Fairphone 6), medium tier: 2.5–5.9 ms
-solver against a 16.67 ms frame. Derating factor 3–7x is an **estimate, not a
-measurement** — see ADR 0009 and `blockers.md`.
+**Measured** on the reference device (Fairphone 6): host→device derating is
+**12.06x**, against my 3–7x estimate — I was wrong, and optimistically (ADR 0009
+Amendment 1). Re-derived, the solver costs **6.12 ms** at the pinned lattice 4
+against a 16.67 ms frame, leaving 10.55 ms. Lattice 5 and 6 do not fit, which is
+why the quality tiers are superseded and the lattice is pinned (ADR 0011).
 
 The largest remaining performance unknown is **the fragment shader, not the
-solver** — a reversal of the project's founding assumption.
+solver** — a reversal of the project's founding assumption, and the reason the
+remaining 10.55 ms is not treated as spare.
 
 ## Decisions
 
@@ -123,3 +126,5 @@ solver** — a reversal of the project's founding assumption.
 | [0008](adr/0008-module-boundaries.md) | Two modules, framework-free core |
 | [0009](adr/0009-reference-device-and-quality-scaling.md) | Fairphone 6 reference, startup tiers |
 | [0010](adr/0010-android-platform-baseline.md) | API 29–36, edge-to-edge, universal APK |
+| [0011](adr/0011-piece-geometry-and-a-single-pinned-lattice.md) | Piece size = material extent; lattice pinned at 4 |
+| [0012](adr/0012-explicit-restitution-and-mass-independent-compliance.md) | Explicit restitution; compliance not scaled with mass |

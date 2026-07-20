@@ -145,9 +145,13 @@ measured floor. That distinction matters:
   not where a shipped game should be, so the margin is worth its cost.
 - The cost is known and affordable: 8 substeps is 0.49 ms against 0.25 ms at 4
   (ADR 0001). We are paying ~0.25 ms for the margin.
-- **It gives ADR 0009 a lever it thought it did not have.** Dropping to 6 is now a
-  defensible move with margin remaining, if the on-device budget ever proves
-  tight. It is still not a *runtime* dial — see the amendment there.
+- ~~**It gives ADR 0009 a lever it thought it did not have.** Dropping to 6 is now
+  a defensible move with margin remaining.~~ **Withdrawn 2026-07-20.** On device,
+  **6 substeps measures *worse* than 8 in the marginal cases.** The lever does not
+  exist. The measured floor of ~3–4 came from host measurements of settled piles;
+  it did not license 6 as a safe operating point on real hardware, and I should
+  not have advertised a lever I had explicitly noted I had not measured carefully.
+  Substeps stay at 8, full stop.
 
 **QA can now build replay fixtures against 8**, which was the reason this needed
 settling before Stage 3. The number is not going to move.
