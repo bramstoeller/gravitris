@@ -37,9 +37,18 @@ if [ ! -x "$SDKMANAGER" ]; then
 fi
 
 echo "==> Installing pinned packages: emulator $SYSTEM_IMAGE_PACKAGE"
+# Same reasoning as scripts/setup-android-sdk.sh: `yes` is killed by SIGPIPE
+# once sdkmanager stops reading, which would otherwise trip `set -o
+# pipefail` on its own exit code rather than sdkmanager's. Check
+# sdkmanager's actual exit status via PIPESTATUS instead of the pipeline's.
 set +o pipefail
 yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+sdkmanager_status="${PIPESTATUS[1]}"
 set -o pipefail
+if [ "$sdkmanager_status" -ne 0 ]; then
+  echo "sdkmanager --licenses failed with exit code $sdkmanager_status" >&2
+  exit "$sdkmanager_status"
+fi
 "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "emulator" "$SYSTEM_IMAGE_PACKAGE" > /dev/null
 
 if [ -d "$HOME/.android/avd/${AVD_NAME}.avd" ]; then
