@@ -43,19 +43,22 @@ None.
   time is never dilated" guarantee, not a separate one that could drift.
 - CI `build-and-test` pass on the PR.
 
-## Open — consumer confirmation (coordination, not a defect)
+## Consumer confirmation — CONFIRMED (seam closed)
 
-- The consumer branch `feat/wire-real-game` is not yet pushed to `origin`, so I
-  could not measure the seam against real renderer/driver code. I asked the
-  Frontend Engineer (the consumer) to confirm that
-  `advance(delta, drainTick: (InputFrame) -> Unit)` is the shape their driver will
-  call — fill-the-passed-frame, stable field-held lambda, no retained frame
-  reference — same consumer-confirms-the-contract step band-contract went through.
-  Because #16 is purely additive it is safe to land regardless; the ordering is
-  #16 first, then the wiring builds on it. If the Frontend Engineer needs a
-  different drain shape, adjusting it before they wire against it is cheaper than
-  after, and I will amend this verdict — but that would be an additive follow-up,
-  not a reason to hold #16 off `main`.
+- The Frontend Engineer confirmed the seam from the consumer side, measured
+  against their real wiring on `feat/wire-real-game`:
+  `advance(delta, drainTick: (InputFrame) -> Unit)` is exactly the shape their
+  driver calls. `GameSession.advance` delegates straight to it; `GameRenderer`
+  holds a **stable field lambda** (`private val drainTick = { intent.drainInto(it) }`),
+  and `PlayerIntent.drainInto` fills the passed frame and resets its own
+  accumulator, so tick 1 gets the gesture and ticks 2..N get an empty frame — the
+  1:1 mapping this overload exists to guarantee. Both my caveats are satisfied
+  (stable lambda, frame not retained past the callback), and fill-the-passed-frame
+  is confirmed the right shape (not return-an-`InputFrame`, not a nullable
+  no-intent signal), matching `PlayerIntent`'s existing allocation-free
+  `drainInto`. The returned alpha feeds `VertexFill`/`mesh.upload`.
+- Ordering resolved as planned: #16 landed first as the primitive
+  (`main` `601dcd0`), and the wiring builds on it. No follow-up to #16 needed.
 
 ## What is good
 
