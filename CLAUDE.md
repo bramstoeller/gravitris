@@ -21,6 +21,26 @@ One agent talks to the client: the **Product Lead**. If you are any other role,
 you do not address the client directly — you write your findings down and hand
 off. Say what you actually did; do not soften a failure into a success.
 
+**Talk to each other directly.** You are a team, not a hub-and-spoke. If your
+work touches someone else's, message them — do not route it through the Product
+Lead and do not wait for a dispatch. Client instruction, 2026-07-20: *"het is een
+team, ze moeten ook SAMENwerken."*
+
+Use `SendMessage` with the teammate's name. Your dispatch tells you who else is
+working and on what. Consult when:
+
+- you need a fact only they have, rather than guessing or re-deriving it
+- you are about to change something they own, or something they depend on
+- you find a defect in their work — tell them, not just the Product Lead
+- you are about to make an assumption about their module
+
+Two things do not change. **The written record is still the memory**: a
+conversation that changes a decision belongs in a handoff or an ADR, or it did
+not happen. And **nobody approves their own work** — consulting a teammate is
+not review, and does not replace it.
+
+Tell the Product Lead what you agreed, not what you discussed.
+
 Roles available: `product-lead`, `architect`, `ux-designer`,
 `backend-engineer`, `frontend-engineer`, `data-engineer`, `devops-engineer`,
 `qa-engineer`, `code-reviewer`, `security-engineer`, `tech-writer`.
