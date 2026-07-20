@@ -39,6 +39,12 @@ class FrameDriver(private val sim: Simulation, private val config: SimConfig) {
     private var accumulator: Float = 0f
 
     /**
+     * Reused input for the per-tick-drain overload, so live play allocates
+     * nothing per frame. Cleared before each drain.
+     */
+    private val tickInput = InputFrame()
+
+    /**
      * Ticks dropped because [SimConfig.maxCatchupTicks] was hit.
      *
      * **The one and only place wall-clock honesty breaks.** Unbounded catch-up
@@ -53,21 +59,26 @@ class FrameDriver(private val sim: Simulation, private val config: SimConfig) {
         private set
 
     /**
-     * Feeds one rendered frame's worth of real elapsed time, runs as many
-     * whole ticks as that affords, and returns the render interpolation alpha
-     * in `[0, 1)` for `lerp(prevPosition, position, alpha)`.
+     * Feeds one rendered frame's worth of real elapsed time, runs as many whole
+     * ticks as that affords with the **same** [input] on each, and returns the
+     * render interpolation alpha in `[0, 1)` for `lerp(prevPosition, position,
+     * alpha)`.
      *
      * Pass the **real** delta. Clamping it before it gets here reintroduces
      * exactly the defect this class exists to remove.
+     *
+     * **This overload is for fixed input — replay fixtures, tests, an idle
+     * frame.** Applying one [InputFrame] to every catch-up tick is wrong for
+     * *live* play: a per-frame drag delta ([InputFrame.dragX]) would move the
+     * piece once per tick, so a hitch that runs three catch-up ticks moves it
+     * three times (breaking the 1:1 mapping `docs/ux/gestures.md` promises), and
+     * a one-shot ([InputFrame.rotate]/[InputFrame.hardDrop]) would fire on every
+     * one of those ticks — the exact "spins every tick" failure [InputFrame]
+     * warns about, now triggered by a dropped frame. For live gestures use the
+     * `drainTick` overload, which asks for fresh intent per tick.
      */
     fun advance(frameDeltaSeconds: Float, input: InputFrame): Float {
-        // A non-finite or negative delta is a caller bug, not a device
-        // condition: it would poison the accumulator permanently, and every
-        // subsequent frame would be wrong with no sign of where it started.
-        require(frameDeltaSeconds.isFinite() && frameDeltaSeconds >= 0f) {
-            "frame delta must be finite and non-negative, was $frameDeltaSeconds"
-        }
-
+        requireRealDelta(frameDeltaSeconds)
         accumulator += frameDeltaSeconds
 
         var ticks = 0
@@ -77,12 +88,67 @@ class FrameDriver(private val sim: Simulation, private val config: SimConfig) {
             ticks++
         }
 
+        return finishFrame()
+    }
+
+    /**
+     * Live-play variant: runs as many whole ticks as the delta affords, asking
+     * [drainTick] for **fresh intent before each one**, and returns the render
+     * interpolation alpha.
+     *
+     * Before every tick the driver clears a reused [InputFrame] and hands it to
+     * [drainTick] to fill from the caller's pending intent, then steps the sim
+     * with it. So under a dropped frame that runs N catch-up ticks, a held drag
+     * is delivered as the per-tick share the caller drains (1:1, not N×), and a
+     * one-shot the caller drains once fires on exactly one tick — the following
+     * ticks see an empty frame because the caller has nothing left to give.
+     * That keeps `docs/ux/gestures.md`'s 1:1 mapping and [InputFrame]'s
+     * "consumed on the tick it is read" honest across frame hitches.
+     *
+     * **Pass a stable [drainTick]** — a field-held lambda or method reference,
+     * not a freshly-captured closure each frame — or the allocation lands on the
+     * caller's per-frame path. The driver itself allocates nothing here.
+     *
+     * The delta policy is identical to the fixed-input overload: no clamp,
+     * catch-up by more ticks not bigger ones, overrun past
+     * [SimConfig.maxCatchupTicks] counted into [droppedTicks].
+     */
+    fun advance(frameDeltaSeconds: Float, drainTick: (InputFrame) -> Unit): Float {
+        requireRealDelta(frameDeltaSeconds)
+        accumulator += frameDeltaSeconds
+
+        var ticks = 0
+        while (accumulator >= Simulation.TICK && ticks < config.maxCatchupTicks) {
+            tickInput.clear()
+            drainTick(tickInput)
+            sim.step(tickInput)
+            accumulator -= Simulation.TICK
+            ticks++
+        }
+
+        return finishFrame()
+    }
+
+    // A non-finite or negative delta is a caller bug, not a device condition: it
+    // would poison the accumulator permanently, and every subsequent frame would
+    // be wrong with no sign of where it started.
+    private fun requireRealDelta(frameDeltaSeconds: Float) {
+        require(frameDeltaSeconds.isFinite() && frameDeltaSeconds >= 0f) {
+            "frame delta must be finite and non-negative, was $frameDeltaSeconds"
+        }
+    }
+
+    /**
+     * Discards any whole-tick remainder beyond [SimConfig.maxCatchupTicks] into
+     * [droppedTicks] and returns the sub-tick interpolation alpha. The one and
+     * only place wall-clock honesty breaks, and it is counted.
+     */
+    private fun finishFrame(): Float {
         if (accumulator >= Simulation.TICK) {
             val discarded = (accumulator / Simulation.TICK).toInt()
             droppedTicks += discarded
             accumulator -= discarded * Simulation.TICK
         }
-
         return accumulator / Simulation.TICK
     }
 
