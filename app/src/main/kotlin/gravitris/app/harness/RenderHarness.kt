@@ -56,6 +56,7 @@ class RenderHarness(private val layout: WellLayout) : SimState {
     override val prevPositionX = FloatArray(capacity)
     override val prevPositionY = FloatArray(capacity)
     override val particleBody = IntArray(capacity)
+    override val particleCompression = FloatArray(capacity)
     override val bodyArchetype = IntArray(MAX_BODIES)
 
     override var bodyCount = 0
@@ -77,6 +78,10 @@ class RenderHarness(private val layout: WellLayout) : SimState {
 
     /** Peak squash amplitude, from the impact speed. */
     private val squashAmplitude = FloatArray(MAX_BODIES)
+
+    /** How many lattice cells contributed to each particle's area average.
+     *  Reused per body so the compression pass allocates nothing. */
+    private val areaSampleCount = IntArray(particlesPerBody)
 
     private var activeBody = -1
     private var spawnCounter = 0
@@ -211,7 +216,13 @@ class RenderHarness(private val layout: WellLayout) : SimState {
             val amplitude = squashAmplitude[body] * decay
             verticalScale = 1f - amplitude * cosApprox(SQUASH_FREQUENCY * age)
             verticalScale = verticalScale.coerceIn(MIN_SQUASH_SCALE, 1.5f)
-            horizontalScale = 1f / verticalScale
+            // Bulges sideways by LESS than would conserve area, so the material
+            // genuinely compresses. Exact area preservation (1 / verticalScale)
+            // was the first thing tried and it is wrong twice over: real soft
+            // bodies compress — ADR 0001's area constraints are compliant, not
+            // rigid — and it drove particleCompression to a constant 1, which
+            // silently left the shading term reading a dead quantity.
+            horizontalScale = 1f + POISSON_RATIO * (1f - verticalScale)
             ring = amplitude * RING_GAIN
         }
 
@@ -245,6 +256,70 @@ class RenderHarness(private val layout: WellLayout) : SimState {
                 index++
             }
         }
+
+        writeCompression(body, hw, hh)
+    }
+
+    /**
+     * Derive each particle's current/rest area ratio from the deformed lattice.
+     *
+     * Measured from the actual particle positions written above rather than
+     * from the scale factors that produced them. The scale terms are
+     * area-preserving by construction, so reading compression off them would
+     * report a constant 1 and the shading term would be dead — whereas the
+     * bulge and lateral wobble genuinely do compress and stretch individual
+     * cells, which is what a viewer needs to see.
+     *
+     * This is also the shape the real solver's output takes (ADR 0001's area
+     * constraints already compute it), and it keeps the per-frame CPU cost
+     * honest: the renderer's buffer fill has to carry this either way.
+     */
+    private fun writeCompression(body: Int, halfWidthWorld: Float, halfHeightWorld: Float) {
+        val base = body * particlesPerBody
+        val cellSpan = 2f / (LATTICE - 1)
+        val restArea = (cellSpan * halfWidthWorld) * (cellSpan * halfHeightWorld)
+
+        for (i in 0 until particlesPerBody) {
+            particleCompression[base + i] = 0f
+            areaSampleCount[i] = 0
+        }
+
+        for (row in 0 until LATTICE - 1) {
+            for (column in 0 until LATTICE - 1) {
+                val bottomLeft = row * LATTICE + column
+                val bottomRight = bottomLeft + 1
+                val topLeft = bottomLeft + LATTICE
+                val topRight = topLeft + 1
+
+                val area = quadArea(base, bottomLeft, bottomRight, topRight, topLeft)
+                val ratio = if (restArea > 0f) area / restArea else 1f
+
+                for (corner in intArrayOf(bottomLeft, bottomRight, topLeft, topRight)) {
+                    particleCompression[base + corner] += ratio
+                    areaSampleCount[corner]++
+                }
+            }
+        }
+
+        for (i in 0 until particlesPerBody) {
+            val samples = areaSampleCount[i]
+            particleCompression[base + i] =
+                if (samples > 0) particleCompression[base + i] / samples else 1f
+        }
+    }
+
+    /** Shoelace area of a quad given four particle indices, in winding order. */
+    private fun quadArea(base: Int, a: Int, b: Int, c: Int, d: Int): Float {
+        val ax = positionX[base + a]; val ay = positionY[base + a]
+        val bx = positionX[base + b]; val by = positionY[base + b]
+        val cx = positionX[base + c]; val cy = positionY[base + c]
+        val dx = positionX[base + d]; val dy = positionY[base + d]
+        val twiceArea =
+            (ax * by - bx * ay) +
+                (bx * cy - cx * by) +
+                (cx * dy - dx * cy) +
+                (dx * ay - ax * dy)
+        return abs(twiceArea) * 0.5f
     }
 
     private fun spawn() {
@@ -316,6 +391,11 @@ class RenderHarness(private val layout: WellLayout) : SimState {
         const val MAX_BODY_AREA = 6f
 
         const val MAX_SQUASH = 0.45f
+
+        /** How far the material bulges sideways per unit of vertical squash.
+         *  Below 1 so squashing genuinely loses area rather than conserving it. */
+        const val POISSON_RATIO = 0.6f
+
         const val MIN_SQUASH_SCALE = 0.25f
         const val SQUASH_DECAY = 6f
         const val SQUASH_FREQUENCY = 22f

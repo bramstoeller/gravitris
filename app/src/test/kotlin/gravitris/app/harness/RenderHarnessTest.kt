@@ -99,6 +99,91 @@ class RenderHarnessTest {
         assertTrue(moved, "prevPosition must trail position for interpolation to work")
     }
 
+    // --- compression, the one shading input Stage 1 carries -----------------
+
+    @Test
+    fun `an undeformed piece reports compression at rest`() {
+        // Before any impact the lattice is undeformed, so every cell should
+        // measure its own rest area. A resting piece that already reported
+        // compression would darken for no physical reason.
+        for (i in 0 until harness.particleCount) {
+            assertEquals(
+                1f, harness.particleCompression[i], 0.02f,
+                "particle $i is undeformed but reports ${harness.particleCompression[i]}",
+            )
+        }
+    }
+
+    @Test
+    fun `compression departs from rest after an impact`() {
+        // Land it hard, then look for material that is actually compressed.
+        // If this stays at 1 the shading term is wired to a dead quantity and
+        // the demo shows nothing, which is the failure the term exists to fix.
+        input.clear()
+        input.hardDrop = true
+        input.hardDropVelocity = 40f
+        harness.step(input)
+
+        var landed = false
+        var lowest = Float.MAX_VALUE
+        repeat(400) {
+            input.clear()
+            harness.step(input)
+            if (harness.impacts.count > 0) landed = true
+            // Sampled every tick, not once at the end: the squash decays over
+            // roughly a second, so checking after the fact would measure a
+            // piece that had already settled.
+            if (landed) {
+                for (i in 0 until harness.particleCount) {
+                    if (harness.particleCompression[i] < lowest) {
+                        lowest = harness.particleCompression[i]
+                    }
+                }
+            }
+        }
+        assertTrue(landed, "the piece should have landed")
+        // A hard landing must produce compression the eye can actually see.
+        // At the shader's gain of 1.4 this is roughly a 14% darkening or more,
+        // which is the whole reason the term exists.
+        assertTrue(
+            lowest < 0.90f,
+            "expected visibly compressed material after a hard landing, lowest was $lowest",
+        )
+    }
+
+    @Test
+    fun `compression stays physically plausible throughout a long run`() {
+        // The shader maps this to darkness, so a wild value is a visible
+        // artefact rather than a rounding error. Negative would mean an
+        // inverted cell.
+        repeat(4000) {
+            input.clear()
+            harness.step(input)
+            for (i in 0 until harness.particleCount) {
+                val compression = harness.particleCompression[i]
+                assertTrue(
+                    compression.isFinite() && compression in 0f..4f,
+                    "particle $i reported compression $compression",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `compression is reported for every particle of every body`() {
+        repeat(1200) {
+            input.clear()
+            harness.step(input)
+        }
+        assertTrue(harness.bodyCount > 1, "expected several bodies by now")
+        for (i in 0 until harness.particleCount) {
+            assertTrue(
+                harness.particleCompression[i] > 0f,
+                "particle $i has no compression value — stale or never written",
+            )
+        }
+    }
+
     @Test
     fun `drag moves the piece horizontally`() {
         val before = harness.positionX[0]

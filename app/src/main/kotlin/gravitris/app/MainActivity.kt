@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -66,6 +67,7 @@ class MainActivity : Activity() {
                 renderContext.bodies = renderer.bodyCount()
                 renderContext.dynamicBytesPerFrame = renderer.dynamicBytesPerFrame()
                 renderContext.hapticsScaled = haptics.isScaled
+                renderContext.compressionDarkening = renderer.compressionDarkening
                 readout.view.post { readout.update(snapshot, renderContext) }
             },
             onLayout = { worldPerDp ->
@@ -214,6 +216,34 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             togglePause()
+        }
+    }
+
+    /**
+     * Volume-up toggles the compression darkening term; volume-down is
+     * swallowed alongside it so the pair behaves consistently.
+     *
+     * A hardware key rather than a screen control, deliberately. The brief's
+     * control scheme is drag-anywhere, so any on-screen toggle would carve a
+     * dead zone out of the play area — and the frame-time readout sits in the
+     * bottom-left corner, exactly where a thumb rests. A volume key costs the
+     * gameplay nothing, is trivial to describe to the client ("press volume up
+     * to turn the shading off and read the numbers again"), and the game has
+     * no audio for the keys to interfere with.
+     *
+     * This is a measurement affordance for the prototype, not a feature. It
+     * goes when the performance question is answered, along with the readout
+     * itself (docs/ux/screens/playing.md).
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                gameView.queueEvent { renderer.toggleCompressionDarkening() }
+                true
+            }
+
+            KeyEvent.KEYCODE_VOLUME_DOWN -> true
+            else -> super.onKeyDown(keyCode, event)
         }
     }
 

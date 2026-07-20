@@ -82,16 +82,19 @@ class FrameTimeReadout(context: Context) {
         // fifteen — noise presented with the authority of a measurement.
         view.text = String.format(
             Locale.US,
-            "%5.1fms mean %5.1fms p95%n" +
+            "%s%n" +
+                "%5.1fms mean %5.1fms p95%n" +
                 "%5.1fms cpu  %5.1fms max%n" +
                 "%5.1f fps   %5d jank/s%n" +
                 "%5d tri   %5d bodies%n" +
-                "%5.1f KB/frame  %s",
+                "%5.1f KB/f  %s  %s",
+            BASELINE_LABEL,
             snapshot.meanMs, snapshot.p95Ms,
             snapshot.meanCpuMs, snapshot.maxMs,
             snapshot.fps, snapshot.jankPerSecond,
             context.triangles, context.bodies,
             context.dynamicBytesPerFrame / 1024f,
+            if (context.compressionDarkening) "shade:on" else "shade:off",
             if (context.hapticsScaled) "haptics:scaled" else "haptics:fixed",
         )
     }
@@ -111,6 +114,11 @@ class FrameTimeReadout(context: Context) {
         var bodies = 0
         var dynamicBytesPerFrame = 0
         var hapticsScaled = false
+
+        /** Whether the compression darkening term is active. Shown because a
+         *  frame time is not comparable across the two, and the whole point of
+         *  the toggle is comparing them. */
+        var compressionDarkening = false
     }
 
     private companion object {
@@ -121,6 +129,23 @@ class FrameTimeReadout(context: Context) {
         /** 8dp grid — docs/ux/tokens.md §Spacing. */
         const val SPACING_DP = 8f
 
-        const val PLACEHOLDER = "measuring…"
+        /**
+         * States what these numbers are before anyone reads them.
+         *
+         * Stage 1's fragment shader is a palette lookup and one compression
+         * term, so these figures are a **floor** — the cost of geometry and
+         * overdraw with almost no per-pixel work. Stage 3's procedural gel,
+         * subsurface, grain and band glow are the unmeasured part, and they are
+         * the reason ADR 0006 protects the 60Hz budget in the first place.
+         *
+         * A good number here therefore says "nothing is structurally wrong
+         * yet", not "we have headroom". Someone will photograph this readout
+         * and paste it into a discussion without the surrounding context, so
+         * the caveat travels with the numbers rather than living only in a
+         * handoff.
+         */
+        const val BASELINE_LABEL = "stage1 baseline - not a verdict"
+
+        const val PLACEHOLDER = "stage1 baseline - measuring…"
     }
 }

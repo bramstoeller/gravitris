@@ -148,6 +148,12 @@ class WellFrame {
 
     fun draw() {
         GLES30.glBindVertexArray(vao)
+        // The frame shares the body program but has no compression attribute
+        // array — the walls do not deform. With the array disabled the shader
+        // reads the generic attribute value, which defaults to 0 and would be
+        // interpreted as "fully compressed", darkening the walls to the
+        // shader's ceiling. Rest is 1.
+        GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_COMPRESSION, 1f)
         GLES30.glDrawElements(GLES30.GL_TRIANGLES, QUADS * 6, GLES30.GL_UNSIGNED_SHORT, 0)
         GLES30.glBindVertexArray(0)
     }

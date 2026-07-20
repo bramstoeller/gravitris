@@ -85,6 +85,38 @@ object Tunables {
      *  itself a decision, and it is the wrong one. */
     const val TARGET_REFRESH_HZ = 60f
 
+    // --- compression darkening (ADR 0007's vCompression) -------------------
+
+    /**
+     * How much compressed material darkens. `darken = (1 - compression) * gain`.
+     *
+     * The single shading term Stage 1 carries, approved against the milestone's
+     * purpose: with one flat colour per body the interior deformation is
+     * invisible and only the silhouette shows the squash, so the demo could not
+     * answer the "does it feel heavy?" question it exists to ask.
+     *
+     * **The boundary is compression to darkness and nothing else.** No rim
+     * light, no gradient, no grain. A second term means this is Stage 3.
+     *
+     * **Tuned against the harness, not against physics — expect to retune at
+     * Stage 2.** The harness produces compression in roughly 0.57..1.16, and
+     * this gain keeps the response proportional across almost all of that while
+     * leaving [COMPRESSION_MAX_DARKEN] as a genuine safety rail rather than the
+     * normal operating point. The real solver's distribution will differ, and
+     * if it is narrower the effect will be invisible while if it is wider
+     * everything will sit clamped at the ceiling. Whoever integrates
+     * `:core-sim` should look at this number before judging the look.
+     */
+    const val COMPRESSION_GAIN = 1.2f
+
+    /**
+     * Ceiling on the darkening, 0..1. Piece identity is carried by hue
+     * (docs/ux/piece-identity.md) and has to survive deformation — letting this
+     * reach 1 would take heavily squashed material to black and destroy the
+     * primary identity cue exactly where pieces pile up and need it most.
+     */
+    const val COMPRESSION_MAX_DARKEN = 0.55f
+
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---------
 
     /** World units across the well. Matches `SimConfig.wellWidth`'s default so

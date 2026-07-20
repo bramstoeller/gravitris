@@ -90,6 +90,18 @@ interface SimState {
     /** Index into the body arrays. */
     val particleBody: IntArray
 
+    /**
+     * This material's own current area / rest area. 1 at rest, below 1 where
+     * compressed, above 1 where stretched. → `vCompression`.
+     *
+     * ADR 0007 argues this one hardest, and the argument is why it is the
+     * single shading input Stage 1 carries: the area constraints already
+     * compute it, it costs nothing to pass, and it is "the cheapest available
+     * route to the brief's requirement that the blocks read as heavy" — a
+     * rendering response to a physical quantity rather than an animation.
+     */
+    val particleCompression: FloatArray
+
     // --- bodies ---
     val bodyCount: Int
 

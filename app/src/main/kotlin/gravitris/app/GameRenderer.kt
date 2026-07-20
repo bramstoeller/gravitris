@@ -54,6 +54,20 @@ class GameRenderer(
     private var scaleUniform = -1
     private var offsetUniform = -1
     private var paletteUniform = -1
+    private var compressionGainUniform = -1
+    private var compressionMaxUniform = -1
+
+    /**
+     * Whether compressed material darkens. Toggled at runtime so the same
+     * device, in the same session, can be measured with and without the one
+     * shading term Stage 1 carries — Stage 3's frame time minus Stage 1's is
+     * only the true price of the art direction if we know what this already
+     * costs. Off restores the true floor: one flat varying, one uniform
+     * lookup, one write.
+     */
+    @Volatile
+    var compressionDarkening = true
+        private set
 
     private val scale = FloatArray(2)
     private val offset = FloatArray(2)
@@ -86,6 +100,18 @@ class GameRenderer(
         layoutDirty = true
     }
 
+    /**
+     * Flip the compression term and discard the frame history, so the readout
+     * starts measuring the new configuration immediately instead of averaging
+     * across the change. Without the reset the first second after a toggle
+     * would report a blend of both, which is the one reading that means
+     * nothing.
+     */
+    fun toggleCompressionDarkening() {
+        compressionDarkening = !compressionDarkening
+        stats.reset()
+    }
+
     fun setPaused(value: Boolean) {
         paused = value
         if (value) {
@@ -110,6 +136,8 @@ class GameRenderer(
         scaleUniform = GLES30.glGetUniformLocation(program, "uScale")
         offsetUniform = GLES30.glGetUniformLocation(program, "uOffset")
         paletteUniform = GLES30.glGetUniformLocation(program, "uPalette")
+        compressionGainUniform = GLES30.glGetUniformLocation(program, "uCompressionGain")
+        compressionMaxUniform = GLES30.glGetUniformLocation(program, "uCompressionMax")
 
         mesh.create()
         wellFrame.create()
@@ -170,6 +198,11 @@ class GameRenderer(
         GLES30.glUniform2f(scaleUniform, scale[0], scale[1])
         GLES30.glUniform2f(offsetUniform, offset[0], offset[1])
         GLES30.glUniform3fv(paletteUniform, Palette.SIZE, Palette.asVec3Array(), 0)
+        GLES30.glUniform1f(
+            compressionGainUniform,
+            if (compressionDarkening) Tunables.COMPRESSION_GAIN else 0f,
+        )
+        GLES30.glUniform1f(compressionMaxUniform, Tunables.COMPRESSION_MAX_DARKEN)
 
         wellFrame.draw()
         mesh.draw()
@@ -236,7 +269,8 @@ class GameRenderer(
 
     fun bodyCount(): Int = harness.bodyCount
 
-    fun dynamicBytesPerFrame(): Int = harness.particleCount * 2 * Float.SIZE_BYTES
+    fun dynamicBytesPerFrame(): Int =
+        harness.particleCount * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
 
     private companion object {
         /** Matches the harness and ADR 0007's default-tier budget: 60 bodies

@@ -17,23 +17,23 @@ import java.nio.IntBuffer
  * interpolation lerp, upload with buffer orphaning, draw everything in one
  * call.
  *
- * ## Deviation from ADR 0007, recorded deliberately
+ * ## Buffer split, and how it relates to ADR 0007
  *
- * ADR 0007 says "one dynamic vertex buffer for all bodies", interleaved. This
- * uses **two** buffers: positions (dynamic, rewritten every frame) and
- * archetype indices (static, rewritten only when the set of bodies changes).
+ * ADR 0007 says "one dynamic vertex buffer for all bodies", interleaved. There
+ * are **two** buffers here, split by update frequency rather than by vertex:
  *
- * The archetype of a body never changes while that body exists, so
- * interleaving it would mean re-uploading 1500 integers per frame that are
- * bit-identical to the ones already there. Splitting by update frequency
- * rather than by vertex is the standard answer and it costs one extra buffer
- * binding at setup, not per frame.
+ * - **dynamic, interleaved, rewritten every frame** — position and
+ *   compression, 12 bytes per particle. This is the buffer the ADR is talking
+ *   about, and every varying Stage 3 adds (`vEdge`, `vContact`, `vBodyUv`) is
+ *   per-particle and per-frame, so all of them join it here.
+ * - **static, rewritten only when the set of bodies changes** — the archetype
+ *   index. A body's archetype never changes while that body exists, so
+ *   interleaving it would mean re-uploading 1500 integers per frame that are
+ *   bit-identical to the ones already there.
  *
- * This does not conflict with Stage 3. Every varying ADR 0007 adds later
- * (`vCompression`, `vEdge`, `vContact`, `vBodyUv`) is per-particle and changes
- * every frame, so all of them belong in the dynamic buffer alongside position
- * — which is exactly the interleaving the ADR is protecting. The archetype was
- * the one member of that list that was never dynamic.
+ * The archetype is the one member of ADR 0007's varying list that was never
+ * dynamic, so pulling it out costs one extra buffer binding at setup and
+ * nothing per frame, while leaving the ADR's actual structure intact.
  *
  * ## Index buffer sizing
  *
@@ -50,16 +50,19 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     private val indicesPerBody = LatticeTopology.indicesPerBody(lattice)
 
     private var vao = 0
-    private var positionVbo = 0
+    private var dynamicVbo = 0
     private var archetypeVbo = 0
     private var ibo = 0
 
-    /** Interleaved x,y for every particle, in world units, already interpolated. */
-    private val positionScratch = FloatArray(maxParticles * 2)
+    /**
+     * Interleaved `[x, y, compression]` per particle: position in world units
+     * and already interpolated, compression as current/rest area.
+     */
+    private val vertexScratch = FloatArray(maxParticles * FLOATS_PER_VERTEX)
     private val archetypeScratch = IntArray(maxParticles)
 
-    private val positionBuffer: FloatBuffer = ByteBuffer
-        .allocateDirect(positionScratch.size * Float.SIZE_BYTES)
+    private val vertexBuffer: FloatBuffer = ByteBuffer
+        .allocateDirect(vertexScratch.size * Float.SIZE_BYTES)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
 
@@ -86,7 +89,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     fun create() {
         val names = IntArray(3)
         GLES30.glGenBuffers(3, names, 0)
-        positionVbo = names[0]
+        dynamicVbo = names[0]
         archetypeVbo = names[1]
         ibo = names[2]
 
@@ -96,15 +99,22 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
 
         GLES30.glBindVertexArray(vao)
 
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, positionVbo)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, dynamicVbo)
         GLES30.glBufferData(
             GLES30.GL_ARRAY_BUFFER,
-            positionScratch.size * Float.SIZE_BYTES,
+            vertexScratch.size * Float.SIZE_BYTES,
             null,
             GLES30.GL_STREAM_DRAW,
         )
         GLES30.glEnableVertexAttribArray(ATTRIB_POSITION)
-        GLES30.glVertexAttribPointer(ATTRIB_POSITION, 2, GLES30.GL_FLOAT, false, 0, 0)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_POSITION, 2, GLES30.GL_FLOAT, false, VERTEX_STRIDE_BYTES, 0,
+        )
+        GLES30.glEnableVertexAttribArray(ATTRIB_COMPRESSION)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_COMPRESSION, 1, GLES30.GL_FLOAT, false,
+            VERTEX_STRIDE_BYTES, 2 * Float.SIZE_BYTES,
+        )
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, archetypeVbo)
         GLES30.glBufferData(
@@ -168,28 +178,36 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         val currentY = state.positionY
         val previousX = state.prevPositionX
         val previousY = state.prevPositionY
+        val compression = state.particleCompression
 
         // The ADR 0006 lerp, fused into the buffer fill. The ADR notes this is
         // where interpolation becomes almost free: the vertex buffer is being
         // rebuilt every frame anyway, so it costs one lerp per component rather
         // than a separate pass over the particle arrays.
+        //
+        // Compression is NOT interpolated between ticks. It is a ratio derived
+        // from positions, and lerping a derived quantity alongside the
+        // positions it was derived from would disagree with the geometry
+        // actually being drawn. The error is invisible at 60Hz and the honest
+        // value is the cheaper one.
         var cursor = 0
         for (i in 0 until particles) {
-            positionScratch[cursor++] = previousX[i] + (currentX[i] - previousX[i]) * alpha
-            positionScratch[cursor++] = previousY[i] + (currentY[i] - previousY[i]) * alpha
+            vertexScratch[cursor++] = previousX[i] + (currentX[i] - previousX[i]) * alpha
+            vertexScratch[cursor++] = previousY[i] + (currentY[i] - previousY[i]) * alpha
+            vertexScratch[cursor++] = compression[i]
         }
 
-        positionBuffer.position(0)
-        positionBuffer.put(positionScratch, 0, cursor)
-        positionBuffer.position(0)
+        vertexBuffer.position(0)
+        vertexBuffer.put(vertexScratch, 0, cursor)
+        vertexBuffer.position(0)
 
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, positionVbo)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, dynamicVbo)
         // Buffer orphaning (ADR 0007 §1): hand the driver a fresh allocation
         // before writing, so it never has to stall waiting for the previous
         // frame's draw to finish reading the old contents.
         GLES30.glBufferData(
             GLES30.GL_ARRAY_BUFFER,
-            positionScratch.size * Float.SIZE_BYTES,
+            vertexScratch.size * Float.SIZE_BYTES,
             null,
             GLES30.GL_STREAM_DRAW,
         )
@@ -197,7 +215,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
             GLES30.GL_ARRAY_BUFFER,
             0,
             cursor * Float.SIZE_BYTES,
-            positionBuffer,
+            vertexBuffer,
         )
 
         if (state.bodyCount != uploadedBodies) {
@@ -249,5 +267,10 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     companion object {
         const val ATTRIB_POSITION = 0
         const val ATTRIB_ARCHETYPE = 1
+        const val ATTRIB_COMPRESSION = 2
+
+        /** `[x, y, compression]` — the dynamic, per-frame vertex. */
+        const val FLOATS_PER_VERTEX = 3
+        const val VERTEX_STRIDE_BYTES = FLOATS_PER_VERTEX * Float.SIZE_BYTES
     }
 }
