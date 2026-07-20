@@ -46,6 +46,16 @@ APK="app/build/outputs/apk/debug/app-debug.apk"
 # time to actually fall and settle before the next screenshot. Overridable.
 SETTLE_SECONDS="${SETTLE_SECONDS:-6}"
 
+# Clear threshold for this run, passed to the app as a debug-only launch extra
+# (MainActivity honours it only on a debuggable build). The shipped default is
+# 0.90 — a band packed almost solidly — which crude adb input on a slow software
+# emulator will not reliably reach inside one scripted session. A lower,
+# reachable value lets the clear (spawn -> lock -> ignite -> remove -> re-settle)
+# actually be filmed; it changes WHEN a band clears, never HOW. Set empty to run
+# at the shipped default and prove only that the mechanic runs, not that it
+# clears.
+CLEAR_THRESHOLD="${CLEAR_THRESHOLD:-0.55}"
+
 EMULATOR_BIN="$ANDROID_HOME/emulator/emulator"
 EMULATOR_STDOUT_LOG="$OUT_DIR/emulator.stdout.log"
 EMULATOR_PID=""
@@ -201,8 +211,16 @@ if echo "$install_output" | grep -q "^Failure"; then
   exit 1
 fi
 
-echo "==> Launching $ACTIVITY"
-start_output="$(adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" 2>&1)" || {
+# Pass the debug clear-threshold as a float extra when one is set. `--ef` is an
+# am float extra; MainActivity ignores it on a non-debuggable build.
+THRESHOLD_ARGS=()
+if [ -n "$CLEAR_THRESHOLD" ]; then
+  THRESHOLD_ARGS=(--ef gravitris.debug.clearThreshold "$CLEAR_THRESHOLD")
+  echo "==> Launching $ACTIVITY (debug clearThreshold=$CLEAR_THRESHOLD)"
+else
+  echo "==> Launching $ACTIVITY (shipped clear threshold)"
+fi
+start_output="$(adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" "${THRESHOLD_ARGS[@]}" 2>&1)" || {
   echo "FAIL: am start failed:" >&2
   echo "$start_output" >&2
   exit 1
