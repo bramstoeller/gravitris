@@ -1,8 +1,12 @@
-# 0007 — Architect → Product Lead
+# 0008 — Architect → Product Lead
 
 Date: 2026-07-20
-Branch: `chore/architecture` @ `9f0a72f`. **Pushed to `origin`. Not merged.**
-Follows handoff 0003. Responds to the backend engineer's escalation in 0006.
+Branch: `chore/architecture`. **Pushed to `origin`. Not merged.**
+Follows handoff 0003. Responds to the backend engineer's escalation in 0006,
+and folds in the frontend engineer's calibration note from 0007.
+
+*(Originally numbered 0007; renumbered to 0008 after a collision with the
+frontend engineer's handoff.)*
 
 ## The backend engineer was right, and I was wrong
 
@@ -83,6 +87,77 @@ engineer's decision to keep 8 stands.
 **For QA: build replay fixtures against 8. The number is not going to move.**
 That was the reason this needed settling before Stage 3, and it is settled.
 
+## For QA — 8 is chosen insurance, not a measured floor, and that changes the tests
+
+You asked for this distinction explicitly, and it is the right thing to ask,
+because the two imply different test designs.
+
+**If 8 were the measured floor**, the correct test would be a boundary regression
+guard: assert 8 settles, assert just below 8 fails, treat drift as breakage.
+**That design would be wrong here and it would flake.** Between 4 and 8
+everything settles in both scene shapes, in two independent implementations. A
+test asserting failure at 7 would be asserting noise.
+
+What to test instead:
+
+- **Assert the cliff, not the boundary.** The robust, reproducible signal is that
+  a *deep* pile at 2 substeps diverges by eight orders of magnitude. That
+  reproduced across two implementations to within ~15% (139 405 vs 160 624).
+  The backend engineer's suite already asserts direction rather than the table —
+  that is the right shape, keep it.
+- **Do not treat residual kinetic energy as a fidelity measure.** My whole error
+  was reading residual KE in a chaotic pile as a monotonic function of substeps.
+  It is not: at one drop height, 6 substeps leaves KE 19.5 while 4 and 8 leave
+  0.002, and the 19.5 is *stable over 2 700 further frames*. Any KE assertion
+  needs a generous threshold and must be read as "did it settle", never as "how
+  good is the solver".
+- **Stability tests need multiple seeds and a convergence check, not a fixed frame
+  budget.** A fixed budget measures settling *time* and calls it stability — that
+  is precisely how I got 8. Assert "KE has stopped decreasing and stays down",
+  across several initial configurations.
+- **Treat a substep change as a fixture-regeneration event, not a bug.** Substeps
+  are part of the determinism contract (ADR 0006); replay hashes are *expected* to
+  change if 8 ever becomes 6. That should be a documented procedure, not a
+  panicked investigation.
+
+## The highest-value QA target right now is the GL path
+
+The frontend engineer's calibration note (handoff 0007) matters more than its
+placement suggests. They found two genuine defects **through tests, not review**,
+in code they had read and believed correct: a `Long.MIN_VALUE` sentinel overflow
+that would have swallowed every touch of every session, and a thread race setting
+drag sensitivity ~40x too high. They honestly flag that comparable defects may
+remain in the GL path, because **nothing in this build has rendered a frame**.
+
+That is the same failure mode as mine, and as the dependency-verification failure
+the code reviewer caught. Three times now, in three different areas, the pattern
+has been identical: **inspection said fine, execution said otherwise.** In my case
+inspection of a scene I assumed was settled; in theirs, of code they had read.
+
+So I would name the unexecuted GL path as the priority target rather than leave it
+implicit. Specific hazards, from ADR 0007's structure:
+
+- **The new varyings** — `vCompression`, `vEdge`, `vContact` are fresh plumbing
+  from simulation to shader. A swapped or mis-scaled varying produces output that
+  looks plausible and is wrong, which is the worst kind.
+- **`vEdge` vs `vContact` inversion** — they drive *opposite* treatments
+  (brighten vs darken). Swapped, the material still renders; it just reads wrong.
+- **Palette UBO indexed by archetype** — an off-by-one gives wrong piece colours,
+  and colour is the primary identity cue once shape deforms.
+- **Band glow lookup by world Y** — mapping a world position to a band index is
+  exactly the arithmetic that is silently off by one band.
+- **Buffer orphaning and upload sizing** — stale or short uploads show as garbage
+  or frozen geometry.
+- **GL context loss and resume** — everything must be recreatable from scratch.
+
+One warning worth passing on directly: **a wrong interpolation alpha produces
+judder that looks like a physics bug.** Given I have just spent a day
+misattributing scene noise to solver fidelity, I would rather nobody repeat the
+misattribution in the other direction. If the stack looks like it is jittering
+once rendering exists, **check the render path before reopening the solver** — the
+solver's stability is now measured in two independent implementations and has a
+2x margin.
+
 ## The other two items
 
 **Wide well — open question closed.** Their measurement, independently reproduced:
@@ -126,6 +201,12 @@ reasoning stays auditable:
    methodology error, not a code error. **The mitigation is that measurements of
    chaotic settling need multiple seeds and a convergence check, not a fixed
    frame budget** — worth saying to whoever next measures physics behaviour.
+
+   Set against the frontend engineer's two test-caught defects and the code
+   reviewer's cold-clone failure, this is now a team-wide pattern rather than my
+   personal one: **three areas, three cases of inspection passing where execution
+   failed.** I would treat that as evidence about where to spend QA effort — on
+   the paths nothing has executed yet — rather than as three unrelated mistakes.
 2. **I still have no on-device numbers.** Blockers 1 and 2 from handoff 0003 are
    unchanged and remain the largest unknowns.
 3. **The 8→6 lever is real but I have not measured 6 as carefully as I should**
