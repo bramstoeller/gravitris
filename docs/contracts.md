@@ -179,6 +179,26 @@ interface SimState {
      */
     val bodyArchetype: IntArray
     val bodyLattice: Int            // same for all bodies in a run
+    /**
+     * How far the material surface extends beyond a particle CENTRE, in world
+     * units. Half the lattice spacing: 0.30 / 0.225 / 0.18 at lattice 4/5/6.
+     *
+     * Every position in this contract is a particle centre. The solver treats
+     * the material as reaching particleRadius past it — contacts hold two
+     * touching bodies' centres exactly 2*particleRadius apart, and a body
+     * resting on the floor has its lowest centres exactly particleRadius above
+     * y=0. Both are measured exactly (ContactGapTest).
+     *
+     * A mesh built from positions alone is therefore INSET by this much on
+     * every side, and two bodies whose surfaces touch draw with a
+     * 2*particleRadius gap between them — 0.45 world units at lattice 5, a
+     * quarter of a piece's width. That is the "margin around the blocks" the
+     * client reported at Milestone 1. The renderer must expand its outline by
+     * this radius; ADR 0004's occupancy stamp must stamp disks of it.
+     *
+     * Consume this value; do not re-derive it from PIECE_WIDTH and bodyLattice.
+     */
+    val particleRadius: Float
 
     // --- rendering topology (static per tier, ADR 0007) ---
     val triangleIndices: IntArray   // valid for one body; reused with offsets

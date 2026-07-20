@@ -81,6 +81,34 @@ interface SimState {
     val bodyLattice: Int
 
     /**
+     * How far the material surface extends beyond a particle's centre, in
+     * world units. Half the lattice spacing, so adjacent particles inside a
+     * body exactly touch at rest.
+     *
+     * **This is the difference between where a body is and where it is drawn**,
+     * and it is published because the renderer was drawing the second one.
+     * Every position in this contract is a particle *centre*; the solver treats
+     * the material as extending [particleRadius] past it. Contacts hold two
+     * touching bodies' particle centres exactly `2 * particleRadius` apart, and
+     * boundary contacts hold a resting body's centres exactly
+     * [particleRadius] above the floor — both measured, both exact.
+     *
+     * So a mesh built from these positions alone is inset by this much on every
+     * side: two bodies pressed together with a *measured* surface gap of zero
+     * draw with a visible gap of `2 * particleRadius`, which at lattice 5 is
+     * 0.45 world units — a quarter of a piece's width. That is the "margin
+     * around the blocks" the client reported, and it is a rendering inset, not
+     * a physics separation.
+     *
+     * Consumers that need the material's true extent — the mesh outline, and
+     * ADR 0004's occupancy stamp, which specifies stamping each particle's
+     * *disk* — must expand by this radius rather than re-derive it from
+     * [SimConfig.PIECE_WIDTH] and [bodyLattice]. A re-derived copy is one that
+     * drifts silently the first time the original changes.
+     */
+    val particleRadius: Float
+
+    /**
      * Upper bound on [particleCount] for this simulation's lifetime.
      *
      * Body capacity is derived from the well's area rather than configured
