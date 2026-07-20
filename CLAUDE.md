@@ -149,6 +149,24 @@ on something only the client can answer.
 
 Do not loop. If you are uncertain about the same thing twice, escalate.
 
+## Contracts are reviewed as artifacts
+
+A contract between two modules is reviewed by its **consumer**, before the code
+on either side is written. Not the producer's code, not the consumer's code —
+the contract itself.
+
+This is not process for its own sake. The visible gap around every block, which
+the client reported and which took two engineers and a full investigation to
+place, was a **contract defect**: the solver was correct, the renderer was
+correct given what it had been told, and neither engineer could have found it
+alone. It was invisible from both sides and only visible from between them.
+
+When you write a constraint into a contract, ask **"and what do I give them
+instead?"** Four separate defects were found in `docs/contracts.md` sharing one
+shape: it forbade something without supplying the value that makes the ban
+livable — no capacity field while banning `array.size`, no `bandCount`, no
+`particleRadius`.
+
 ## Standards
 
 - Read the surrounding code before adding to it, and match its idiom: naming,
