@@ -130,14 +130,15 @@ boot_emulator() {
   return 1
 }
 
-# Retries, bounded: this container's emulator has been observed to crash
-# (SIGSEGV, inside qemu/gfxstream, not this script) partway through boot on
-# a majority of attempts, independent of GPU mode or KVM — see
-# docs/operations.md and handoff 0007 for the diagnosis. This is not a
-# normal/expected flake to paper over silently; retrying is a pragmatic
-# concession to a container-level issue that has not been root-caused, not
-# a sign the script itself is unreliable.
-MAX_ATTEMPTS_PER_MODE=3
+# Bounded retries, kept as defense-in-depth rather than the primary fix.
+# The primary fix is the GPU mode choice below — see the long comment
+# there. root-caused with gdb: `-gpu swiftshader_indirect` (the emulator's
+# default software mode, and this AVD's original setting) SIGSEGVs inside
+# libGLESv2.so's SwiftShader/Subzero JIT on a majority of boots in this
+# container; `-gpu swangle` (ANGLE-mediated) does not, and hasn't in 9/9
+# clean boots while chasing this down. If a third mode starts flaking too,
+# retries buy a little slack, not silent tolerance of routine failure.
+MAX_ATTEMPTS_PER_MODE=2
 
 boot_with_retries() {
   local gpu_mode="$1"
@@ -151,12 +152,25 @@ boot_with_retries() {
   return 1
 }
 
+# GPU mode: try -gpu host first (real hardware GL, if this container ever
+# genuinely has it — it does not today, see docs/operations.md), then fall
+# back to -gpu swangle, NOT the emulator's own default -gpu
+# swiftshader_indirect / auto. This is not an arbitrary alternative:
+# swiftshader_indirect calls into SwiftShader's GLESv2 implementation
+# directly, whose Subzero JIT SIGSEGVs (confirmed with gdb — a JIT-compiled
+# shader routine's own generated code faults with SEGV_ACCERR) on a
+# majority of boots in this container. swangle routes the same GLES calls
+# through ANGLE on top of SwiftShader's Vulkan backend instead of directly
+# through SwiftShader's GLESv2 JIT path, and has not reproduced the crash
+# once in 9 clean boots while diagnosing this (handoff has the full
+# evidence trail). Both are still software (SEE THE GPU_STATUS BANNER
+# BELOW) — this is a stability fix, not a hardware-acceleration one.
 GPU_REQUESTED="host"
 if ! boot_with_retries "host"; then
-  echo "==> Falling back to software rendering (SwiftShader) — see docs/operations.md" >&2
-  GPU_REQUESTED="swiftshader_indirect"
-  if ! boot_with_retries "swiftshader_indirect"; then
-    echo "FAIL: emulator did not boot under either -gpu host or -gpu swiftshader_indirect after $MAX_ATTEMPTS_PER_MODE attempts each" >&2
+  echo "==> Falling back to software rendering (ANGLE/SwiftShader via -gpu swangle) — see docs/operations.md" >&2
+  GPU_REQUESTED="swangle"
+  if ! boot_with_retries "swangle"; then
+    echo "FAIL: emulator did not boot under either -gpu host or -gpu swangle after $MAX_ATTEMPTS_PER_MODE attempts each" >&2
     exit 1
   fi
 fi
@@ -165,10 +179,16 @@ echo "==> Boot completed"
 
 RENDERER_LINE="$(grep -m1 "Graphics Adapter " "$EMULATOR_STDOUT_LOG" 2>/dev/null || true)"
 API_LINE="$(grep -m1 "Graphics API Version " "$EMULATOR_STDOUT_LOG" 2>/dev/null || true)"
-if echo "$RENDERER_LINE" | grep -qi "swiftshader"; then
-  GPU_STATUS="SOFTWARE (SwiftShader) — not hardware GL"
-else
+# Keyed off which -gpu mode actually booted, not off sniffing the renderer
+# string for "swiftshader" — swangle's own renderer line contains the word
+# "SwiftShader" (true, it's ANGLE-over-SwiftShader), but so would any other
+# software fallback added later that might not happen to mention it. This
+# is the one place a future silent-fallback regression would show up, so it
+# does not get to depend on string-matching being kept in sync by hand.
+if [ "$GPU_REQUESTED" = "host" ]; then
   GPU_STATUS="hardware GL"
+else
+  GPU_STATUS="SOFTWARE ($GPU_REQUESTED) — not hardware GL"
 fi
 
 echo "==> Installing debug APK"

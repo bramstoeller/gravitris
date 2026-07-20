@@ -166,52 +166,102 @@ OS version the client actually has.
 
 ### What was actually found setting this up
 
-Two independent, and separately important, findings — read both before
-trusting anything this emulator shows you:
+Updated after a second, deeper pass (gdb, not just strace; a real Vulkan
+compute workload, not just enumeration). The short version: **`make
+screenshot` is now reliable in this container** — it was not on the first
+pass, and the fix is `-gpu swangle` instead of the emulator's own default.
+Two things worth knowing, in order of how much they should worry you:
 
-1. **Hardware GL is not actually available in this container**, despite
-   `/dev/dri` being present and readable. Confirmed two ways:
-   - The native host GL stack (Mesa, via `eglinfo -B`) falls back to
-     `llvmpipe` (software) — the AMD GPU's own kernel driver refuses the
-     acceleration query (`amdgpu_query_info(ACCEL_WORKING)` fails with
-     `EACCES`), independent of Android entirely.
-   - The emulator's own hardware-GL capability check reaches the same
-     conclusion and says so directly: `ERROR | Your GPU cannot be used for
-     hardware rendering. Consider using software rendering.`
-   - `scripts/emulator-screenshot.sh` tries `-gpu host` first, detects this
-     failure from the emulator's own log rather than waiting for a boot that
-     has already failed, and falls back to `-gpu swiftshader_indirect`
-     (software) — printing an unmissable `GPU status: SOFTWARE (SwiftShader)`
-     line rather than silently proceeding as if it got hardware rendering.
-     If a future container genuinely has working hardware GL, the script
-     will report `hardware GL` instead and nothing else needs to change.
+1. **The emulator's default software GPU mode crashes; a different software
+   mode doesn't, and the fix is now applied.** Root-caused with `gdb`
+   attached to a live boot (a naive `strace`/backtrace-after-the-fact wasn't
+   enough — see "how this was actually diagnosed" below if you need to
+   redo this kind of investigation): `-gpu swiftshader_indirect` (the
+   default this AVD was created with) SIGSEGVs inside
+   `libGLESv2.so` — specifically, a JIT-compiled routine (SwiftShader's
+   Subzero/Reactor JIT, which compiles shaders to native code at runtime)
+   faults with `SEGV_ACCERR` (the memory *is* mapped, just not with the
+   permissions the faulting instruction needed — the signature of a
+   write-then-execute JIT transition going wrong) on a majority of boots.
+   `-gpu swangle` runs the identical GLES calls through ANGLE on top of
+   SwiftShader's *Vulkan* backend instead of straight through SwiftShader's
+   GLESv2 JIT path, and has not reproduced the crash once: 9/9 clean boots
+   and 3/3 full `make screenshot` runs (build, install, launch, screenshot)
+   while confirming this. `scripts/emulator-screenshot.sh` now requests
+   `swangle` as its software fallback, not `swiftshader_indirect`.
+   **Both are still software** — this fixes a stability bug, not the
+   hardware-acceleration question below.
 
-2. **The emulator itself crashes on a majority of boot attempts in this
-   container** — a `SIGSEGV` inside `qemu-system-x86_64-headless`
-   (gfxstream), roughly 15-20 seconds into "performing a full startup",
-   reproduced with `strace` attached to confirm it is a real crash and not a
-   script bug. This happens under **both** `-gpu host` and
-   `-gpu swiftshader_indirect`, and **with or without** `-no-accel` (i.e. it
-   is not specific to KVM or to the GPU question above) — it is some other
-   incompatibility between this emulator build (36.6.11) and this
-   container's sandboxing that was not fully root-caused. One fix was
-   found and kept (`QT_QPA_PLATFORM=offscreen` — the emulator's Qt UI layer
-   initializes even in `-no-window` mode and segfaults immediately without a
-   display or an offscreen platform plugin), but it reduces the crash rate
-   rather than eliminating it. `scripts/emulator-screenshot.sh` retries up
-   to 3 times per GPU mode before giving up and reporting failure plainly —
-   this is a concession to an unresolved container-level issue, not evidence
-   the script is flaky.
-   
-   **Practical effect: `make screenshot` may well fail outright in this
-   container right now**, separate from and in addition to the
-   software-rendering finding above. Both are recorded here so the next
-   person doesn't have to re-derive either from scratch. See handoff 0007
-   for the full diagnostic trail (the `strace` excerpt, the `eglinfo`
-   output, the exact log lines) if it needs to be picked up again — likely
-   next steps: try an older emulator revision, or ask whoever administers
-   this container about the seccomp/capability profile QEMU is running
-   under.
+2. **Real hardware GL rendering is possible in this container — the AMD GPU
+   genuinely works — but the Android emulator has no way to reach it
+   today.** These are two different claims and it matters that they don't
+   get merged into one:
+   - The GPU itself: confirmed with actual executed work, not just
+     enumeration. A hand-written Vulkan compute program (device creation,
+     memory allocation, a real compiled SPIR-V shader, command buffer
+     submission, `vkQueueWaitIdle`, and a correct readback) ran successfully
+     on `AMD Radeon Graphics (RADV GFX1152)`. Separately,
+     `MESA_LOADER_DRIVER_OVERRIDE=zink eglinfo -B` (Mesa's OpenGL-over-Vulkan
+     driver, headless, via `/dev/dri` directly — no X server) reports a real
+     hardware-backed **`OpenGL ES 3.2` renderer naming the RADV device**, not
+     `llvmpipe`. The GPU is not the problem.
+   - What *is* blocked: the classic Mesa/AMDGPU path — the one `eglinfo -B`
+     picks by default, and the one the emulator's own `-gpu host` capability
+     check relies on — goes through `libdrm_amdgpu`'s
+     `amdgpu_query_info(ACCEL_WORKING)` at device-init time, and that call
+     fails with `EACCES`. This is not a file-permission problem
+     (`/dev/dri/renderD128` is `0666`, world-writable) and not fixable with
+     Mesa driver-selection environment variables (tried
+     `MESA_LOADER_DRIVER_OVERRIDE=radeonsi` explicitly — same failure). An
+     `EACCES` on a specific privileged ioctl, with the device node itself
+     wide open, is the signature of a container-level restriction (a seccomp
+     filter or an AppArmor/SELinux device policy) on that specific
+     operation, imposed by whoever configured this container's GPU
+     passthrough — not something liftable from inside the container, even as
+     root. Precisely what to ask for, if this is worth pursuing: **whatever
+     policy is blocking the `AMDGPU_INFO` "accel working" query ioctl (or
+     more broadly, privileged `amdgpu`/DRM ioctls) on `/dev/dri/card1` needs
+     relaxing** — the same shape of ask as the original `/dev/kvm`/`/dev/dri`
+     grant, one level more specific.
+   - Separately, `-gpu host` *also* wants a real X server for its GLX-based
+     interop path on Linux (it tries `libX11`, fails "Failed to open
+     display" without one) — and a virtual one doesn't help: `Xvfb` is a
+     software-only X server, and GLX through it resolves to `llvmpipe`
+     regardless of `MESA_LOADER_DRIVER_OVERRIDE` (tested). So even if the
+     `ACCEL_WORKING` gate above were lifted, `-gpu host` would need a real,
+     GPU-backed X server too, or the emulator would need to route its
+     rendering through EGL/zink the way the bare-Mesa test above does — which
+     is not something exposed by any `emulator` flag found (`-help-gpu`
+     lists `auto`, `host`, `software`, `lavapipe`, `swiftshader`, `swangle` —
+     none of them "use the system's EGL/zink").
+   - `scripts/emulator-screenshot.sh` still tries `-gpu host` first (fast:
+     it detects the `ACCEL_WORKING`-driven failure from the emulator's own
+     log rather than waiting out a timeout) and reports `GPU status:
+     hardware GL` if it ever succeeds — so a future container with this
+     restriction actually lifted needs no script change to benefit from it.
+
+#### How this was actually diagnosed (for next time)
+
+The first pass at this (see the git history of this section) used `strace`
+and concluded "crashes on a majority of attempts, not root-caused." That
+undersold it — `strace`'s own overhead was enough to sometimes avoid the
+race entirely, and a plain post-mortem backtrace attempt caught the crash
+handler's cleanup, not the fault. What actually worked:
+
+- Attach `gdb -p <pid>` to the emulator process *after* it execs into
+  `qemu-system-x86_64-headless` (same PID, `ps -p $PID -o comm` confirms the
+  exec happened), not to the `emulator` launcher script.
+- `handle SIGUSR1 SIGUSR2 SIGPIPE noprint nostop pass` before continuing —
+  QEMU uses these internally, and gdb's default is to stop on them, which
+  looks exactly like an unrelated hang if you don't know to expect it.
+- Exactly **one** `continue`, then gather everything you need (`bt full`,
+  `info registers`, `print $_siginfo`) before doing anything else — a second
+  queued `continue` resumes past the fault and hands you a half-torn-down
+  process instead.
+- `$_siginfo.si_code` is the detail that actually explains the bug: `2`
+  (`SEGV_ACCERR`, wrong permissions on mapped memory) rather than `1`
+  (`SEGV_MAPERR`, not mapped at all) is what points at a JIT write→execute
+  transition rather than a plain bad pointer.
 
 The part of this product that most needs deterministic, automated testing
 (`:core-sim` — physics and game rules) is already fully covered by plain JVM
