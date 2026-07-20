@@ -636,6 +636,7 @@ class Simulation(private val config: SimConfig) {
         override val bandFill: FloatArray get() = bands.fill
         override val bandClearProgress = FloatArray(config.bandCount) { -1f }
         override val bandBottomY: Float = world.wellFloorY
+        override val bandCount: Int = config.bandCount
         override val bandHeight: Float = config.wellHeight / config.bandCount
 
         override val spawnBandIndex: Int =
