@@ -7,7 +7,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
-import gravitris.app.sim.ImpactList
+import gravitris.game.ImpactList
 
 /**
  * Turns simulation impact events into vibration.

@@ -1,6 +1,6 @@
 package gravitris.app.input
 
-import gravitris.app.sim.InputFrame
+import gravitris.game.InputFrame
 
 /**
  * The hand-off between the UI thread (which recognises gestures) and the GL

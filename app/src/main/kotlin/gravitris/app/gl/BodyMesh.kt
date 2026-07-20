@@ -1,7 +1,8 @@
 package gravitris.app.gl
 
 import android.opengl.GLES30
-import gravitris.app.sim.SimState
+import gravitris.app.Palette
+import gravitris.game.SimState
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -174,28 +175,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
             return 0
         }
 
-        val currentX = state.positionX
-        val currentY = state.positionY
-        val previousX = state.prevPositionX
-        val previousY = state.prevPositionY
-        val compression = state.particleCompression
-
-        // The ADR 0006 lerp, fused into the buffer fill. The ADR notes this is
-        // where interpolation becomes almost free: the vertex buffer is being
-        // rebuilt every frame anyway, so it costs one lerp per component rather
-        // than a separate pass over the particle arrays.
-        //
-        // Compression is NOT interpolated between ticks. It is a ratio derived
-        // from positions, and lerping a derived quantity alongside the
-        // positions it was derived from would disagree with the geometry
-        // actually being drawn. The error is invisible at 60Hz and the honest
-        // value is the cheaper one.
-        var cursor = 0
-        for (i in 0 until particles) {
-            vertexScratch[cursor++] = previousX[i] + (currentX[i] - previousX[i]) * alpha
-            vertexScratch[cursor++] = previousY[i] + (currentY[i] - previousY[i]) * alpha
-            vertexScratch[cursor++] = compression[i]
-        }
+        val cursor = VertexFill.fill(state, alpha, vertexScratch)
 
         vertexBuffer.position(0)
         vertexBuffer.put(vertexScratch, 0, cursor)
@@ -228,11 +208,26 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         return particles
     }
 
+    /**
+     * Archetypes are clamped into the palette's range on the way to the GPU.
+     *
+     * `uPalette` is a fixed-size array in GLSL and indexing it out of bounds is
+     * undefined behaviour — not a wrong colour but anything the driver likes,
+     * differing per GPU. The core declares seven archetypes
+     * (`Simulation.ARCHETYPE_COUNT`) while docs/ux/piece-identity.md specifies
+     * six hues, so the two counts already disagree and the shell is what stands
+     * between that disagreement and the driver.
+     *
+     * [gravitris.app.toy.SquishToy] only ever asks for archetypes in range, so
+     * this clamp should never fire today. It is here because the failure it
+     * prevents is undebuggable from this container and would arrive the first
+     * time Stage 3 introduces a seventh piece.
+     */
     private fun uploadArchetypes(state: SimState, particles: Int) {
         val particleBody = state.particleBody
         val bodyArchetype = state.bodyArchetype
         for (i in 0 until particles) {
-            archetypeScratch[i] = bodyArchetype[particleBody[i]]
+            archetypeScratch[i] = bodyArchetype[particleBody[i]].coerceIn(0, Palette.SIZE - 1)
         }
 
         archetypeBuffer.position(0)
@@ -259,6 +254,20 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
             0,
         )
         GLES30.glBindVertexArray(0)
+    }
+
+    /**
+     * Force the static archetype buffer to be rewritten on the next [upload].
+     *
+     * The buffer is normally rewritten only when the body *count* changes,
+     * which is sound while bodies are only ever added. Emptying the well
+     * violates that: a fresh simulation can present the same body count with
+     * different archetypes, and the stale buffer would leave every piece
+     * wearing the previous well's colours. Called by the renderer whenever it
+     * replaces the simulation.
+     */
+    fun invalidateArchetypes() {
+        uploadedBodies = -1
     }
 
     /** Triangles submitted this frame, for the readout. */

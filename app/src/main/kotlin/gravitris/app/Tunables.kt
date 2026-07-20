@@ -127,4 +127,29 @@ object Tunables {
      *  area cannot produce a degenerate playfield. */
     const val WELL_HEIGHT_MIN_WORLD = 12f
     const val WELL_HEIGHT_MAX_WORLD = 30f
+
+    // --- the Milestone 1 toy ------------------------------------------------
+
+    /**
+     * Particles per piece edge. `SimConfig.lattice`'s own default and ADR
+     * 0007's default quality tier — 25 particles and 32 triangles per piece.
+     *
+     * Fixed for Milestone 1 rather than selected by ADR 0009's startup quality
+     * calibration, which does not exist yet. The renderer takes the lattice as
+     * a parameter and the topology is built per lattice size, so supporting
+     * 4/5/6 is small once something exists to choose between them — and the
+     * hidden benchmark is what will tell us whether anything needs to.
+     */
+    const val TOY_LATTICE = 5
+
+    /**
+     * Upper rail on bodies in the well.
+     *
+     * Sizes the renderer's vertex and index buffers, so it is a hard bound and
+     * not a preference. A 10-wide well holds roughly four pieces per row, so
+     * this is about ten rows — more than fills any well height the layout can
+     * produce, which means the toy resets on material reaching the top rather
+     * than on this number. It is the backstop, not the rule.
+     */
+    const val TOY_MAX_BODIES = 40
 }

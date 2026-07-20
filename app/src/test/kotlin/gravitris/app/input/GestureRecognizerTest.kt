@@ -1,7 +1,7 @@
 package gravitris.app.input
 
 import gravitris.app.Tunables
-import gravitris.app.sim.InputFrame
+import gravitris.game.InputFrame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue

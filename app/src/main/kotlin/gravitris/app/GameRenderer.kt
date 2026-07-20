@@ -6,12 +6,13 @@ import gravitris.app.gl.BodyMesh
 import gravitris.app.gl.GlProgram
 import gravitris.app.gl.Shaders
 import gravitris.app.gl.WellFrame
-import gravitris.app.harness.RenderHarness
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
 import gravitris.app.perf.FrameSnapshot
 import gravitris.app.perf.FrameStats
-import gravitris.app.sim.InputFrame
+import gravitris.app.toy.SquishToy
+import gravitris.game.InputFrame
+import gravitris.game.SimConfig
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -43,9 +44,24 @@ class GameRenderer(
     /** Owned by the GL thread. Never read from the UI thread — see [onLayout]. */
     private val layout = WellLayout()
 
-    private val harness = RenderHarness(layout)
+    /**
+     * The simulation, which cannot exist until the well does.
+     *
+     * `SimConfig` is immutable on purpose (ADR 0006: a change means a new
+     * `Simulation`, not mutation, and that is what keeps determinism intact),
+     * but the well's world height is derived from the device's safe area and is
+     * therefore not known until the GL thread has laid out for the first time.
+     * So this is null until then, and is replaced — not mutated — if the safe
+     * area changes under a rotation or a multi-window resize.
+     */
+    private var toy: SquishToy? = null
+
+    /** The config [toy] was built from, so a layout pass that produces the same
+     *  well does not throw the player's stack away. */
+    private var toyConfig: SimConfig? = null
+
     private val inputFrame = InputFrame()
-    private val mesh = BodyMesh(maxBodies = MAX_BODIES, lattice = LATTICE)
+    private val mesh = BodyMesh(maxBodies = Tunables.TOY_MAX_BODIES, lattice = Tunables.TOY_LATTICE)
     private val wellFrame = WellFrame()
     private val stats = FrameStats()
     private val snapshot = FrameSnapshot()
@@ -178,12 +194,21 @@ class GameRenderer(
             )
             wellFrame.layout(layout)
             layoutDirty = false
+            rebuildSimulationIfWellChanged()
             onLayout(layout.worldPerDp)
         }
 
-        val alpha = advanceSimulation(frameStart)
+        val toy = this.toy
+        if (toy == null) {
+            // No well yet, so nothing to simulate or draw. Clearing keeps the
+            // surface defined rather than showing whatever the buffer held.
+            GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            return
+        }
 
-        val particles = mesh.upload(harness, alpha)
+        val alpha = advanceSimulation(toy, frameStart)
+
+        val particles = mesh.upload(toy.state, alpha)
 
         // Everything above is our own work: stepping the simulation and
         // building the vertex buffer. Everything below is submission. The
@@ -224,7 +249,7 @@ class GameRenderer(
      *
      * @return the interpolation factor for this frame.
      */
-    private fun advanceSimulation(frameStart: Long): Float {
+    private fun advanceSimulation(toy: SquishToy, frameStart: Long): Float {
         if (paused) return 0f
 
         val previous = lastFrameNanos
@@ -238,13 +263,45 @@ class GameRenderer(
         accumulatorNanos += (frameStart - previous).coerceIn(0L, maxDelta)
 
         while (accumulatorNanos >= Tunables.TICK_NANOS) {
+            // drainInto writes all four fields every tick, so the one-shot
+            // flags are cleared by construction. The core deliberately does not
+            // clear them itself — mutating the caller's frame would make a
+            // recorded input sequence behave differently on replay
+            // (handoff 0006) — so a shell that reused a frame without
+            // rewriting it would spin the piece every tick. This one does not.
             intent.drainInto(inputFrame)
-            harness.step(inputFrame)
-            haptics.accumulate(harness.impacts)
+            toy.step(inputFrame)
+            haptics.accumulate(toy.state.impacts)
             accumulatorNanos -= Tunables.TICK_NANOS
         }
 
         return accumulatorNanos.toFloat() / Tunables.TICK_NANOS
+    }
+
+    /**
+     * Build or rebuild the simulation for the current well geometry.
+     *
+     * Rebuilt only when the derived config actually differs, so an inset change
+     * that leaves the well the same size — a status-bar icon appearing, say —
+     * does not silently empty the player's well. When it does differ, the stack
+     * is lost, which is the honest outcome: the world the material settled in
+     * no longer exists, and carrying positions across would drop pieces
+     * outside the new walls.
+     */
+    private fun rebuildSimulationIfWellChanged() {
+        val config = SimConfig(
+            lattice = Tunables.TOY_LATTICE,
+            wellWidth = layout.widthWorld,
+            wellHeight = layout.heightWorld,
+        )
+        if (config == toyConfig) return
+
+        toyConfig = config
+        toy = SquishToy(config, maxBodies = Tunables.TOY_MAX_BODIES)
+        mesh.invalidateArchetypes()
+        accumulatorNanos = 0L
+        lastFrameNanos = 0L
+        stats.reset()
     }
 
     /**
@@ -267,17 +324,12 @@ class GameRenderer(
     /** Geometry actually submitted this frame, for the readout. */
     fun trianglesDrawn(): Int = mesh.trianglesDrawn()
 
-    fun bodyCount(): Int = harness.bodyCount
+    fun bodyCount(): Int = toy?.state?.bodyCount ?: 0
 
     fun dynamicBytesPerFrame(): Int =
-        harness.particleCount * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
+        (toy?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
 
     private companion object {
-        /** Matches the harness and ADR 0007's default-tier budget: 60 bodies
-         *  x 25 particles = 1500 particles. */
-        const val MAX_BODIES = 60
-        const val LATTICE = 5
-
         /** ~4Hz. Fast enough to watch a number move, slow enough not to
          *  pollute the measurement. */
         const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L
