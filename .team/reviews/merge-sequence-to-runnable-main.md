@@ -60,6 +60,17 @@ Only then merge `feat/mechanic` → `main`. Because the launch-crash fix and all
 other fixes are already ancestors of mechanic, this single merge lands a
 runnable game with **no broken intermediate `main`**.
 
+  Specific conflict to expect and how to resolve it: mechanic's
+  `ci: pass GITHUB_TOKEN to the gitleaks secret scan` (commit `d786e6a`)
+  **duplicates** a fix already on the base branch — `build-foundation`'s
+  `ci.yml` already passes `GITHUB_TOKEN` to gitleaks (verified, lines 43–52).
+  Take the base-branch (DevOps) `ci.yml` **wholesale** and drop mechanic's
+  duplicate; the DevOps version is authoritative and also carries the
+  cold-cache dependency-verification fix that mechanic's version does not. The
+  `kotlinx-coroutines-bom-1.6.4` verification failure is fixed by taking the
+  foundation's regenerated `verification-metadata.xml`, not by the
+  `GITHUB_TOKEN` change.
+
 **Step 5 — gel-shading + the emulator gate (Frontend Engineer / DevOps).**
 `feat/gel-shading` is the only feature branch not in mechanic; it sits on top and
 carries the renderer band-value integration (the `GameRenderer.kt:450/452`
