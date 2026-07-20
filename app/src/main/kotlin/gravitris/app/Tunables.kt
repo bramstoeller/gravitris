@@ -98,22 +98,56 @@ object Tunables {
      * **The boundary is compression to darkness and nothing else.** No rim
      * light, no gradient, no grain. A second term means this is Stage 3.
      *
-     * **Tuned against the harness, not against physics — expect to retune at
-     * Stage 2.** The harness produces compression in roughly 0.57..1.16, and
-     * this gain keeps the response proportional across almost all of that while
-     * leaving [COMPRESSION_MAX_DARKEN] as a genuine safety rail rather than the
-     * normal operating point. The real solver's distribution will differ, and
-     * if it is narrower the effect will be invisible while if it is wider
-     * everything will sit clamped at the ceiling. Whoever integrates
-     * `:core-sim` should look at this number before judging the look.
+     * **Retuned at Stage 2 against the real solver. The Stage 1 value of 1.2
+     * was wrong by more than 3x, in the direction that would have shipped the
+     * term invisible.**
+     *
+     * Stage 1 tuned this against the kinematic harness, whose squash spanned
+     * roughly 0.57..1.16. The real solver's area constraints are compliant but
+     * *stiff* (`areaCompliance` 1e-6), so it deforms far less in area than the
+     * harness pretended. Measured on a hard drop, lattice 5, 10x20 well
+     * (`CompressionRangeTest` re-measures it and fails if it moves):
+     *
+     * | quantity | value |
+     * | -------- | ----- |
+     * | deepest compression at impact | ~0.888 |
+     * | 5th percentile at that frame | ~0.895 |
+     * | 25th percentile at that frame | ~0.941 |
+     * | median at that frame | ~0.991 |
+     * | settled material in a 20-body pile | 0.957..1.00 |
+     *
+     * So the usable signal is `1 - compression` in roughly 0..0.11, not 0..0.43
+     * — and at gain 1.2 the deepest impact in the game would have darkened by
+     * 13%, with settled material at 5%. That is the failure Stage 1 predicted:
+     * "if it is narrower the effect will be invisible and someone will conclude
+     * the term does not work."
+     *
+     * 4.0 maps the deepest impact to ~45% darkening and the 25th percentile to
+     * ~24%, leaving [COMPRESSION_MAX_DARKEN] unreached. Settled material lands
+     * near 2%, which is correct and worth stating: a resting pile should read
+     * as its own flat colour, and the darkening should be an *event* — it
+     * blooms at the contact surface on impact and fades as the piece relaxes.
+     * That event is the weight cue.
+     *
+     * The measurement is of ten of twenty-five particles, i.e. the lower rows
+     * of the piece, not one isolated vertex — so the term reads as a coherent
+     * dark band across the contact face rather than as speckle.
      */
-    const val COMPRESSION_GAIN = 1.2f
+    const val COMPRESSION_GAIN = 4.0f
 
     /**
      * Ceiling on the darkening, 0..1. Piece identity is carried by hue
      * (docs/ux/piece-identity.md) and has to survive deformation — letting this
      * reach 1 would take heavily squashed material to black and destroy the
      * primary identity cue exactly where pieces pile up and need it most.
+     *
+     * **With the real solver measured, this no longer binds.** At
+     * [COMPRESSION_GAIN] 4.0 the deepest impact in the game reaches ~45%, so
+     * the cap is a genuine safety rail against a future solver or material
+     * change rather than a number shaping the look. Stage 1 flagged the 55%
+     * figure as an open question for UX; on the measured range there is
+     * currently nothing for them to decide, and the question properly belongs
+     * to the gain instead.
      */
     const val COMPRESSION_MAX_DARKEN = 0.55f
 
