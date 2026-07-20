@@ -111,7 +111,19 @@ class StabilityTest {
      * of the two, so the ADR's conclusions are conservative in the direction
      * it hoped.
      */
-    private fun deepPileConfig() = SimConfig(lattice = 5, wellWidth = 5f, wellHeight = 60f)
+    /**
+     * The scene is defined by its **shape** — two columns, twenty rows — not by
+     * the literal width, so the width has to follow the piece size.
+     *
+     * It was 5.0 while a piece measured 2.25 across. ADR 0011 made the material
+     * extent the gameplay constant at 2.40, and at a seeding pitch of
+     * `2.40 * 1.05 = 2.52` only *one* body fits per row in a 5.0-wide well.
+     * That silently turns this into a single 40-body column 100 units tall in a
+     * 60-unit well — bodies seeded far above the top, which is not a deep pile
+     * and not a test of anything. Widening to 5.5 restores the two-by-twenty
+     * tower the assertions were measured against.
+     */
+    private fun deepPileConfig() = SimConfig(lattice = 5, wellWidth = 5.5f, wellHeight = 60f)
 
     @Test
     fun `a deep pile under heavy compression settles`() {

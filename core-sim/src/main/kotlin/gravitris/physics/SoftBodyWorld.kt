@@ -32,18 +32,25 @@ internal class SoftBodyWorld(val config: SimConfig) {
 
     val particlesPerBody: Int = lattice * lattice
 
+    /**
+     * Full material width of a body, outer edge to outer edge. **The gameplay
+     * constant** — everything below is derived from it, not the other way
+     * round (ADR 0011), so changing [lattice] leaves piece size untouched.
+     */
+    val pieceExtent: Float = config.pieceExtent
+
     /** Distance between adjacent lattice particles at rest. */
-    val spacing: Float = SimConfig.PIECE_WIDTH / (lattice - 1)
+    val spacing: Float = config.spacing
 
     /**
      * Contact radius. Half the lattice spacing, so adjacent particles within a
      * body exactly touch at rest and the body reads as solid material rather
      * than as a bag of separated dots.
      */
-    val particleRadius: Float = 0.5f * spacing
+    val particleRadius: Float = config.particleRadius
 
-    /** Full width of a body including the contact radius on both sides. */
-    val pieceExtent: Float = SimConfig.PIECE_WIDTH + 2f * particleRadius
+    /** Centre-to-centre span of the lattice: [pieceExtent] less a radius a side. */
+    val pieceWidth: Float = config.pieceWidth
 
     // Well bounds. The floor is y = 0 and the left wall is x = 0, so band
     // geometry (ADR 0004) starts at the origin and `:app` can map insets onto
@@ -181,39 +188,18 @@ internal class SoftBodyWorld(val config: SimConfig) {
                 "${config.wellWidth}x${config.wellHeight} well at lattice $lattice"
         }
 
-        val half = SimConfig.PIECE_WIDTH * 0.5f
-        val minX = centerX - half - particleRadius
-        val maxX = centerX + half + particleRadius
-        val minY = centerY - half - particleRadius
-        check(minX >= wellMinX && maxX <= wellMaxX && minY >= wellFloorY) {
+        val half = pieceWidth * 0.5f
+        check(fitsInWell(centerX, centerY)) {
             "body at ($centerX, $centerY) does not fit inside the well " +
                 "x=[$wellMinX, $wellMaxX] y>=$wellFloorY: piece spans " +
-                "x=[$minX, $maxX] y>=$minY"
+                "x=[${centerX - half - particleRadius}, ${centerX + half + particleRadius}] " +
+                "y>=${centerY - half - particleRadius}"
         }
-
-        // Overlap against already-placed material. O(n*m) and deliberately so:
-        // this is scene setup, not the per-frame path.
-        val minGapSq = (2f * particleRadius) * (2f * particleRadius)
-        for (i in 0 until particleCount) {
-            val dx = posX[i] - centerX
-            val dy = posY[i] - centerY
-            // Cheap reject: outside the new body's bounding circle plus a
-            // particle diameter cannot overlap any of its particles.
-            val reach = SimConfig.PIECE_WIDTH * 0.7072f + 2f * particleRadius
-            if (dx * dx + dy * dy > reach * reach) continue
-            for (row in 0 until lattice) {
-                for (col in 0 until lattice) {
-                    val nx = centerX - half + col * spacing
-                    val ny = centerY - half + row * spacing
-                    val ex = posX[i] - nx
-                    val ey = posY[i] - ny
-                    check(ex * ex + ey * ey >= minGapSq) {
-                        "body at ($centerX, $centerY) would be seeded overlapping existing " +
-                            "material at (${posX[i]}, ${posY[i]}); the contact solver would " +
-                            "convert the overlap into launch energy (see spike README bug 1)"
-                    }
-                }
-            }
+        check(!overlapsExistingMaterial(centerX, centerY)) {
+            "body at ($centerX, $centerY) would be seeded overlapping existing material; " +
+                "the contact solver would convert the overlap into launch energy " +
+                "(see spike README bug 1). Callers that can legitimately be blocked " +
+                "must ask canPlace() first rather than catching this"
         }
 
         val body = bodyCount++
@@ -251,6 +237,139 @@ internal class SoftBodyWorld(val config: SimConfig) {
 
         addConstraints(base)
         return body
+    }
+
+    /**
+     * Whether a body could be seeded at ([centerX], [centerY]) right now.
+     *
+     * The spawner needs to *ask* rather than to try and recover, because a
+     * blocked spawn is not an error: it is the state ADR 0005 turns into the
+     * losing condition. [addBody] still throws on a bad placement — a scene
+     * builder that seeds an overlap has a bug — but the game loop has a
+     * legitimate reason to find the well full, and it must find out without
+     * relying on an exception for control flow.
+     */
+    fun canPlace(centerX: Float, centerY: Float): Boolean =
+        bodyCount < maxBodies &&
+            fitsInWell(centerX, centerY) &&
+            !overlapsExistingMaterial(centerX, centerY)
+
+    private fun fitsInWell(centerX: Float, centerY: Float): Boolean {
+        val half = pieceWidth * 0.5f
+        return centerX - half - particleRadius >= wellMinX &&
+            centerX + half + particleRadius <= wellMaxX &&
+            centerY - half - particleRadius >= wellFloorY
+    }
+
+    /**
+     * O(n*m) and deliberately so: this runs on spawn and on scene setup, not
+     * on the per-frame path.
+     */
+    private fun overlapsExistingMaterial(centerX: Float, centerY: Float): Boolean {
+        val half = pieceWidth * 0.5f
+        val minGapSq = (2f * particleRadius) * (2f * particleRadius)
+        // Cheap reject: outside the new body's bounding circle plus a particle
+        // diameter cannot overlap any of its particles.
+        val reach = pieceWidth * 0.7072f + 2f * particleRadius
+        val reachSq = reach * reach
+        for (i in 0 until particleCount) {
+            val dx = posX[i] - centerX
+            val dy = posY[i] - centerY
+            if (dx * dx + dy * dy > reachSq) continue
+            for (row in 0 until lattice) {
+                for (col in 0 until lattice) {
+                    val ex = posX[i] - (centerX - half + col * spacing)
+                    val ey = posY[i] - (centerY - half + row * spacing)
+                    if (ex * ex + ey * ey < minGapSq) return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * Removes a body and everything belonging to it, by moving the last body
+     * into the vacated slot.
+     *
+     * **Body indices are not stable across this call.** The body that was last
+     * takes [body]'s index. Callers holding a body index over a removal — the
+     * active piece, above all — must remap it, and the removal list itself
+     * must be walked in descending order so that the swap source is never a
+     * body still waiting to be removed.
+     *
+     * Swap-remove rather than compaction because every array here is indexed
+     * by a body-major stride: a body owns particles
+     * `[b*particlesPerBody, (b+1)*particlesPerBody)` and, because
+     * [addConstraints] adds exactly the same number of constraints for every
+     * body in body order, it owns constraints `[b*distancePerBody, ...)` and
+     * `[b*areaPerBody, ...)` too. Moving one body is therefore three
+     * contiguous copies and an index rebase, with nothing to search for.
+     *
+     * Constraint multipliers are not carried across. They are reset at the top
+     * of every substep, so a stale value cannot outlive the copy.
+     */
+    fun removeBody(body: Int) {
+        require(body in 0 until bodyCount) { "no such body: $body of $bodyCount" }
+
+        val last = bodyCount - 1
+        if (body != last) {
+            val dst = body * particlesPerBody
+            val src = last * particlesPerBody
+            val n = particlesPerBody
+
+            posX.copyInto(posX, dst, src, src + n)
+            posY.copyInto(posY, dst, src, src + n)
+            framePrevX.copyInto(framePrevX, dst, src, src + n)
+            framePrevY.copyInto(framePrevY, dst, src, src + n)
+            substepPrevX.copyInto(substepPrevX, dst, src, src + n)
+            substepPrevY.copyInto(substepPrevY, dst, src, src + n)
+            velX.copyInto(velX, dst, src, src + n)
+            velY.copyInto(velY, dst, src, src + n)
+            mass.copyInto(mass, dst, src, src + n)
+            invMass.copyInto(invMass, dst, src, src + n)
+            particleU.copyInto(particleU, dst, src, src + n)
+            particleV.copyInto(particleV, dst, src, src + n)
+            particleEdge.copyInto(particleEdge, dst, src, src + n)
+            particleCompression.copyInto(particleCompression, dst, src, src + n)
+            particleContact.copyInto(particleContact, dst, src, src + n)
+            inContactThisTick.copyInto(inContactThisTick, dst, src, src + n)
+            inContactLastTick.copyInto(inContactLastTick, dst, src, src + n)
+            impactSpeed.copyInto(impactSpeed, dst, src, src + n)
+            for (k in 0 until n) particleBody[dst + k] = body
+
+            bodyArchetype[body] = bodyArchetype[last]
+
+            // Constraints reference absolute particle indices, so rebase them
+            // by the same distance the particles moved.
+            val shift = dst - src
+            rebase(dcA, dcB, null, body, last, distancePerBody, shift, dcRest)
+            rebase(acA, acB, acC, body, last, areaPerBody, shift, acRest)
+        }
+
+        bodyCount--
+        particleCount -= particlesPerBody
+        distanceCount -= distancePerBody
+        areaCount -= areaPerBody
+    }
+
+    private fun rebase(
+        a: IntArray,
+        b: IntArray,
+        c: IntArray?,
+        dstBody: Int,
+        srcBody: Int,
+        perBody: Int,
+        shift: Int,
+        rest: FloatArray,
+    ) {
+        val dst = dstBody * perBody
+        val src = srcBody * perBody
+        for (k in 0 until perBody) {
+            a[dst + k] = a[src + k] + shift
+            b[dst + k] = b[src + k] + shift
+            if (c != null) c[dst + k] = c[src + k] + shift
+            rest[dst + k] = rest[src + k]
+        }
     }
 
     private fun addConstraints(base: Int) {

@@ -134,13 +134,30 @@ interface SimState {
 
     // --- coverage (ADR 0004, 0007) ---
     /**
-     * Per-band fill, 0..1.
+     * Per-band fill, 0..1, bottom band first. Drives the band glow and the
+     * clear rule (ADR 0004).
      *
-     * **Stage 1: always 0.** Coverage bands are Stage 3 work and are
-     * deliberately not built yet (docs/build-order.md: the clear rule "is
-     * untunable until the physics is felt. Building it early means tuning it
-     * twice."). The array exists at the right size so `:app` compiles and can
-     * wire `uBandFill` now.
+     * **Look this up by world-space Y, never by body**: `band = (y -
+     * bandBottomY) / bandHeight`. Fill is measured over the whole well by
+     * stamping every particle's disk into an occupancy bitmap, so a body
+     * spanning three bands contributes to all three independently and there is
+     * no per-body coverage number anywhere in the system. That is what makes
+     * the glow a property of a *zone* — two fragments at the same height in
+     * different pieces read the identical value automatically, which
+     * `docs/ux/band-glow.md` calls the strongest single legibility cue the
+     * game has.
+     *
+     * Note a band (`bandHeight`, 1.0 world units by default) is well under
+     * half a piece's height (`SimConfig.pieceExtent`, 2.40), so one piece
+     * spans about three bands and can legitimately show three different fill
+     * values across its own height. Sample per fragment, not per vertex.
+     *
+     * **Damped, not instantaneous.** A band's raw fill spikes for a few frames
+     * during the bounce of a heavy landing, and an undamped value would flash
+     * the well amber on every hard drop — teaching the player a rule that is
+     * not the rule. The clear rule reads the undamped value; the two converge
+     * well inside the lock debounce, so they agree whenever a clear is
+     * actually decided.
      */
     val bandFill: FloatArray
     val bandBottomY: Float
@@ -151,13 +168,45 @@ interface SimState {
     /**
      * Clear-envelope progress per band: -1 = not clearing, else 0..1.
      *
-     * **Stage 1: always -1.** See [bandFill].
+     * Fill alone cannot drive the clear animation — a band at fill 1.0 and a
+     * band mid-dissolve are indistinguishable — so this is the signal the
+     * ignition flash and the dissolve hang off. Within the envelope
+     * (`MechanicTuning.clearEnvelopeTicks`, 24 ticks / 400 ms by default) the
+     * phases from `docs/ux/feel-feedback.md` fall at:
+     *
+     * | progress | phase |
+     * | -------- | ----- |
+     * | 0.00 – 0.29 | ignition flash, 120 ms — the one moment the emissive cap may be exceeded |
+     * | 0.29 – 0.50 | hold at full brightness, 80 ms |
+     * | 0.50 – 1.00 | dissolve, 200 ms |
+     *
+     * The material is still present for all of it; it is removed on the tick
+     * progress reaches 1, at which point this returns to -1 and [bandFill]
+     * collapses. What follows is the stack dropping under real physics, which
+     * is not part of this envelope and has no fixed duration.
      */
     val bandClearProgress: FloatArray
 
+    /**
+     * The band a new piece spawns into.
+     *
+     * Published because ADR 0005 builds the losing condition on the fill of
+     * the spawn region, which only means anything if the spawn region is one
+     * of the coverage bands. It is, and this is which one.
+     */
+    val spawnBandIndex: Int
+
     // --- game ---
-    /** **Stage 1: always [Phase.Playing].** Overflow and clearing are Stage 3/4. */
+    /** [Phase.Playing] or [Phase.Clearing]. Overflow and game over are Stage 4. */
     val phase: Phase
+
+    /**
+     * Ticks elapsed since construction. The simulation's own clock, and the
+     * only clock anything in the game may be timed against (ADR 0013) — a
+     * duration derived from wall-clock would stretch on a device that drops
+     * frames, and the client ruled that out explicitly.
+     */
+    val tick: Int
 
     /** **Stage 1: always 0.** Scoring is Stage 4. */
     val score: Int
@@ -188,8 +237,21 @@ sealed interface Phase {
     /** Spawn region blocked; the stack is being given time to settle (ADR 0005). */
     data class Overflow(val remainingTicks: Int) : Phase
 
-    /** A band cleared; the stack is dropping and re-settling. */
-    data class Clearing(val bands: IntArray, val remainingTicks: Int) : Phase {
+    /**
+     * A band cleared; the stack is dropping and re-settling.
+     *
+     * [remainingTicks] is a `var`, and is mutated in place as the sequence
+     * runs. That is the same read-only-by-convention bargain [SimState]'s
+     * arrays already make, for the same reason: a fresh instance per tick
+     * would put an allocation on the per-frame path, and ADR 0001 chose this
+     * whole layout to keep the steady-state tick allocating nothing. One
+     * instance is allocated per clear *event* — a handful of times a minute,
+     * not sixty times a second.
+     *
+     * The shell must therefore read it, not retain it: a `Clearing` captured
+     * and compared a second later will have changed underneath.
+     */
+    class Clearing(val bands: IntArray, var remainingTicks: Int) : Phase {
         // IntArray uses identity equals/hashCode, which would make two
         // structurally identical Clearing phases compare unequal and break
         // any state-comparison test. Generated by hand for that reason.

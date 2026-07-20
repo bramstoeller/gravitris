@@ -75,20 +75,100 @@ data class SimConfig(
     /** Particles per piece edge: 4 | 5 | 6. A piece is a `lattice`x`lattice` grid. */
     val lattice: Int = 5,
 
+    /**
+     * The piece's **material** extent in world units — outer edge to outer
+     * edge, including the particle radius on each side. **This is the gameplay
+     * constant** (ADR 0011), and the lattice is an implementation detail
+     * underneath it:
+     *
+     * ```
+     * spacing = pieceExtent / lattice
+     * particleRadius = spacing / 2
+     * ```
+     *
+     * Defining geometry this way makes changing [lattice] preserve piece size
+     * exactly. The previous derivation went the other way — a fixed
+     * centre-to-centre width with the radius added on top — which made the
+     * material extent vary 11% across lattices (2.40 / 2.25 / 2.16 for 4 / 5 /
+     * 6), so a *performance* setting silently changed how many pieces fit per
+     * row, which is to say it changed the game.
+     *
+     * **LOAD-BEARING.** [clearThreshold], pieces-per-row and the landing
+     * silhouette are all calibrated against this value; changing it
+     * invalidates that tuning.
+     */
+    val pieceExtent: Float = 2.40f,
+
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
     val wellWidth: Float = 10f,
     val wellHeight: Float = 20f,
 
-    // --- coverage bands (ADR 0004) — NOT YET READ, Stage 3 ---
+    // --- coverage bands (ADR 0004) ---
     val bandCount: Int = 20,
+    /**
+     * Occupancy-bitmap resolution per band. **Changing either invalidates the
+     * tuned [clearThreshold]** — a coarser grid counts a cell as full if any
+     * particle touches it at all, so it systematically over-reports fill, and
+     * the tuned threshold absorbs exactly that bias (ADR 0004).
+     */
     val bandColumns: Int = 40,
     val bandRows: Int = 4,
+    /**
+     * Fraction of a band's cells that must be occupied for it to clear.
+     *
+     * **This number is a guess.** The brief says ~90%; nobody has played it.
+     * It is therefore not read from here on the hot path — [MechanicTuning]
+     * holds the live value and this is only its starting point, so the dial
+     * can be turned during a demo without a rebuild.
+     *
+     * Also **per-lattice**: coarser lattices stamp larger particle disks, so
+     * the same pile reads as a different fill percentage at each quality tier.
+     * See ADR 0004 and ADR 0009.
+     */
     val clearThreshold: Float = 0.90f,
 
     // --- losing condition (ADR 0005) — NOT YET READ, Stage 4 ---
     val overflowThreshold: Float = 0.50f,
     val graceTicks: Int = 90,
+    /**
+     * Total kinetic energy below which the stack counts as quiet. Read by the
+     * clear rule (ADR 0005: "a clear also requires quiescence"), and by the
+     * re-settle watch window.
+     *
+     * **Never wait on this unboundedly.** A settled pile in this solver does
+     * not fully stop — it compacts slowly for as long as it is observed — so
+     * every wait on this predicate is paired with a tick ceiling. See
+     * [MechanicTuning.clearMaxTicks] and [lockTimeoutTicks].
+     */
     val quietKineticEnergy: Float = 0.05f,
+
+    // --- piece lock detection (Stage 3) ---
+    /**
+     * Kinetic energy **per particle of the active piece** below which the
+     * piece counts as settled. Per-particle rather than total so the value
+     * does not move when [lattice] changes.
+     */
+    val lockKineticEnergy: Float = 0.02f,
+    /**
+     * Consecutive ticks the active piece must stay under
+     * [lockKineticEnergy], while touching something, before it locks.
+     *
+     * A debounce rather than an instantaneous test because a bouncing piece
+     * passes through zero velocity at the top of every bounce, and a piece
+     * spawns at rest — both would read as settled on a single-tick test.
+     */
+    val lockDebounceTicks: Int = 12,
+    /**
+     * Ceiling on how long a piece may remain active before it locks anyway,
+     * counted from the tick it first touched something.
+     *
+     * This exists because "the piece has stopped moving" is not guaranteed to
+     * ever become true: a pile in this solver keeps creeping (measured, a
+     * settled 16-body pile goes from 142 to 149 contacting particles over 300
+     * idle frames). Without a ceiling a piece resting in a live pile could
+     * stay active forever and the game would stop dealing pieces.
+     */
+    val lockTimeoutTicks: Int = 240,
 
     // --- difficulty ramp ---
     /**
@@ -111,8 +191,39 @@ data class SimConfig(
      * replay (same construction + same input sequence = bit-identical state),
      * which is the half of ADR 0006's contract that has something to test.
      */
+    /**
+     * Seeds the piece sequence (Stage 3). Two simulations built with the same
+     * seed deal the same pieces, which is what makes a replay fixture a
+     * fixture rather than a recording.
+     */
     val seed: Long = 0L,
+
+    /**
+     * Safety valve for frame overrun (ADR 0013). Beyond this many catch-up
+     * ticks in one frame the excess wall-clock time is **discarded** — the one
+     * and only place time dilation is permitted, and reaching it means the
+     * device is below the hardware floor rather than that the game hiccuped.
+     * See [FrameDriver].
+     */
+    val maxCatchupTicks: Int = 8,
 ) {
+    /** Distance between adjacent lattice particles at rest (ADR 0011). */
+    val spacing: Float get() = pieceExtent / lattice
+
+    /**
+     * Contact radius: half the lattice spacing, so adjacent particles within a
+     * body exactly touch at rest and the body reads as solid material rather
+     * than as a bag of separated dots.
+     */
+    val particleRadius: Float get() = 0.5f * spacing
+
+    /**
+     * Centre-to-centre span of a piece's lattice — [pieceExtent] less one
+     * radius at each side. This is where a piece's *particles* are, not where
+     * its *material* ends; use [pieceExtent] for anything the player can see.
+     */
+    val pieceWidth: Float get() = spacing * (lattice - 1)
+
     init {
         require(substeps >= 1) { "substeps must be >= 1, was $substeps (ADR 0003 floor is 8)" }
         require(lattice in 4..6) { "lattice must be 4, 5 or 6, was $lattice (ADR 0009 quality tiers)" }
@@ -124,21 +235,21 @@ data class SimConfig(
         require(linearDamping in 0f..1f) { "linearDamping must be in 0..1, was $linearDamping" }
         require(friction >= 0f) { "friction must be >= 0, was $friction" }
         require(initialPieceMass > 0f) { "initialPieceMass must be > 0, was $initialPieceMass" }
-        require(wellWidth >= PIECE_WIDTH) {
-            "wellWidth ($wellWidth) is narrower than a piece ($PIECE_WIDTH); no piece could fit"
+        require(bandColumns >= 1) { "bandColumns must be >= 1, was $bandColumns" }
+        require(bandRows >= 1) { "bandRows must be >= 1, was $bandRows" }
+        require(clearThreshold in 0f..1f) { "clearThreshold must be in 0..1, was $clearThreshold" }
+        require(pieceExtent > 0f) { "pieceExtent must be > 0, was $pieceExtent" }
+        require(lockKineticEnergy >= 0f) { "lockKineticEnergy must be >= 0, was $lockKineticEnergy" }
+        require(lockDebounceTicks >= 1) { "lockDebounceTicks must be >= 1, was $lockDebounceTicks" }
+        require(lockTimeoutTicks >= lockDebounceTicks) {
+            "lockTimeoutTicks ($lockTimeoutTicks) must be >= lockDebounceTicks ($lockDebounceTicks)"
         }
-    }
-
-    companion object {
-        /**
-         * Width of a piece in well units, edge particle to edge particle.
-         *
-         * Fixed, not derived from [wellWidth]: a narrower well should hold
-         * fewer pieces per row, not smaller pieces. 1.8 is the spike's value
-         * (`/work/spike/solver-budget/`, "about 2 well-units across, like a
-         * classic tetromino") and every measured number in ADR 0001 and
-         * ADR 0003 was taken at it.
-         */
-        const val PIECE_WIDTH: Float = 1.8f
+        require(maxCatchupTicks >= 1) { "maxCatchupTicks must be >= 1, was $maxCatchupTicks" }
+        require(wellWidth >= pieceExtent) {
+            "wellWidth ($wellWidth) is narrower than a piece ($pieceExtent); no piece could fit"
+        }
+        require(wellHeight >= pieceExtent) {
+            "wellHeight ($wellHeight) is shorter than a piece ($pieceExtent); none could spawn"
+        }
     }
 }

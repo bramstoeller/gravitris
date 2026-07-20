@@ -30,7 +30,7 @@ import kotlin.math.min
  * affordance for Milestone 1 ("one piece falls into an empty well"), not the
  * spawner. Stage 3 replaces the call site, not this class's shape.
  */
-class Simulation(config: SimConfig) {
+class Simulation(private val config: SimConfig) {
 
     private val world = SoftBodyWorld(config)
     private val solver = XpbdSolver(world)
@@ -41,13 +41,359 @@ class Simulation(config: SimConfig) {
     private val rotateScratchX = FloatArray(world.particlesPerBody)
     private val rotateScratchY = FloatArray(world.particlesPerBody)
 
+    private val bands = CoverageBands(
+        bandCount = config.bandCount,
+        columns = config.bandColumns,
+        rowsPerBand = config.bandRows,
+        minX = world.wellMinX,
+        wellWidth = world.wellMaxX - world.wellMinX,
+        bottomY = world.wellFloorY,
+        bandHeight = config.wellHeight / config.bandCount,
+    )
+
+    private val sequence = PieceSequence(config.seed, ARCHETYPE_COUNT)
+
+    /**
+     * The dials the Product Lead turns in front of the client. Mutable and
+     * read live — see [MechanicTuning] for what that costs and why it is worth
+     * it.
+     */
+    val tuning = MechanicTuning(config)
+
+    // --- mechanic state -----------------------------------------------------
+
     val state: SimState get() = stateImpl
 
-    /** Advances exactly one fixed 1/60 s tick. Pure given (state, input). */
+    /** Whether the game is dealing pieces. See [start]. */
+    private var running: Boolean = false
+
+    /** Consecutive ticks the active piece has been still and touching something. */
+    private var stillTicks: Int = 0
+
+    /** Ticks since the active piece first touched anything; -1 before it has. */
+    private var touchedTicks: Int = -1
+
+    /** Ticks since the current clear was confirmed; -1 when not clearing. */
+    private var clearTicks: Int = -1
+
+    private var clearPhase: Phase.Clearing? = null
+
+    /** Bodies scheduled for removal. Sized to capacity; the clear allocates nothing. */
+    private val removalScratch = IntArray(world.maxBodies)
+
+    /**
+     * Advances exactly one fixed 1/60 s tick. Pure given (state, input, and
+     * the current [tuning]).
+     *
+     * Order matters and is worth stating: input, then physics, then coverage,
+     * then the rules. The rules read the world *after* it has moved this tick,
+     * so a lock and the clear it triggers are decided against the same
+     * positions the renderer is about to draw, not against last tick's.
+     */
     fun step(input: InputFrame) {
         applyInput(input)
         solver.step()
+        bands.update(world.posX, world.posY, world.particleCount, world.particleRadius)
+        advanceMechanic()
+        stateImpl.tick++
     }
+
+    // --- the mechanic -------------------------------------------------------
+
+    /**
+     * Starts dealing pieces. Until this is called the simulation is physics
+     * only — it spawns nothing, locks nothing and clears nothing.
+     *
+     * A method rather than a constructor flag because it is what separates the
+     * *game* from the *solver*, and several callers legitimately want only the
+     * solver: the reference benchmark, and every physics test that seeds a
+     * pile and watches it settle. Those would be silently corrupted by pieces
+     * arriving in the middle of the measurement.
+     */
+    fun start() {
+        running = true
+        spawnNext()
+    }
+
+    private fun advanceMechanic() {
+        if (!running) return
+        if (clearTicks >= 0) {
+            advanceClear()
+            return
+        }
+        if (stateImpl.activePieceBody < 0) {
+            spawnNext()
+            return
+        }
+        if (hasSettled(stateImpl.activePieceBody)) lockActivePiece()
+    }
+
+    /**
+     * Whether the active piece has come to rest.
+     *
+     * Two conditions, and the second one is the one that took thought.
+     *
+     * **It must be touching something.** A piece spawns at zero velocity, so a
+     * pure energy test locks it the instant it appears, in mid-air. Requiring
+     * contact also rules out the top of a bounce, where a piece is genuinely
+     * motionless and genuinely not settled.
+     *
+     * **Its energy must stay low for [SimConfig.lockDebounceTicks] running.**
+     * A single-tick test would fire on the instantaneous stillness at the
+     * bottom of a squash.
+     *
+     * And a ceiling, which is the part the naive version gets wrong. Piles in
+     * this solver do not fully stop — measured, a settled 16-body pile goes
+     * from 142 to 149 contacting particles over 300 idle frames, creeping the
+     * whole time. A piece resting in a live pile can therefore be nudged above
+     * the energy threshold indefinitely by its neighbours, and the game would
+     * simply stop dealing pieces. So a piece that has been in contact for
+     * [SimConfig.lockTimeoutTicks] locks regardless. That is a deliberate
+     * bound on a known-unbounded wait, not a tuned fudge: tuning the threshold
+     * until it looked right would have hidden the creep rather than handled
+     * it.
+     */
+    private fun hasSettled(body: Int): Boolean {
+        val base = body * world.particlesPerBody
+        val n = world.particlesPerBody
+
+        var touching = false
+        var energy = 0f
+        for (k in 0 until n) {
+            val i = base + k
+            if (world.inContactThisTick[i]) touching = true
+            energy += world.mass[i] * (world.velX[i] * world.velX[i] + world.velY[i] * world.velY[i])
+        }
+        energy = 0.5f * energy / n
+
+        if (!touching) {
+            stillTicks = 0
+            return false
+        }
+
+        if (touchedTicks < 0) touchedTicks = 0 else touchedTicks++
+        if (touchedTicks >= config.lockTimeoutTicks) return true
+
+        stillTicks = if (energy <= config.lockKineticEnergy) stillTicks + 1 else 0
+        return stillTicks >= config.lockDebounceTicks
+    }
+
+    /**
+     * The piece is done. Release control, then look for bands to clear.
+     *
+     * If nothing clears, the next piece spawns on the following tick. If
+     * something does, [beginClear] takes over and the spawn waits for the
+     * whole payoff window.
+     */
+    private fun lockActivePiece() {
+        stateImpl.activePieceBody = -1
+        stillTicks = 0
+        touchedTicks = -1
+        if (!beginClear()) spawnNext()
+    }
+
+    // --- the clear rule -----------------------------------------------------
+
+    /**
+     * Confirms and starts a clear if any band qualifies. Returns whether one
+     * started.
+     *
+     * Two gates, both from ADR 0005.
+     *
+     * **Quiescence.** "A clear also requires quiescence ... this stops a clear
+     * firing on a transient bounce spike, which would be the mirror image of
+     * the unfairness [the losing condition] exists to prevent." The lock
+     * debounce has already established that the *piece* is still; this asks
+     * the same of the stack. It is bounded by the lock timeout above rather
+     * than waited on forever, for the creep reason given there.
+     *
+     * **Something must actually be removed.** A band can be over threshold
+     * while no body's centre of mass sits in it — material belonging to
+     * pieces centred above and below can fill a band between them. Firing a
+     * clear there would remove nothing, leave the band still over threshold,
+     * and fire again on the next lock, forever. So the clear is confirmed
+     * against the removal list, not against the fill alone.
+     */
+    private fun beginClear(): Boolean {
+        if (solver.kineticEnergy > config.quietKineticEnergy) return false
+
+        val threshold = tuning.clearThreshold
+        var clearing = 0
+        for (band in 0 until config.bandCount) {
+            if (bands.fillRaw[band] >= threshold) clearing++
+        }
+        if (clearing == 0) return false
+
+        val doomed = collectBodiesIn(threshold)
+        if (doomed == 0) return false
+
+        val cleared = IntArray(clearing)
+        var k = 0
+        for (band in 0 until config.bandCount) {
+            if (bands.fillRaw[band] >= threshold) cleared[k++] = band
+        }
+
+        clearPhase = Phase.Clearing(cleared, envelopeTicks() + 1)
+        clearTicks = 0
+        for (band in cleared) stateImpl.bandClearProgress[band] = 0f
+        return true
+    }
+
+    /**
+     * Fills [removalScratch] with the bodies a clear would remove, and returns
+     * how many.
+     *
+     * **A body is removed when its centroid lies in a clearing band.** The
+     * alternative — dissolving the individual particles inside the band and
+     * leaving the rest of the body behind — was rejected. It would break the
+     * rendering contract outright: `triangleIndices` is body-local and
+     * constant for the whole run precisely so the renderer can reuse one index
+     * buffer for every body (ADR 0007), and a body with holes in it no longer
+     * has the lattice that contract assumes. Removing whole bodies keeps the
+     * contract exactly as the Frontend Engineer is building against it.
+     *
+     * The visible consequence, stated so nobody is surprised by it: a band is
+     * 1.0 world units tall and a piece is 2.40, so a clear removes rather more
+     * than the band itself — the pieces *sitting in* the band, not a horizontal
+     * slice through them. That reads as the material in the glowing zone being
+     * released, which is what the brief asks for, and it is the only version
+     * of the rule that does not require cutting soft bodies in half.
+     */
+    private fun collectBodiesIn(threshold: Float): Int {
+        var count = 0
+        val n = world.particlesPerBody
+        for (body in 0 until world.bodyCount) {
+            val base = body * n
+            var cy = 0f
+            for (k in 0 until n) cy += world.posY[base + k]
+            val band = bands.bandAt(cy / n)
+            if (band >= 0 && bands.fillRaw[band] >= threshold) removalScratch[count++] = body
+        }
+        return count
+    }
+
+    /**
+     * Runs the payoff. `docs/ux/feel-feedback.md` is the specification and the
+     * brief is the reason:
+     *
+     * > the clear reads as a release of pressure, with the stack above
+     * > dropping and re-settling. That re-settle is the payoff moment of the
+     * > whole game and is given time to be watched rather than rushed.
+     *
+     * So nothing here is instant and nothing teleports. The material stays
+     * present for the whole ignition-hold-dissolve envelope, because the flash
+     * has to happen on something; then it is removed and the stack falls under
+     * the same solver as everything else, at its own pace.
+     *
+     * **Every duration is a tick count** (ADR 0013). The UX spec writes them
+     * in milliseconds and the fixed 60 Hz tick converts them exactly, but they
+     * are counted in ticks so that a device dropping frames sees the same
+     * sequence take the same wall-clock time — *"frames skippen is prima ...
+     * maar niet vertragen."* Nothing here reads a clock.
+     */
+    private fun advanceClear() {
+        clearTicks++
+        val envelope = envelopeTicks()
+        val phase = clearPhase ?: return
+
+        if (clearTicks < envelope) {
+            val progress = clearTicks.toFloat() / envelope
+            for (band in phase.bands) stateImpl.bandClearProgress[band] = progress
+            phase.remainingTicks = maxTicks() - clearTicks
+            return
+        }
+
+        if (clearTicks == envelope) {
+            removeClearedMaterial()
+            for (band in phase.bands) stateImpl.bandClearProgress[band] = -1f
+        }
+
+        phase.remainingTicks = maxTicks() - clearTicks
+
+        // The watch window. Resume once the stack has been given its minimum
+        // time *and* has gone quiet — or once the ceiling is reached, because
+        // this pile's residual twitching has no end and the game must not be
+        // held hostage to it (feel-feedback.md says exactly this: "resume
+        // control once the stack is visually mostly settled rather than
+        // holding the game hostage to a long tail of tiny residual motion").
+        val settled = solver.kineticEnergy <= config.quietKineticEnergy
+        if ((clearTicks >= minTicks() && settled) || clearTicks >= maxTicks()) {
+            clearTicks = -1
+            clearPhase = null
+            spawnNext()
+        }
+    }
+
+    /**
+     * Removes the doomed bodies, highest index first.
+     *
+     * Descending order is required, not tidiness: [SoftBodyWorld.removeBody]
+     * fills the hole with the last body, so removing low-to-high would move a
+     * body that is itself still on the list and the second removal would take
+     * the wrong one.
+     */
+    private fun removeClearedMaterial() {
+        val count = collectBodiesIn(tuning.clearThreshold)
+        for (k in count - 1 downTo 0) world.removeBody(removalScratch[k])
+
+        // The active piece is always -1 here — a clear can only start from a
+        // lock, and no piece spawns until the window closes — but the whole
+        // point of swap-remove is that indices move, so this is asserted
+        // rather than assumed.
+        check(stateImpl.activePieceBody < 0) {
+            "a clear removed material while piece ${stateImpl.activePieceBody} was active; " +
+                "body indices have moved and the active index is now meaningless"
+        }
+
+        // Recompute rather than wait a tick: the bands the renderer reads this
+        // frame must match the material that now exists, or the cleared band
+        // draws one frame of glow over a gap.
+        bands.update(world.posX, world.posY, world.particleCount, world.particleRadius)
+    }
+
+    // Tuning is mutable and could be left inconsistent by a dev panel mid-run,
+    // so the ordering the sequence depends on is enforced here on read rather
+    // than only at construction.
+    private fun envelopeTicks(): Int = tuning.clearEnvelopeTicks.coerceAtLeast(1)
+    private fun minTicks(): Int = tuning.clearMinTicks.coerceAtLeast(envelopeTicks())
+    private fun maxTicks(): Int = tuning.clearMaxTicks.coerceAtLeast(minTicks())
+
+    // --- spawning -----------------------------------------------------------
+
+    /**
+     * Brings in the next piece, if there is room for it.
+     *
+     * **A blocked spawn is not an error and not a loss.** It is the state
+     * ADR 0005 builds the losing condition out of: the well is full, and the
+     * right response is to give the stack time to settle and prove it. That
+     * grace window is Stage 4 and deliberately not built here. What is built
+     * here is the shape it needs — the spawn simply does not happen, the
+     * simulation stays in [Phase.Playing] with no active piece, and the next
+     * tick tries again. A stack that settles back down resumes play on its
+     * own; one that does not will sit there until Stage 4 gives it a verdict.
+     *
+     * The retry is what Stage 4 replaces with [Phase.Overflow], and it is the
+     * only thing that needs replacing.
+     */
+    private fun spawnNext() {
+        val x = 0.5f * (world.wellMinX + world.wellMaxX)
+        if (!world.canPlace(x, spawnCenterY)) return
+        stateImpl.activePieceBody = world.addBody(sequence.next(), x, spawnCenterY)
+        stillTicks = 0
+        touchedTicks = -1
+    }
+
+    /**
+     * Where a new piece's centre sits: as high as it can while still being
+     * wholly inside the well.
+     *
+     * This puts the piece's material in the topmost bands, which is what
+     * ADR 0005 requires of it — its overflow test is the fill of the spawn
+     * band, and that only means anything if the spawn region *is* one of the
+     * coverage bands. [SimState.spawnBandIndex] publishes which one.
+     */
+    private val spawnCenterY: Float =
+        config.wellHeight - 0.5f * world.pieceWidth - world.particleRadius
 
     /**
      * Places a piece with its centre at ([centerX], [centerY]) and makes it
@@ -250,17 +596,23 @@ class Simulation(config: SimConfig) {
         override val particleCapacity: Int = world.particleCapacity
         override val triangleIndices: IntArray get() = world.triangleIndices
 
-        // Stage 3. Zero fill and -1 fill are the documented "nothing is
-        // happening" values, so `:app` can wire uBandFill/uBandClear now and
-        // see no band glow rather than a special case.
-        override val bandFill = FloatArray(config.bandCount)
+        override val bandFill: FloatArray get() = bands.fill
         override val bandClearProgress = FloatArray(config.bandCount) { -1f }
         override val bandBottomY: Float = world.wellFloorY
         override val bandHeight: Float = config.wellHeight / config.bandCount
 
-        override val phase: Phase get() = Phase.Playing
+        override val spawnBandIndex: Int =
+            ((spawnCenterY - world.wellFloorY) / (config.wellHeight / config.bandCount))
+                .toInt()
+                .coerceIn(0, config.bandCount - 1)
+
+        override val phase: Phase get() = clearPhase ?: Phase.Playing
+
+        /** Stage 4. A clear scores nothing yet; the scoring formula is undecided. */
         override val score: Int get() = 0
         override val level: Int get() = 1
+
+        override var tick: Int = 0
 
         override var activePieceBody: Int = -1
 
