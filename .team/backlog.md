@@ -5,9 +5,9 @@ The Product Lead owns this file.
 
 | # | Item | Role(s) | Branch | Status |
 | - | ---- | ------- | ------ | ------ |
-| 1 | Foundation: reproducible Gradle build, two modules, one-command run/test, installable debug APK | devops | `chore/build-foundation` | todo — **blocks everything** |
-| 2 | Physics core: particles, constraints, broadphase, contacts, fixed tick + 8 substeps, JVM stability & determinism tests | backend | `feat/core-sim` | todo |
-| 3 | Renderer + input: GL ES 3.0 context, dynamic mesh upload, flat triangles, drag/tap/swipe, impact haptics | frontend | `feat/app-shell` | todo |
+| 1 | Foundation: reproducible Gradle build, two modules, one-command run/test, installable debug APK | devops | `chore/build-foundation` | **review** |
+| 2 | Physics core: particles, constraints, broadphase, contacts, fixed tick + 8 substeps, JVM stability & determinism tests | backend | `feat/core-sim` | in-progress |
+| 3 | Renderer + input: GL ES 3.0 context, dynamic mesh upload, flat triangles, drag/tap/swipe, impact haptics | frontend | `feat/app-shell` | in-progress |
 | 4 | Visual language against the confirmed shader varying set | ux | `chore/ux-varyings` | todo |
 | 5 | **MILESTONE 1 — "Squish Toy"**: one piece falls, squashes, settles. Plus on-device benchmark to close the performance unknown | backend+frontend | `feat/squish-toy` | todo — **client demo** |
 | 6 | The mechanic: piece sequence, lock detection, coverage bands, clear rule, stack drop and re-settle | backend | `feat/mechanic` | todo |
