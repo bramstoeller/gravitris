@@ -18,7 +18,11 @@
       "WebFetch",
       "WebSearch",
       "Task",
-      "TodoWrite"
+      "TodoWrite",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git worktree:*)"
     ],
     "deny": [
       "Read(/state/.claude/.credentials.json)",
