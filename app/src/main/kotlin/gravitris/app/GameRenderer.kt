@@ -27,9 +27,21 @@ class GameRenderer(
     private val intent: PlayerIntent,
     private val haptics: ImpactHaptics,
     private val onStats: (FrameSnapshot) -> Unit,
+    /**
+     * Called on the GL thread whenever the well has been laid out, with the
+     * world-units-per-dp factor the gesture recogniser needs.
+     *
+     * A callback rather than the UI thread reading [layout] after posting the
+     * insets across: the layout is only recomputed here, on the GL thread, and
+     * a UI-thread read racing that would configure the recogniser with the
+     * default scale. That is not a subtle failure — drag would run at roughly
+     * forty times its intended speed until the next inset change.
+     */
+    private val onLayout: (Float) -> Unit,
 ) : GLSurfaceView.Renderer {
 
-    val layout = WellLayout()
+    /** Owned by the GL thread. Never read from the UI thread — see [onLayout]. */
+    private val layout = WellLayout()
 
     private val harness = RenderHarness(layout)
     private val inputFrame = InputFrame()
@@ -138,6 +150,7 @@ class GameRenderer(
             )
             wellFrame.layout(layout)
             layoutDirty = false
+            onLayout(layout.worldPerDp)
         }
 
         val alpha = advanceSimulation(frameStart)

@@ -55,16 +55,23 @@ class MainActivity : Activity() {
         haptics = ImpactHaptics(this, gameView)
         readout = FrameTimeReadout(this)
 
-        renderer = GameRenderer(playerIntent, haptics) { snapshot ->
-            // Published from the GL thread; a View may only be touched on the
-            // UI thread, so the snapshot's values are read here and the View
-            // work is posted.
-            renderContext.triangles = renderer.trianglesDrawn()
-            renderContext.bodies = renderer.bodyCount()
-            renderContext.dynamicBytesPerFrame = renderer.dynamicBytesPerFrame()
-            renderContext.hapticsScaled = haptics.isScaled
-            readout.view.post { readout.update(snapshot, renderContext) }
-        }
+        renderer = GameRenderer(
+            intent = playerIntent,
+            haptics = haptics,
+            onStats = { snapshot ->
+                // Published from the GL thread; a View may only be touched on
+                // the UI thread, so the values are read here and the View work
+                // is posted.
+                renderContext.triangles = renderer.trianglesDrawn()
+                renderContext.bodies = renderer.bodyCount()
+                renderContext.dynamicBytesPerFrame = renderer.dynamicBytesPerFrame()
+                renderContext.hapticsScaled = haptics.isScaled
+                readout.view.post { readout.update(snapshot, renderContext) }
+            },
+            onLayout = { worldPerDp ->
+                gameView.post { gameView.configureGestures(worldPerDp) }
+            },
+        )
         gameView.setRenderer(renderer)
 
         // playing.md: the canvas is exposed to TalkBack as one static-labelled
@@ -174,15 +181,11 @@ class MainActivity : Activity() {
 
         readout.applyInsets(left, bottom, density)
 
+        // The gesture recogniser is configured from the renderer's onLayout
+        // callback, not here — the well's world-per-dp factor does not exist
+        // until the GL thread has recomputed the layout from these insets.
         gameView.queueEvent {
             renderer.setInsets(left, top, right, bottom, density)
-        }
-        // The gesture recogniser needs the well's world-per-dp factor, which
-        // only exists once the layout has been recomputed on the GL thread.
-        // Posting it back through the view keeps that ordering explicit rather
-        // than depending on which callback happens to run first.
-        gameView.post {
-            gameView.configureGestures(renderer.layout.worldPerDp)
         }
     }
 
