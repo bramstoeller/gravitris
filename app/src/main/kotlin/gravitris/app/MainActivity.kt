@@ -58,6 +58,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         goEdgeToEdge()
+        stopTouchBoostingTheRefreshRate()
 
         gameView = GameView(this, playerIntent)
         haptics = ImpactHaptics(this, gameView)
@@ -161,6 +162,46 @@ class MainActivity : Activity() {
         // that scrim is both unnecessary and visible.
         window.isStatusBarContrastEnforced = false
         window.isNavigationBarContrastEnforced = false
+    }
+
+    /**
+     * Opt this window out of the platform's touch boost, so the 60Hz request in
+     * [GameView.requestSixtyHertz] can actually take effect.
+     *
+     * Milestone 1 ran at 90.2 fps on the client's device despite that request,
+     * and their logcat named the reason: `RefreshRateSelector: 90.00 Hz (Touch
+     * Boost)`. The `setFrameRate` call was not being ignored — it is a *vote*,
+     * and Android's adaptive-refresh-rate policy boosts the render rate to
+     * "high" whenever the screen is touched and holds it there for a while
+     * after release. The final rate is the highest vote, so touch boost simply
+     * outranked ours. This game's control scheme is drag-anywhere, so a finger
+     * is on the glass for essentially the whole session and the boost never
+     * lapses.
+     *
+     * Google's documentation says disabling touch boost "is not recommended, as
+     * it could significantly impact user experience", and for a scrolling UI
+     * that is right — the boost exists so lists track the finger. It does not
+     * apply here. The simulation advances on a fixed 60Hz timestep (ADR 0006),
+     * so frames beyond 60 contain no new state: rendering them costs full
+     * fragment-shader work to display a duplicate. ADR 0006 rejected 120Hz on
+     * exactly that fragment cost, and that rejection is only real if this call
+     * happens.
+     *
+     * Two honest caveats. First, this is a per-window request and the platform
+     * may still override it on thermal or battery grounds, so it makes 60 much
+     * more likely, not certain. Second, it has never been run on hardware —
+     * this container has no device. If the client's next build still reports
+     * ~90 fps, the stronger lever is `LayoutParams.preferredDisplayModeId`
+     * pinned to a 60Hz mode, which was rejected here as the first move because
+     * it forces a panel mode switch rather than expressing a preference, and
+     * can produce a visible flash on mode change.
+     *
+     * API 35+. Below that there is no way to decline the boost.
+     */
+    private fun stopTouchBoostingTheRefreshRate() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.setFrameRateBoostOnTouchEnabled(false)
+        }
     }
 
     /**
