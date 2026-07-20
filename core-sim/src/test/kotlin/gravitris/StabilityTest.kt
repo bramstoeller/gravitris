@@ -174,10 +174,18 @@ class StabilityTest {
 
         /**
          * Kinetic energy that is unambiguously a failed solve rather than a
-         * noisy settle. Measured, a deep pile at 2 substeps reaches ~1.4e5,
-         * against ~1e-3 at 8 — the margin is eight orders of magnitude, so
-         * this bound is nowhere near either value.
+         * noisy settle.
+         *
+         * Re-measured when the material was softened to distanceCompliance
+         * 1e-4, exactly as the test below asks for. A deep pile at 2 substeps
+         * now reaches ~89, where the rigid material reached ~1.4e5 — softer
+         * material fails less violently, because a compliant constraint
+         * transmits less of the correction it cannot make. The *direction* is
+         * unchanged and still enormous: 2 substeps is ~89 against ~2e-4 at 4
+         * substeps and beyond, a margin of five orders of magnitude. The bound
+         * was lowered from 100 to sit inside that gap rather than on the edge
+         * of the failing value.
          */
-        const val UNSTABLE_ENERGY = 100f
+        const val UNSTABLE_ENERGY = 10f
     }
 }
