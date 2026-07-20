@@ -99,6 +99,28 @@ one belongs in the log — that is what makes this auditable.
   Use your role name exactly as it appears in the Roles list above. Client
   instruction, 2026-07-20: `git log` should show who did what without needing to
   cross-reference the handoffs.
+- **Sign your role everywhere it is visible, not only in commits.** GitHub shows
+  one account for all of us, so without a signature nobody can tell who wrote
+  what. Client instruction, 2026-07-20.
+
+  Open a pull request with the role as a prefix and a signature line:
+
+  ```
+  Title:  [Backend Engineer] feat: substepped xpbd soft-body solver
+  Body:   ...
+          ---
+          *Opened by the **Backend Engineer**.*
+  ```
+
+  End every PR comment and review the same way:
+
+  ```
+  ---
+  *— **Code Reviewer***
+  ```
+
+  This applies to review verdicts, replies, and anything else posted to GitHub.
+  Amend an existing PR you own if it predates this rule.
 - **Conventional commits**, enforced by a `commit-msg` hook:
   `type(scope): subject` — types `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
   Subject in the imperative, lower case, no trailing period, under 72 characters.
