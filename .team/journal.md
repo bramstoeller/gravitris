@@ -311,3 +311,71 @@ order it happened. Written by agents and by the team's hooks.
 - **2026-07-20 09:16:44Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
 
 - **2026-07-20 09:17:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:19:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:19:56Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:20:23Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:20:28Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:21:00Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:21:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:22:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:22:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:23:09Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:23:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:25:12Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:25:30Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:25:45Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:26:17Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:26:49Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:26:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:27:22Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:27:54Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:28:27Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:28:59Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:29:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:29:32Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:30:05Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:30:37Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:31:10Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:31:42Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:32:15Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:32:47Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:33:19Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:33:52Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:34:25Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:34:58Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:35:31Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
+
+- **2026-07-20 09:36:34Z** `dispatch` — subagent finished `ee5f4b0c` — handoff expected in `.team/handoffs/`
