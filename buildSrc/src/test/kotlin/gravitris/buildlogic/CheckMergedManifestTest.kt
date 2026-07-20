@@ -17,11 +17,15 @@ import java.io.File
  * tests and had only ever been verified by *reading* it. Reading it is
  * exactly what missed the bypass.
  *
- * These tests exercise the version of the check in *this* branch
- * (chore/build-foundation) — the sdk-23 prefix-matching fix lives on
- * feat/app-shell (PR #3) and is this branch's descendant, not yet merged
- * here. Whoever merges that fix should extend this file with a case for it
- * rather than let it land untested again.
+ * The same lesson recurred for CHK-4: PR #1's review
+ * (.team/reviews/review-build-foundation.md) found `isLauncherActivity`
+ * exempted *every* exported activity carrying category LAUNCHER, not the
+ * app's single launcher — so a merged-in second launcher activity (ad/
+ * analytics SDKs contribute these) shipped a foreign exported entry point
+ * green. That gap had no test either. The CHK-4 cases below pin down the
+ * tightened rule: exempt at most one launcher (MAIN + LAUNCHER together),
+ * fail closed on more than one, and never exempt on a lone LAUNCHER category
+ * or an activity-alias.
  */
 class CheckMergedManifestTest {
 
@@ -245,6 +249,130 @@ class CheckMergedManifestTest {
         check.mergedManifest.set(manifestFile(dir, cleanManifest))
 
         check.check() // must not throw
+    }
+
+    @Test
+    fun `CHK-4 fails when a second exported launcher activity is present`(@TempDir dir: File) {
+        // The exact escalated gap (PR #1 review): a dependency contributes a
+        // second exported activity with a MAIN/LAUNCHER intent-filter — ad and
+        // analytics SDKs do this on manifest merge. The old code exempted EVERY
+        // launcher, so this foreign entry point shipped green. It must now fail,
+        // and BOTH launchers must be named so the ambiguity is visible.
+        val manifest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+                <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
+                    <activity android:name="gravitris.app.MainActivity" android:exported="true">
+                        <intent-filter>
+                            <action android:name="android.intent.action.MAIN"/>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity>
+                    <activity android:name="com.ads.sdk.OfferwallActivity" android:exported="true">
+                        <intent-filter>
+                            <action android:name="android.intent.action.MAIN"/>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity>
+                </application>
+            </manifest>
+        """.trimIndent()
+        val check = task()
+        check.mergedManifest.set(manifestFile(dir, manifest))
+
+        val ex = assertThrows(GradleException::class.java) { check.check() }
+        assertTrue(ex.message!!.contains("CHK-4"), "got: ${ex.message}")
+        assertTrue(
+            ex.message!!.contains("exactly one exported launcher"),
+            "expected the multi-launcher ambiguity to be called out, got: ${ex.message}"
+        )
+        assertTrue(ex.message!!.contains("gravitris.app.MainActivity"), "got: ${ex.message}")
+        assertTrue(ex.message!!.contains("com.ads.sdk.OfferwallActivity"), "got: ${ex.message}")
+    }
+
+    @Test
+    fun `CHK-4 exempts the app launcher even though its package differs from applicationId`(@TempDir dir: File) {
+        // The app's launcher class (gravitris.app.MainActivity) deliberately
+        // sits under a different package than the applicationId
+        // (nl.brainbuilders.gravitris) — see app/src/main/AndroidManifest.xml.
+        // The exemption keys off the MAIN/LAUNCHER intent-filter, NOT a name or
+        // namespace match, precisely so the real app passes. This is the trap a
+        // "component name must match the namespace" fix would have fallen into.
+        val manifest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="nl.brainbuilders.gravitris">
+                <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
+                    <activity android:name="gravitris.app.MainActivity" android:exported="true">
+                        <intent-filter>
+                            <action android:name="android.intent.action.MAIN"/>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity>
+                </application>
+            </manifest>
+        """.trimIndent()
+        val check = task()
+        check.mergedManifest.set(manifestFile(dir, manifest))
+
+        check.check() // must not throw
+    }
+
+    @Test
+    fun `CHK-4 does not exempt an exported activity with LAUNCHER category but no MAIN action`(@TempDir dir: File) {
+        // A lone category LAUNCHER without action MAIN is not a real launcher
+        // entry point. The tightened exemption requires both in one filter, so
+        // such an exported activity is reported like any other exported
+        // component rather than silently exempted.
+        val manifest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+                <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
+                    <activity android:name=".NotReallyALauncher" android:exported="true">
+                        <intent-filter>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity>
+                </application>
+            </manifest>
+        """.trimIndent()
+        val check = task()
+        check.mergedManifest.set(manifestFile(dir, manifest))
+
+        val ex = assertThrows(GradleException::class.java) { check.check() }
+        assertTrue(ex.message!!.contains("CHK-4"), "got: ${ex.message}")
+        assertTrue(ex.message!!.contains(".NotReallyALauncher"), "got: ${ex.message}")
+    }
+
+    @Test
+    fun `CHK-4 does not exempt an exported launcher activity-alias`(@TempDir dir: File) {
+        // The exemption is for a plain <activity>. An exported <activity-alias>
+        // carrying a MAIN/LAUNCHER filter (a dependency could add one) is never
+        // exempt — it is a distinct exported entry point.
+        val manifest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+                <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
+                    <activity android:name="gravitris.app.MainActivity" android:exported="true">
+                        <intent-filter>
+                            <action android:name="android.intent.action.MAIN"/>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity>
+                    <activity-alias android:name=".AliasEntry" android:exported="true" android:targetActivity="gravitris.app.MainActivity">
+                        <intent-filter>
+                            <action android:name="android.intent.action.MAIN"/>
+                            <category android:name="android.intent.category.LAUNCHER"/>
+                        </intent-filter>
+                    </activity-alias>
+                </application>
+            </manifest>
+        """.trimIndent()
+        val check = task()
+        check.mergedManifest.set(manifestFile(dir, manifest))
+
+        val ex = assertThrows(GradleException::class.java) { check.check() }
+        assertTrue(ex.message!!.contains("CHK-4"), "got: ${ex.message}")
+        assertTrue(ex.message!!.contains("activity-alias .AliasEntry"), "got: ${ex.message}")
     }
 
     @Test
