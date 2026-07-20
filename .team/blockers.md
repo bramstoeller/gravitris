@@ -9,3 +9,18 @@ taken to the client.
 | 2026-07-20 | architect | **GPU/fragment-shader cost is entirely unmeasured.** The spike measures CPU only. ADR 0009 concludes the largest remaining performance risk is now the procedural gel/subsurface fragment shader, not the solver — a reversal of the project's founding assumption. Nothing here can measure it. To close: profile the shader on the reference device once a renderer exists. Affects the UX Designer's look budget. | open |
 | 2026-07-20 | architect | **The brief contradicts itself on the performance target.** The revised *Performance target* section (added 2026-07-20) correctly makes the Fairphone 6 the reference and demotes the 2020 floor to an aspiration — but **success criterion 1 still reads "Installs and runs on a mid-range Android 10 device, holding 60fps"**, which is the unverifiable claim that section exists to retire. Criterion 1 should be reworded to name the reference device. Client-facing, so the Product Lead's to make. | open — needs Product Lead |
 | 2026-07-20 | architect | **Architect challenges the brief's stated quality-scaling mechanism.** The brief (*Performance target*, "Architect to confirm or challenge") proposes degrading "solver iterations, particle count or substep rate" at runtime. Measurement says two of those three are unsafe: below 8 substeps a settled stack visibly jitters (ADR 0003), and particle count cannot change mid-run without bodies popping. **ADR 0009 scales rendering at runtime and fixes simulation quality at startup instead.** The brief's wording should be updated to match, or the Product Lead should overrule me with a reason. | open — needs Product Lead |
+
+## Open
+
+### B1 — Play account type — RESOLVED 2026-07-20
+Client chose to skip the store for this phase and take a signed sideloadable
+APK instead. The 12-tester / 14-day constraint no longer applies. Question
+returns only if the client later decides to publish.
+**New requirement arising:** the client self-manages the signing key with no
+Play App Signing reset path. Losing it is unrecoverable. Signing guidance must
+say so in plain language.
+
+### B2 — Target device unknown
+Raised 2026-07-20. The client's phone model is not yet known; it sets the real
+performance bar. The Architect is designing against a generic "2020-era
+mid-range" assumption until this is answered.
