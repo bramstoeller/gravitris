@@ -61,6 +61,20 @@ margin at lattice 6: `MAX_SPEED * h` = 0.0625, closing 0.125 against a 0.36 cell
 = 2.9×. Cost +2.1%/step (468 → 478 µs). I asked Backend and QA to re-check the
 numbers I enshrined against their own harnesses before merge.
 
+**Post-review correction (Code Reviewer, on PR #14).** The re-check paid off.
+Two labels were fixed in a follow-up commit before merge:
+- The 43.7% was mislabelled "an 8-body pile" in the ADR. It is not: QA confirmed
+  `BroadphaseMarginTest` is a **6-body** scene (`bodies = 6`), and *both* table
+  figures are that one 6-body guard scene. **39.2%** is `main`'s solver reverted
+  to per-frame (Code Reviewer reproduced it by toggling the cadence); **43.7%**
+  is `feat/core-sim`'s *original* per-frame solver. They differ by solver
+  generation, not pile size. QA's separate ~44% 8-body exploratory run was a
+  different measurement whose label had fused on. Tying 43.7% to the 6-body scene
+  keeps the ADR and the standing `BroadphaseMarginTest` in agreement.
+- The +2.1%/step cost is now explicitly marked **single-sourced** to handoff
+  0023 and not independently reproduced — wall-clock microbenchmarking here is
+  too noisy for a second figure to stand behind (Code Reviewer's call).
+
 ## What I deliberately did NOT do
 
 - **No solver edit.** The code is correct and the client approved the feel

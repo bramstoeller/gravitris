@@ -30,7 +30,10 @@ centres a 3×3 stencil on the cell a particle was bucketed into at that rebuild.
 The rebuild allocates nothing (cell arrays are retained and refilled) — a
 per-frame `IntArray` in the first draft showed up immediately in the allocation
 check and was hoisted. The extra rebuilds cost +2.1% per step on the ADR 0001
-reference scene (468 → 478 µs), a relative figure that survives device derating.
+reference scene (468 → 478 µs) — a single measurement from the Backend Engineer's
+harness (handoff 0023), not independently reproduced, because wall-clock
+microbenchmarking here is too noisy to stand behind a second figure. It is a
+relative cost and survives device derating.
 
 > **Superseded — original decision, kept for the record.** This ADR first
 > specified the grid "rebuilt per *frame*, not per substep; narrowphase runs per
@@ -190,9 +193,14 @@ stiffness limit:
 | every substep      | 0.40%     | 0.86%     | **0.90%** | 15% |
 
 Deepest inter-body penetration as a fraction of a particle diameter, at the frame
-boundary (Backend Engineer's harness, handoff 0023). QA independently measured
-the per-frame lattice-6 case at 43.7% on an 8-body pile — same order — and pinned
-it as a Major defect (handoff 0020, `reviews/qa-broadphase-margin.md`).
+boundary, on the **6-body pile `BroadphaseMarginTest` uses as its guard scene**.
+The two rows are one scene with only the rebuild cadence toggled on `main`'s
+solver (Backend Engineer's harness, handoff 0023; the Code Reviewer reproduced
+the 39.2% by toggling the cadence and reviewed the method). QA independently
+measured **43.7%** for the per-frame lattice-6 case *on that same 6-body scene*,
+running `feat/core-sim`'s **original** per-frame solver, and pinned it as a Major
+defect (handoff 0020, `reviews/qa-broadphase-margin.md`). The 39.2% and 43.7%
+differ by **solver generation, not pile size** — same scene, same lattice-6 tier.
 
 **Decision.** Rebuild the grid **every substep**, not once per frame. Per substep
 the closing bound holds with margin: a piece moves at most `MAX_SPEED * h` =
