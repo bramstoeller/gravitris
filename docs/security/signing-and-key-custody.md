@@ -271,21 +271,44 @@ Something like:
 
 > This is a game I had built. It isn't on the Play Store yet, so your phone will
 > warn you before installing — that warning is Android saying it can't verify
-> apps from outside the store, which is normal for a direct download. It asks for
-> no permissions and has no internet access at all. If you'd rather wait until
-> it's on the Play Store, that's completely reasonable.
+> apps from outside the store, which is normal for a direct download. It has no
+> internet access at all, so nothing can leave your phone. The only thing it
+> asks for is permission to vibrate, for the haptic feedback when blocks land.
+> If you'd rather wait until it's on the Play Store, that's completely
+> reasonable.
 
 Accurate, not pushy. The last sentence matters — some people should not
 sideload, and they should feel fine saying no.
+
+**Do not say "it asks for no permissions."** That was true before impact haptics
+and is now false. Say "no internet access" — which is the claim that actually
+carries the privacy weight, and which is still exactly true.
 
 ### What a recipient can reasonably check
 
 If someone technically-minded asks how to verify it:
 
-- **Permissions, before installing.** The installer screen lists what the app
-  wants. Squish requests **nothing**, and notably has no internet access. This is
-  checkable by anyone, on the device, without tools — it is the strongest thing
-  you can point at.
+- **Permissions.** The app requests **exactly one**:
+  `android.permission.VIBRATE`, needed to drive the impact haptics at varying
+  strength. Nothing else — and specifically **not** `android.permission.INTERNET`.
+
+  Two things to be straight about, because they are easy to get wrong:
+
+  - **The install screen will probably show no permissions at all**, and that is
+    *not* evidence that none are requested. Android only surfaces "dangerous"
+    permissions — camera, location, contacts, files — because those are the ones
+    that reach your data. `VIBRATE` is classed as **normal**: it is granted
+    automatically at install, shows no prompt, and grants access to no data
+    whatsoever. The worst a normal permission can do is buzz the phone.
+  - **Seeing the full list needs a tool.** `apksigner`'s sibling `aapt2 dump
+    permissions squish.apk`, or any APK inspector app, prints every permission
+    including the normal ones. That is where a sceptical recipient should look,
+    and what they should see is one line: `VIBRATE`.
+
+  **The claim worth making is "no internet access", not "no permissions."** The
+  absence of `INTERNET` is the one that carries the privacy guarantee, it is
+  kernel-enforced (the app physically cannot open a network connection), and it
+  is still exactly true. It is also independently verifiable by the same tool.
 - **The certificate fingerprint.** Publish your SHA-256 fingerprint (§5)
   somewhere stable and they can compare with `apksigner verify --print-certs`.
   Be honest about the limit: this only helps if they got the expected
