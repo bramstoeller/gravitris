@@ -1,0 +1,43 @@
+# Team working directories — branches live here, not history.
+/.worktrees/
+
+# Never commit secrets.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+
+# Dependencies and build output. Seeded up front rather than after an agent
+# has already staged a virtualenv: the team installs toolchains as it works,
+# and the first `git add -A` is too late to notice.
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+target/
+vendor/
+dist/
+build/
+*.egg-info/
+coverage/
+.coverage
+.nyc_output/
+.gradle/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.cache/
+
+# Editor and OS noise.
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

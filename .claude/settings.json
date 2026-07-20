@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "opus",
+  "includeCoAuthoredBy": false,
+  "env": {
+    "TEAM_LOG_DIR": "/work/.team"
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": ["/work"],
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "TodoWrite"
+    ],
+    "deny": [
+      "Read(/state/.claude/.credentials.json)",
+      "Read(**/.env)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/ai-team/bin/team-hook session-start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/ai-team/bin/team-hook subagent-stop"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/ai-team/bin/team-hook guard-bash"
+          }
+        ]
+      }
+    ]
+  }
+}
