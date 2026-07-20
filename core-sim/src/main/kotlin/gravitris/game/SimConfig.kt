@@ -28,7 +28,43 @@ data class SimConfig(
      * recorded replay fixture.
      */
     val substeps: Int = 8,
-    val distanceCompliance: Float = 1e-6f,
+    /**
+     * How readily the lattice changes **shape**. This is the squash dial, and
+     * at Milestone 1 it was 100x too stiff: the client's device showed
+     * geometrically perfect squares, and measurement agreed — a hard landing
+     * compressed a body's height by 2%.
+     *
+     * Measured on a hard drop (lattice 5, 10x20 well, 8 substeps), the
+     * silhouette a landing produces:
+     *
+     * | distanceCompliance | height | width | aspect ratio |
+     * | ------------------ | ------ | ----- | ------------ |
+     * | 1e-6 (Milestone 1) | 0.980  | 1.149 | 1.17         |
+     * | **1e-4 (shipped)** | 0.852  | 1.203 | **1.41**     |
+     * | 1e-3               | 0.721  | 1.569 | 2.18         |
+     *
+     * **1e-3 is not available**, and the ceiling is stability rather than
+     * cost: softer material compresses far enough that particles of different
+     * bodies interpenetrate deeply, and ADR 0003's contacts are rigid, so
+     * resolving that depth injects energy. Above ~2e-4 a deep pile or heavy
+     * material diverges instead of settling. More substeps do not buy it back
+     * — measured, 6 substeps is *worse* than 8 in exactly these cases — so
+     * this is not a budget the substep floor can be spent on.
+     *
+     * Note this is the *shape* dial, not the area one: see [areaCompliance].
+     */
+    val distanceCompliance: Float = 1e-4f,
+    /**
+     * How readily the lattice changes **area**. Deliberately left 100x stiffer
+     * than [distanceCompliance] so a squashed body bulges sideways rather than
+     * losing volume — bulging into gaps is the coverage-band mechanic
+     * (ADR 0001), and a body that simply shrinks reads as a rendering bug.
+     *
+     * This is why `particleCompression` — an area ratio — barely moved when
+     * squash was fixed: at impact it spans ~0.895..1.0 both before and after.
+     * Area was never the rigid quantity. **Shape was**, and area compression is
+     * the wrong number to judge squash by.
+     */
     val areaCompliance: Float = 1e-6f,
     /** Per-substep velocity damping, ADR 0003 §5. Without it a pile hums. */
     val linearDamping: Float = 0.005f,

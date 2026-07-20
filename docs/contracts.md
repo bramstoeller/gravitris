@@ -22,8 +22,8 @@ package gravitris.game
 data class SimConfig(
     // --- solver (ADR 0001, 0003) ---
     val substeps: Int = 8,              // PINNED. See ADR 0003 — below 8 stacks jitter.
-    val distanceCompliance: Float = 1e-6f,
-    val areaCompliance: Float = 1e-6f,
+    val distanceCompliance: Float = 1e-4f,  // the squash dial — see note below
+    val areaCompliance: Float = 1e-6f,      // 100x stiffer, so squash bulges rather than shrinks
     val linearDamping: Float = 0.005f,
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
@@ -73,6 +73,26 @@ class Simulation(config: SimConfig) {
     }
 }
 ```
+
+**Compliance: which dial is the squash dial.** Milestone 1 shipped with
+`distanceCompliance` at `1e-6` and the blocks were visually rigid — a hard
+landing took 2% off a body's height. It is `1e-4` from Milestone 2 on. Two
+things about this are worth `:app` knowing:
+
+- **`distanceCompliance` controls shape; `areaCompliance` controls volume.**
+  They are kept 100x apart on purpose, so a squashed body bulges sideways
+  instead of shrinking. Bulging into gaps is the coverage-band mechanic.
+- **`particleCompression` is an area ratio, and area is deliberately
+  near-rigid.** It spans roughly `0.895..1.0` at impact both before and after
+  the fix, so it is *not* a measure of how squashy the material looks — judging
+  squash by it reports "11% deformation" for a block that is visually a perfect
+  square. The compression-darkening gain tuned against `0.888..1.0` therefore
+  remains correct and needs no retuning. The quantity that actually changed is
+  the silhouette: peak landing aspect ratio went from 1.17 to 1.41.
+
+Changing either value means constructing a new `Simulation` — configs are
+immutable so that determinism holds (ADR 0006). `:app` already rebuilds on a
+well-geometry change, which is the same path a tuning panel would use.
 
 **Determinism contract.** Same `seed` + same `InputFrame` sequence ⇒ bit-identical
 `SimState`. Guaranteed only if the core obeys ADR 0006: no transcendental
