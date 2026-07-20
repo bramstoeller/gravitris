@@ -115,4 +115,60 @@ reachable handle. Please relay or connect us.
   `main` once so it stops being copied.
 
 ---
+
+## Addendum — the integration was executed (mechanic froze, Product Lead approved)
+
+After the plan above was written, the Backend Engineer froze `feat/mechanic`
+and the Product Lead approved executing the integration now. Done:
+
+- **Merged `feat/mechanic` into `feat/gel-shading`** (clean; the only overlap
+  was the identical gitleaks CI fix, auto-resolved).
+- **Swapped the debug driver for real coverage** (`feat(app): drive band glow
+  from real coverage, drop the debug sweep`): `GameRenderer` now uploads
+  `state.bandFill` / `state.bandClearProgress`; the `debugBandFill` /
+  `debugClearProgress` stand-ins, their backing arrays, the `TWO_PI` /
+  `NOT_CLEARING` / `CLEAR_ENVELOPE_SECONDS` / `IGNITION_DEBUG_PERIOD_SECONDS`
+  constants and `Tunables.BAND_DEBUG_SWEEP_RATE` are removed (no dead code).
+- **The readout honesty label now reads `band:LIVE`, not `band:DEBUG`.** That
+  label exists so a screenshot cannot pass off a debug sweep as real coverage;
+  with real values driving the glow it must — and now does — say LIVE.
+
+**Verified on the correctness emulator (screenshot, swangle software render):**
+the integrated build compiles, launches and renders — a stack of five soft
+bodies each carrying the gel subsurface shading and identity grain, readout
+`shade:FULL band:LIVE`. The anticipation glow is quiet because real coverage in
+the sandbox is below the 40% dead zone — that is correct honest behaviour, not
+a fault; the debug sweep used to force it bright precisely because real fill is
+low. `make test` passes.
+
+**Product Lead's three checks:**
+1. **Geometry lines up.** The renderer extrudes the silhouette from
+   `state.particleRadius` (`VertexFill.kt:96`), so it tracks whatever the core
+   publishes (0.225 at lattice 5 → extent 2.25) by construction, not a hardcoded
+   value. The screenshot's clean contact gaps between stacked pieces — no
+   overlap, no float — corroborate it. Verified structurally and visually; not
+   asserted as a hard number in a test.
+2. **Stale trap dropped.** I did not carry handoff 0018's undamped-`fillRaw`
+   assumption; the clear rule reads the damped published `bandFill`, and my
+   guidance (fill crossing threshold is not a clear — read `bandClearProgress`
+   leaving -1) still holds.
+3. **Real range vs the unclamped feather.** Real `bandFill` is structurally
+   bounded to 0..1 and the feather only convex-mixes two in-range values, so it
+   cannot exceed 1; `bandClearProgress` is -1 or 0..1 and the shader gates the
+   sentinel with `step(0.0, clearing)`. The clean render (no blown-out
+   fragments) confirms no range issue surfaced.
+
+**One tooling flake to flag to DevOps:** the *first* `make screenshot` captured
+the launch-transition wallpaper (app mid-launch, first frame not yet drawn), not
+the app. A manual capture a few seconds later showed the app rendering correctly,
+and logcat confirmed no crash — the window was focused and the process alive.
+The screenshot script likely needs a longer settle / first-frame wait before it
+grabs the frame; otherwise it can emit a misleading "black/other" shot for a
+build that is actually fine.
+
+**PR #6 base retargeted to `feat/mechanic`** so the review shows the gel +
+integration delta on top of the mechanic, not the whole mechanic diff.
+
+
+---
 *— **Frontend Engineer***
