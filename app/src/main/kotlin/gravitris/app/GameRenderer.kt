@@ -117,15 +117,6 @@ class GameRenderer(
      *  while the surface is still being created. */
     private var shaderClockOriginNanos = 0L
 
-    /**
-     * The debug band-fill sweep. See [Tunables.BAND_DEBUG_SWEEP_RATE] — Stage
-     * 3A owns the real fill and does not exist yet, so this stands in for it.
-     */
-    private val bandFill = FloatArray(BAND_COUNT)
-
-    /** The debug clear envelope. See [debugClearProgress]. */
-    private val clearProgress = FloatArray(BAND_COUNT) { NOT_CLEARING }
-
     private val scale = FloatArray(2)
     private val offset = FloatArray(2)
 
@@ -193,66 +184,6 @@ class GameRenderer(
         if (shaderClockOriginNanos == 0L) shaderClockOriginNanos = nowNanos
         val elapsed = (nowNanos - shaderClockOriginNanos) / 1_000_000_000.0
         return (elapsed % Tunables.SHADER_TIME_WRAP_SECONDS).toFloat()
-    }
-
-    /**
-     * A travelling wave standing in for the band fill Stage 3A will compute.
-     *
-     * `SimState.bandFill` exists in the contract and is allocated by the core,
-     * but nothing writes it — coverage bands are Stage 3A. Reading it here would
-     * upload twenty zeros and the glow would be dead on the device, so the one
-     * term whose cost we most need to measure would measure nothing.
-     *
-     * **This is deliberately not an attempt at the real thing.** Inventing band
-     * logic in the renderer would put a second, wrong definition of coverage in
-     * the codebase for Stage 3A to collide with. A sweep is honest about being
-     * a stand-in, and it is strictly better for the two jobs it has to do:
-     *
-     * - every band passes through the entire 0..1 range, so a single device
-     *   session exercises the whole `band-glow.md` curve — the dead zone below
-     *   40%, both ramps, the pulse-rate change at 85%, and the identity cap —
-     *   rather than whatever fills happen to arise from play;
-     * - adjacent bands hold different values at every instant, so the
-     *   interpolated feather between band centres is visible and can be judged.
-     *
-     * The phase offset per band is what tilts the wave across the well; without
-     * it every band would glow in unison and the feather would never be
-     * exercised.
-     */
-    private fun debugBandFill(nowNanos: Long): FloatArray {
-        val t = shaderClock(nowNanos) * Tunables.BAND_DEBUG_SWEEP_RATE
-        for (i in bandFill.indices) {
-            val phase = (t + i * 0.30f) * TWO_PI
-            bandFill[i] = 0.5f + 0.5f * kotlin.math.sin(phase)
-        }
-        return bandFill
-    }
-
-    /**
-     * A stand-in for the clear envelope, on the same footing as
-     * [debugBandFill]: the shader needs to be exercised through the ignition
-     * flash, and Stage 3A owns when a clear actually fires.
-     *
-     * The envelope's shape is **not** invented here — it is the timeline the
-     * backend engineer confirmed for Stage 3A: progress runs 0 to 1 over 24
-     * ticks (400ms) with the material still present throughout, so the flash
-     * plays on real geometry. What is fabricated is only *when* it starts.
-     *
-     * One band at a time, marched up the well, so the flash can be watched in
-     * isolation against neighbours that are merely glowing — which is the
-     * comparison that shows whether the cap lift reads as a deliberate event or
-     * as the glow simply blowing out.
-     */
-    private fun debugClearProgress(nowNanos: Long): FloatArray {
-        clearProgress.fill(NOT_CLEARING)
-        val cycle = shaderClock(nowNanos) / IGNITION_DEBUG_PERIOD_SECONDS
-        val band = (cycle.toInt()) % BAND_COUNT
-        val within = cycle - cycle.toInt()
-        // Only the first 400ms of each cycle is a clear; the rest is the gap
-        // that makes the event read as an event.
-        val envelope = within * IGNITION_DEBUG_PERIOD_SECONDS / CLEAR_ENVELOPE_SECONDS
-        if (envelope <= 1f) clearProgress[band] = envelope
-        return clearProgress
     }
 
     /**
@@ -447,9 +378,9 @@ class GameRenderer(
         val state = toy.state
         GLES30.glUniform1f(bandBottomYUniform, state.bandBottomY)
         GLES30.glUniform1f(bandInvHeightUniform, 1f / state.bandHeight)
-        GLES30.glUniform1fv(bandFillUniform, BAND_COUNT, debugBandFill(frameStart), 0)
+        GLES30.glUniform1fv(bandFillUniform, BAND_COUNT, state.bandFill, 0)
         GLES30.glUniform1fv(
-            bandClearProgressUniform, BAND_COUNT, debugClearProgress(frameStart), 0,
+            bandClearProgressUniform, BAND_COUNT, state.bandClearProgress, 0,
         )
 
         wellFrame.draw()
@@ -567,19 +498,6 @@ class GameRenderer(
         /** ~4Hz. Fast enough to watch a number move, slow enough not to
          *  pollute the measurement. */
         private const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L
-
-        private const val TWO_PI = 6.2831855f
-
-        /** `bandClearProgress`'s "this band is not clearing" sentinel, as
-         *  declared by `SimState`. */
-        private const val NOT_CLEARING = -1f
-
-        /** 24 ticks at 60Hz — the clear envelope agreed with Stage 3A. */
-        private const val CLEAR_ENVELOPE_SECONDS = 0.4f
-
-        /** How often the debug ignition fires, per band. Long enough that the
-         *  400ms envelope reads as a discrete event rather than a strobe. */
-        private const val IGNITION_DEBUG_PERIOD_SECONDS = 2.0f
 
         /** Top of the shading dial — the full art direction. See [shadeLevel]. */
         const val SHADE_LEVEL_MAX = 4

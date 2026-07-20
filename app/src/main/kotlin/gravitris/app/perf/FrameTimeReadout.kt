@@ -234,13 +234,13 @@ class FrameTimeReadout(context: Context) {
      * `shade:FULL` at the top of the dial, `shade:2/4` anywhere below it.
      *
      * The band-fill source rides along on the same line because the two are
-     * read together or not at all: the glow only runs at the top level, and at
-     * Stage 3B what it is glowing *at* is a debug sweep rather than real
-     * coverage. A screenshot of a glowing stack that does not say `band:DEBUG`
-     * would be read as the mechanic working.
+     * read together or not at all: the glow only runs at the top level, and
+     * with Stage 3A integrated what it is glowing *at* is the real coverage
+     * `SimState.bandFill` publishes — so the label reads `band:LIVE`, and a
+     * glowing stack in a screenshot reflects real fill rather than a stand-in.
      */
     private fun shadeLabel(level: Int): String = when (level) {
-        GameRenderer.SHADE_LEVEL_MAX -> "shade:FULL band:DEBUG"
+        GameRenderer.SHADE_LEVEL_MAX -> "shade:FULL band:LIVE"
         else -> "shade:$level/${GameRenderer.SHADE_LEVEL_MAX}"
     }
 

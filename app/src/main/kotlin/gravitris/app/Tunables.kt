@@ -342,23 +342,6 @@ object Tunables {
      */
     const val SHADER_TIME_WRAP_SECONDS = 60f
 
-    /**
-     * Debug band-fill sweep rate, in bands per second.
-     *
-     * **Stage 3B has no band fill.** `SimState.bandFill` is allocated by the
-     * core and never written — computing it is Stage 3A and was explicitly out
-     * of scope here, and inventing the band logic locally would have produced a
-     * second definition for Stage 3A to collide with. So the renderer drives
-     * the uniform with a travelling wave instead, which sweeps every band
-     * through the whole 0..1 range and therefore exercises every segment of
-     * `band-glow.md`'s curve, the pulse rate change and the identity cap, on
-     * the device, without any of it being real.
-     *
-     * The readout says `band:DEBUG` whenever this is what is driving the glow.
-     * Deleting the sweep is the last step of wiring Stage 3A's real fill in.
-     */
-    const val BAND_DEBUG_SWEEP_RATE = 0.35f
-
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---------
 
     /** World units across the well. Matches `SimConfig.wellWidth`'s default so
