@@ -37,9 +37,44 @@ interface SimState {
     /** Index into the body arrays. */
     val particleBody: IntArray
 
-    /** Body-local lattice coordinate, 0..1. -> `vBodyUv` */
+    /**
+     * Body-local surface coordinate, spanning the WHOLE piece, not one cell
+     * (§15 / D10). Both axes are normalised by the piece's longer footprint
+     * side, so the coordinate is **0..1 on that longer side and 0..k (k <= 1) on
+     * the shorter one** — aspect-preserving, not stretched to a unit square. It
+     * is continuous across cell seams: the grain, the subsurface depth term and
+     * the specular sweep all read across the entire tetromino instead of
+     * restarting at every cell, which is what makes a piece read as one shape
+     * rather than four glued tiles.
+     *
+     * Two consequences for `:app`, both deliberate:
+     * - `min(uv, 1 - uv)` still gives a silhouette-to-core depth, but on a piece
+     *   thinner than it is long (an I is 4x1) the short axis never reaches the
+     *   centre, so a thin piece reads more translucent — the correct read for a
+     *   thin jelly, and the subsurface gain is retuned on `:app` regardless.
+     * - The grain frequency now depends on the footprint. Multiply the grain
+     *   coordinate by [grainScaleCompensation] to cancel that; see there. -> `vBodyUv`
+     */
     val particleU: FloatArray
     val particleV: FloatArray
+
+    /**
+     * Per-archetype grain-frequency compensation, indexed by [bodyArchetype]
+     * (length `Simulation.ARCHETYPE_COUNT`), constant for the run (§15 / D10).
+     *
+     * [particleU]/[particleV] span the whole footprint, so without correction a
+     * long piece would carry coarser grain than a compact one. Fold this factor
+     * into the shader's per-archetype `uGrainScale` — `uGrainScale[a] =
+     * paletteGrainScale[a] * grainScaleCompensation[a]` — and every piece
+     * regains the SAME per-cell grain frequency it had before, now continuous
+     * across the whole piece. The palette's own per-archetype grain variation
+     * (the CVD/monochrome identity cue) is preserved: this factor only cancels
+     * the footprint, it does not add identity of its own.
+     *
+     * Additive per §5 — a new `SimState` field does not cross the module
+     * boundary. Static, so upload it once with the palette, not per frame.
+     */
+    val grainScaleCompensation: FloatArray
 
     /**
      * Current area / rest area of the lattice cells this particle belongs to.
@@ -52,6 +87,37 @@ interface SimState {
      * per particle. Drives the BRIGHTENING rim light. -> `vEdge`
      */
     val particleEdge: FloatArray
+
+    /**
+     * True outer-silhouette corner (§16): 1 at a particle that is a convex
+     * corner of the WHOLE piece, 0 everywhere else — including internal cell
+     * corners and every seam. Static per particle, set once at spawn. -> `vCorner`
+     *
+     * A corner is flagged only where the piece's outline actually turns outward:
+     * a lattice-corner particle whose cell has free surface on both meeting
+     * sides (no neighbour cell left/right AND none up/down at that corner). So an
+     * L rounds at its five true corners but stays sharp at its inner elbow, and
+     * an O has exactly its four. `:app` vertex-interpolates this like
+     * [particleEdge] and shapes the ramp with a power, rounding only the real
+     * silhouette without new geometry — the fix for "terribly sharp" corners
+     * that does NOT reintroduce the four-tiles read (per-cell rounding would).
+     *
+     * Separate from [particleEdge] on purpose: edge marks the entire free
+     * surface (every outline particle); corner marks only where it turns. A
+     * particle can be edge 1 and corner 0 (a flat outer edge) or edge 1 and
+     * corner 1 (an actual corner); it is never corner 1 while edge 0.
+     *
+     * Known limit, faithful to §16's per-cell definition: at a diagonal "step"
+     * between two cells (the S/Z pinch), neither cell owns that convex point with
+     * both sides free, so it is not flagged. Deliberate and documented, not a
+     * bug — a look-call for on-device review, not a data defect.
+     *
+     * Additive per §5. Disabled-attribute note for `:app`: the well frame draws
+     * with the body program and its material attributes turned off, so it reads
+     * the generic vertex value — set `vCorner`'s generic to 0 in
+     * `WellFrame.draw()`, the same as `edge`/`contact`, or the walls would round.
+     */
+    val particleCorner: FloatArray
 
     /**
      * Contact occlusion: 0 = no neighbour, 1 = fully pressed against other

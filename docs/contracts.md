@@ -205,8 +205,40 @@ interface SimState {
     val prevPositionX: FloatArray   // for render interpolation (ADR 0006)
     val prevPositionY: FloatArray
     val particleBody: IntArray      // index into body arrays
-    val particleU: FloatArray       // body-local lattice coord, 0..1  → vBodyUv
+    /**
+     * Body-WIDE surface coordinate, spanning the whole tetromino, not one cell
+     * (§15 / D10 — the fix for "the squares don't join"). Both axes divide by
+     * the piece's longer footprint side, so it is 0..1 on that side and 0..k
+     * (k≤1) on the shorter — aspect-preserving, isotropic, continuous across
+     * seams. The grain, subsurface depth and specular sweep all read it and so
+     * read across the whole piece. `min(uv,1-uv)` still gives silhouette→core
+     * depth; a thin piece's short axis simply never reaches centre (reads more
+     * translucent — correct for a thin jelly). → vBodyUv
+     */
+    val particleU: FloatArray
     val particleV: FloatArray
+    /**
+     * Per-archetype grain-frequency compensation (length ARCHETYPE_COUNT),
+     * static for the run. Body-wide UV makes footprint set grain frequency;
+     * fold this into the shader's per-archetype grain scale
+     * (`uGrainScale[a] = paletteGrainScale[a] * grainScaleCompensation[a]`) to
+     * restore the SAME per-cell frequency every piece had, now continuous. The
+     * palette's own per-archetype grain (the identity cue) is unaffected.
+     */
+    val grainScaleCompensation: FloatArray
+    /**
+     * True outer-silhouette corner (§16): 1 at a particle that is a convex
+     * corner of the WHOLE piece, 0 elsewhere — internal cell corners and seams
+     * included. A corner is flagged only where the outline turns outward (the
+     * cell has free surface on both meeting sides), so an L rounds its five real
+     * corners but stays sharp at its inner elbow, and an O has exactly four.
+     * `:app` vertex-interpolates it like particleEdge and shapes the ramp with a
+     * power to round only the real silhouette, no new geometry. It is a subset
+     * of particleEdge (never corner 1 while edge 0). Static, set once at spawn.
+     * The well frame draws with the body program and material attributes off, so
+     * its generic `vCorner` must be set to 0 in `WellFrame.draw()`. → vCorner
+     */
+    val particleCorner: FloatArray
     val particleCompression: FloatArray  // own current/rest area → vCompression
     /**
      * Free-surface boundary: 0 interior, 1 on the body's outer edge.
@@ -342,11 +374,12 @@ look is authored as a fragment function consuming only them.
 
 | varying | source | meaning |
 | ------- | ------ | ------- |
-| `vBodyUv` | `particleU/V` | material coordinate for noise and subsurface depth |
+| `vBodyUv` | `particleU/V` | **body-wide** material coordinate (§15) for noise, subsurface depth and the specular sweep — continuous across the whole piece |
 | `vWorldPos` | interpolated position | lighting, and band-glow lookup by `y` |
-| `vBodyIndex` (flat) | `bodyArchetype[particleBody[i]]` | indexes the palette UBO — hue, saturation, lightness, grain scale |
+| `vBodyIndex` (flat) | `bodyArchetype[particleBody[i]]` | indexes the palette UBO — hue, saturation, lightness, grain scale (× `grainScaleCompensation`) |
 | `vCompression` | `particleCompression` | how squashed this material is; drives "heavy" |
 | `vEdge` | `particleEdge` | free surface → **brightening** rim light |
+| `vCorner` | `particleCorner` | true outer-silhouette corner (§16) → rounded-corner bevel |
 | `vContact` | `particleContact` | contact with neighbour → **darkening** seam / AO / deep colour through overlap |
 
 Uniforms:
