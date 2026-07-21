@@ -14,20 +14,24 @@ import kotlin.math.sin
  * ## What it is, and what it deliberately is not
  *
  * One full-screen quad, drawn once per frame before the well frame and the
- * bodies, with a trivial fragment shader. It is:
+ * bodies, with a trivial fragment shader. Round 3 (`visual-direction.md` §19)
+ * **recolours it to the light candy world** — the dark near-black gradient is
+ * superseded, not patched: the client asked for "lighter and candy-like," a
+ * reversal of the premise. Same architecture, new colour constants and one
+ * arithmetic change (a straight vertical sweep instead of a centre-peaked one).
+ * It is:
  *
- * - a **vertical gradient** — `color-bg-deep` `#05050C` at the top and bottom
- *   of frame, warming very slightly to `color-bg-core` `#0E1730` at the
- *   vertical centre — so the field reads as a world rather than a dead value,
- *   while staying overwhelmingly dark (mean luminance barely above true black,
- *   preserving the OLED-power and glow-contrast arguments in `tokens.md`);
- * - **two fixed soft radial glows** ("distant crystal light," not
- *   representational) at the upper-left and lower-right, cool hues only —
- *   **never amber**, that is band-glow's alone — each a `smoothstep`-falloff
- *   disc at 4–8% peak opacity, drifting very slowly (~100s period) so the
- *   environment breathes without ever pulling the eye. The drift offset is the
- *   same for every pixel, so its `sin`/`cos` are computed once per frame on the
- *   CPU (see [draw]) and passed in as uniforms, not evaluated per pixel.
+ * - a **vertical gradient** — `color-sky-top` `#BFE9F7` (soft sky-blue) at the
+ *   top of frame easing down to `color-sky-bottom` `#FDEFE0` (warm pale cream)
+ *   at the bottom, so the field reads as a bright candy world lit from above;
+ * - **two fixed soft warm patches** (sun-through-haze) at the upper-left and
+ *   lower-right, each a `smoothstep`-falloff disc drifting very slowly (~100s
+ *   period) so the environment breathes without ever pulling the eye. The drift
+ *   offset is the same for every pixel, so its `sin`/`cos` are computed once per
+ *   frame on the CPU (see [draw]) and passed in as uniforms, not per pixel.
+ *   **Their peak brightness is owed an on-device re-measurement** (§19): a
+ *   bright additive patch on an already-bright field under-reads the opposite
+ *   way the old dark-on-dark glows did — sane first-pass values, not final.
  *
  * ## Cost
  *
@@ -184,20 +188,24 @@ uniform vec2 uDriftB;  // glow-B drift offset, computed once per frame on the CP
 
 out vec4 fragColor;
 
-// color-bg-deep #05050C — top and bottom of frame.
-const vec3 BG_DEEP = vec3(0.019608, 0.019608, 0.047059);
-// color-bg-core #0E1730 — vertical centre of frame.
-const vec3 BG_CORE = vec3(0.054902, 0.090196, 0.188235);
-// The two "distant crystal light" discs (tokens.md color-bg-glow-a/-b): a cool
-// TEAL upper-left, a cool VIOLET lower-right — never amber. These are the peak
-// colour ADDED at each disc's centre, and their luminance is ~4-5% of white,
-// which is tokens.md's "4-8% peak opacity" read as brightness toward a light
-// rather than an alpha-blend toward a colour. The token hues #0E1730/#241B3D are
-// near-black, so adding them (or blending toward them) produces no visible
-// brightening at all — these lift the same cool hues to where the disc actually
-// reads as a soft light while staying deep and cool.
-const vec3 GLOW_A = vec3(0.020, 0.048, 0.072); // upper-left, deep teal
-const vec3 GLOW_B = vec3(0.052, 0.030, 0.082); // lower-right, deep violet
+// Light candy world (tokens.md, §19), replacing the superseded near-black
+// dark-canvas gradient. A soft sky-blue overhead warming to a pale cream at the
+// bottom, so the vertical sweep reads as a light source above rather than a
+// flat tint.
+// color-sky-top #BFE9F7 — top of frame.
+const vec3 SKY_TOP = vec3(0.749020, 0.913725, 0.968627);
+// color-sky-bottom #FDEFE0 — bottom of frame.
+const vec3 SKY_BOTTOM = vec3(0.992157, 0.937255, 0.878431);
+// The two soft warm patches (tokens.md color-sky-glow-a/-b: sun-through-haze,
+// NOT the dark direction's "crystal light"). These are the peak colour ADDED at
+// each disc's centre. **On-device tuning owed (§19):** the round-2 additive-
+// onto-near-black trick does NOT transfer — against an already-bright field a
+// near-white add barely reads, but a large one blooms to a white blob. These
+// are sane first-pass warm-white lifts (a soft brightening toward white at each
+// centre), not measured on the real panel; the same failure mode the team hit
+// once in the opposite direction, flagged loudly rather than guessed precisely.
+const vec3 GLOW_A = vec3(0.060, 0.055, 0.040); // upper-left, warm sun-haze
+const vec3 GLOW_B = vec3(0.055, 0.048, 0.036); // lower-right, warm sun-haze
 
 // Radius of each disc, squared (the falloff runs on squared distance to avoid a
 // per-pixel sqrt). ~0.28 in aspect-corrected units — a disc that brightens its
@@ -229,11 +237,11 @@ float disc(vec2 uv, vec2 center) {
 }
 
 void main() {
-    // Vertical gradient: brightest (core) at the centre, deep at both ends.
-    // smoothstep, not a raw lerp, so the warm centre eases in rather than
-    // forming a visible band edge.
-    float t = 1.0 - abs(vUv.y * 2.0 - 1.0);
-    vec3 color = mix(BG_DEEP, BG_CORE, smoothstep(0.0, 1.0, t));
+    // Vertical gradient (§19): sky-blue at the top of frame (vUv.y = 1) easing
+    // down to warm cream at the bottom (vUv.y = 0) — a straight overhead-light
+    // sweep, not the dark theme's centre-peaked warm core. smoothstep, not a
+    // raw lerp, so neither stop forms a visible band edge.
+    vec3 color = mix(SKY_BOTTOM, SKY_TOP, smoothstep(0.0, 1.0, vUv.y));
 
     // Two fixed discs, drifting on opposite diagonals so the pair never reads
     // as a single moving light. The drift offsets are frame-constant (they
