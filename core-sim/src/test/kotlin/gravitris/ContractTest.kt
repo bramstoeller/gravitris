@@ -19,7 +19,7 @@ class ContractTest {
     fun `bandCount is published and equals both band array lengths`() {
         // A non-default count so the assertion cannot pass by coincidence with
         // the shader's baked-in default.
-        val sim = Simulation(SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f, bandCount = 17))
+        val sim = Simulation(SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f, bandCount = 17))
         val s = sim.state
         assertEquals(17, s.bandCount, "bandCount must equal the configured count")
         assertEquals(s.bandCount, s.bandFill.size, "bandFill must be bandCount long")

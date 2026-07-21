@@ -58,7 +58,7 @@ import kotlin.math.sqrt
  */
 internal class InterlockJitterTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     /**
      * Trembling, measured from positions alone.
@@ -116,9 +116,9 @@ internal class InterlockJitterTest {
      */
     private fun tremorUnderHeldDrag(config: SimConfig): Int {
         val sim = Simulation(config)
-        sim.addPiece(0, NEIGHBOUR_X, REST_Y)
+        sim.addPiece(1, NEIGHBOUR_X, REST_Y)
         sim.clearActivePiece()
-        sim.addPositioningPiece(0, DRAGGED_X, REST_Y)
+        sim.addPositioningPiece(1, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val meter = TremorMeter(sim.state)
@@ -185,7 +185,7 @@ internal class InterlockJitterTest {
     fun `dragging through empty space injects no energy`() {
         val config = config()
         val sim = Simulation(config)
-        sim.addPositioningPiece(0, DRAGGED_X, REST_Y)
+        sim.addPositioningPiece(1, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val input = InputFrame()
@@ -249,8 +249,8 @@ internal class InterlockJitterTest {
         private val solver = XpbdSolver(world)
 
         init {
-            val left = world.addBody(0, 3.0f, AIRBORNE_Y)
-            val right = world.addBody(0, 7.0f, AIRBORNE_Y)
+            val left = world.addBody(1, 6.0f, AIRBORNE_Y)
+            val right = world.addBody(1, 12.0f, AIRBORNE_Y)
             launch(left, closing * 0.5f)
             launch(right, -closing * 0.5f)
         }
@@ -282,14 +282,14 @@ internal class InterlockJitterTest {
         }
 
         private companion object {
-            const val AIRBORNE_Y = 10f
+            const val AIRBORNE_Y = 12f
         }
     }
 
     private companion object {
-        const val NEIGHBOUR_X = 6.5f
-        const val DRAGGED_X = 3.0f
-        const val REST_Y = 1.2f
+        const val NEIGHBOUR_X = 11.0f
+        const val DRAGGED_X = 6.0f
+        const val REST_Y = 2.6f
 
         /** Well units per tick — 3 units/s, an unhurried finger. */
         const val DRAG_PER_TICK = 0.05f

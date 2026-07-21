@@ -16,12 +16,12 @@ import org.junit.jupiter.api.Test
  */
 class StabilityTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     @Test
     fun `a settled pile stays settled`() {
         val config = config()
-        val sim = TestScenes.pile(config, bodies = 24)
+        val sim = TestScenes.pile(config, bodies = 8)
 
         TestScenes.run(sim, SETTLE_FRAMES)
         val settledEnergy = sim.state.kineticEnergy
@@ -67,7 +67,7 @@ class StabilityTest {
         // an assertion rather than a citation.
         for (mass in floatArrayOf(1f, 2f, 4f, 8f)) {
             val config = config().copy(initialPieceMass = mass)
-            val sim = TestScenes.pile(config, bodies = 16)
+            val sim = TestScenes.pile(config, bodies = 6)
             TestScenes.run(sim, SETTLE_FRAMES)
             assertTrue(
                 sim.state.kineticEnergy < config.quietKineticEnergy,
@@ -90,7 +90,7 @@ class StabilityTest {
                 distanceCompliance = compliance,
                 areaCompliance = compliance,
             )
-            val sim = TestScenes.pile(config, bodies = 16)
+            val sim = TestScenes.pile(config, bodies = 6)
             TestScenes.run(sim, SETTLE_FRAMES)
             assertTrue(
                 sim.state.kineticEnergy < config.quietKineticEnergy,
@@ -123,12 +123,12 @@ class StabilityTest {
      * and not a test of anything. Widening to 5.5 restores the two-by-twenty
      * tower the assertions were measured against.
      */
-    private fun deepPileConfig() = SimConfig(lattice = 5, wellWidth = 5.5f, wellHeight = 60f)
+    private fun deepPileConfig() = SimConfig(lattice = 5, wellWidth = 14f, wellHeight = 60f)
 
     @Test
     fun `a deep pile under heavy compression settles`() {
         val config = deepPileConfig()
-        val sim = TestScenes.pile(config, bodies = 40)
+        val sim = TestScenes.pile(config, bodies = 10)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         assertTrue(
@@ -169,7 +169,7 @@ class StabilityTest {
     }
 
     private fun energyAfterSettling(config: SimConfig): Float {
-        val sim = TestScenes.pile(config, bodies = 40)
+        val sim = TestScenes.pile(config, bodies = 10)
         TestScenes.run(sim, SETTLE_FRAMES)
         return sim.state.kineticEnergy
     }

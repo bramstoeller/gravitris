@@ -19,26 +19,59 @@ import gravitris.physics.SoftBodyWorld
  */
 internal object TestScenes {
 
-    /** Centre-to-centre spacing used when seeding a pile. */
-    fun pitchFor(config: SimConfig): Float =
-        SoftBodyWorld(config).pieceExtent * Simulation.PLACEMENT_GAP
+    /**
+     * A centre-to-centre pitch at which two pieces of *any* shape cannot
+     * overlap — twice the largest half-extent plus a diameter of slack. Used by
+     * the capacity test to seed a dense grid without tripping the overlap guard.
+     */
+    fun pitchFor(config: SimConfig): Float {
+        val geom = SoftBodyWorld(config)
+        return 2f * geom.pieceMaxHalfExtent + 2f * geom.particleRadius
+    }
 
-    /** Bodies packed from the floor up, left to right. */
+    /**
+     * A settled pile of [bodies] pieces, with the game **not** dealing — the
+     * caller's own `step`s are pure physics.
+     *
+     * Pieces are dropped one at a time from just above the current pile top via
+     * the [Simulation.addPiece] harness (not the dealer, so `running` stays
+     * false), each settled before the next. This is robust to piece shape and
+     * size: hand-placing a grid at a single-cell pitch would overlap the larger
+     * tetrominoes (ADR 0015) and throw. The x is spread deterministically so the
+     * pile is not a single tower, and the whole thing is a pure function of
+     * (config, bodies), so it is as reproducible as the old grid.
+     */
     fun pile(config: SimConfig, bodies: Int): Simulation {
+        val geom = SoftBodyWorld(config)
+        val halfExtent = geom.pieceMaxHalfExtent
+        val margin = geom.pieceExtent * 0.2f
         val sim = Simulation(config)
-        val pitch = pitchFor(config)
-        val perRow = ((config.wellWidth - pitch) / pitch).toInt() + 1
-        check(perRow >= 1) { "well is narrower than one piece" }
+        val input = InputFrame()
+
+        val edgeGap = geom.pieceExtent * 0.15f
+        val leftMost = halfExtent + geom.particleRadius + edgeGap
+        val rightMost = config.wellWidth - halfExtent - geom.particleRadius - edgeGap
+        val span = (rightMost - leftMost).coerceAtLeast(0f)
+        val centre = 0.5f * config.wellWidth
+
         for (b in 0 until bodies) {
-            sim.addPiece(
-                archetype = b % Simulation.ARCHETYPE_COUNT,
-                centerX = pitch * 0.5f + (b % perRow) * pitch,
-                centerY = pitch * 0.5f + (b / perRow) * pitch,
-            )
+            // Golden-ratio spread across the usable width: even, gap-free, and a
+            // pure function of the piece index.
+            val frac = (b * 0.61803398875f) % 1f
+            val x = if (span <= 0f) centre else leftMost + frac * span
+            val y = stackHeight(sim.state) + halfExtent + margin
+            sim.addPiece(archetype = b % Simulation.ARCHETYPE_COUNT, centerX = x, centerY = y)
+            sim.clearActivePiece()
+            var f = 0
+            while (f < SETTLE_CAP && sim.state.kineticEnergy > config.quietKineticEnergy) {
+                sim.step(input)
+                f++
+            }
         }
-        sim.clearActivePiece()
         return sim
     }
+
+    private const val SETTLE_CAP = 240
 
     fun run(sim: Simulation, frames: Int, input: InputFrame = InputFrame()) {
         repeat(frames) { sim.step(input) }

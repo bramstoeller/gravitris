@@ -27,10 +27,21 @@ internal class SoftBodyWorld(val config: SimConfig) {
 
     // --- geometry -----------------------------------------------------------
 
-    /** Particles along one piece edge. */
+    /** Particles along one cell edge (the quality tier, ADR 0009). */
     val lattice: Int = config.lattice
 
-    val particlesPerBody: Int = lattice * lattice
+    /** Cells in a piece — a tetromino, so four (ADR 0015). */
+    val cellsPerBody: Int = PieceShapes.CELLS
+
+    /** Particles in one `L×L` cell. */
+    val particlesPerCell: Int = lattice * lattice
+
+    /**
+     * Particles in a whole piece: four cells (ADR 0015), constant across all
+     * seven shapes. The shape lives in the cells' rest positions, not in this
+     * count, which is what keeps every fixed-stride assumption below intact.
+     */
+    val particlesPerBody: Int = cellsPerBody * particlesPerCell
 
     /**
      * Full material width of a body, outer edge to outer edge. **The gameplay
@@ -64,18 +75,199 @@ internal class SoftBodyWorld(val config: SimConfig) {
     /**
      * Derived rather than configured: `SimConfig` carries no body-capacity
      * field and adding one would cross a module boundary (docs/contracts.md).
-     * Enough bodies to pack the well twice over, with a floor of 64 so a
-     * narrow benchmark well still holds the ADR 0001 reference scene of 60.
+     * Enough bodies to pack the well twice over. A tetromino covers
+     * [cellsPerBody] cells, so the divisor is that many piece-extents of area,
+     * not one (ADR 0015). Floor of 32 so a narrow benchmark well still holds the
+     * reference scene.
      */
     val maxBodies: Int = max(
-        64,
-        2 * ceil((config.wellWidth * config.wellHeight) / (pieceExtent * pieceExtent).toDouble()).toInt(),
+        32,
+        2 * ceil(
+            (config.wellWidth * config.wellHeight) /
+                (cellsPerBody * pieceExtent * pieceExtent).toDouble(),
+        ).toInt(),
     )
 
     val particleCapacity: Int = maxBodies * particlesPerBody
 
-    private val distancePerBody: Int = 2 * lattice * (lattice - 1) + 2 * (lattice - 1) * (lattice - 1)
-    private val areaPerBody: Int = 2 * (lattice - 1) * (lattice - 1)
+    // Constraints per cell (as a single square lattice, ADR 0001) and per seam
+    // (the bridge that welds two adjacent cells into one body, ADR 0015).
+    private val cellDistance: Int = 2 * lattice * (lattice - 1) + 2 * (lattice - 1) * (lattice - 1)
+    private val cellArea: Int = 2 * (lattice - 1) * (lattice - 1)
+
+    // A seam bridges two facing `L`-particle edges: `L` structural + `2(L-1)`
+    // shear distance constraints, and `2(L-1)` area constraints on the seam
+    // cells. Every body reserves [MAX_SEAMS] seams' worth so the stride is
+    // constant; a tree shape (three seams) pads the fourth inert (ADR 0015).
+    private val seamDistance: Int = lattice + 2 * (lattice - 1)
+    private val seamArea: Int = 2 * (lattice - 1)
+
+    private val distancePerBody: Int = cellsPerBody * cellDistance + MAX_SEAMS * seamDistance
+    private val areaPerBody: Int = cellsPerBody * cellArea + MAX_SEAMS * seamArea
+
+    // --- piece shapes (ADR 0015) --------------------------------------------
+    //
+    // Everything about a shape that does not depend on where it is spawned is
+    // precomputed once here, so [addBody] stays a straight fill of pre-sized
+    // arrays and allocates nothing on the spawn path.
+
+    /** Body-local rest offset of each particle from the piece's bbox centre. */
+    private val shapeLocalX = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+    private val shapeLocalY = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+
+    /** Free-surface flag per particle: 1 on the shape's true outline, 0 inside (incl. seams). */
+    private val shapeEdge = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+
+    /** Seam distance-constraint index pairs (body-local), padded inert to [MAX_SEAMS]. */
+    private val shapeSeamDistA = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamDistance) }
+    private val shapeSeamDistB = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamDistance) }
+
+    /** Seam area-constraint index triples (body-local), padded inert to [MAX_SEAMS]. */
+    private val shapeSeamAreaA = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
+    private val shapeSeamAreaB = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
+    private val shapeSeamAreaC = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
+
+    /** Per-shape bounding half-extents, for the placement bbox reject. */
+    private val shapeHalfW = FloatArray(PieceShapes.COUNT)
+    private val shapeHalfH = FloatArray(PieceShapes.COUNT)
+
+    /**
+     * Largest half-height of any shape. `Simulation` spawns every piece with its
+     * centre this far below the well top plus a radius, so even the tallest
+     * shape starts wholly inside.
+     */
+    var pieceMaxHalfHeight: Float = 0f
+        private set
+
+    /** Largest half-width of any shape (the I piece). For safe scene packing. */
+    var pieceMaxHalfWidth: Float = 0f
+        private set
+
+    /**
+     * Half the side of the smallest square box that contains any shape in any
+     * orientation — `max` of the two half-extents. Two pieces placed this far
+     * apart, centre to centre, cannot overlap whatever their shapes, so scene
+     * builders pack against it (a rotation never exceeds it either).
+     */
+    val pieceMaxHalfExtent: Float get() = max(pieceMaxHalfWidth, pieceMaxHalfHeight)
+
+    init { buildShapes() }
+
+    private fun bodyLocal(cell: Int, row: Int, col: Int): Int =
+        cell * particlesPerCell + row * lattice + col
+
+    private fun buildShapes() {
+        for (arch in 0 until PieceShapes.COUNT) {
+            var minCol = Int.MAX_VALUE
+            var maxCol = Int.MIN_VALUE
+            var minRow = Int.MAX_VALUE
+            var maxRow = Int.MIN_VALUE
+            for (cell in 0 until PieceShapes.CELLS) {
+                val cx = PieceShapes.cellX(arch, cell)
+                val cy = PieceShapes.cellY(arch, cell)
+                if (cx * lattice < minCol) minCol = cx * lattice
+                if (cx * lattice + lattice - 1 > maxCol) maxCol = cx * lattice + lattice - 1
+                if (cy * lattice < minRow) minRow = cy * lattice
+                if (cy * lattice + lattice - 1 > maxRow) maxRow = cy * lattice + lattice - 1
+            }
+            val centreCol = 0.5f * (minCol + maxCol)
+            val centreRow = 0.5f * (minRow + maxRow)
+
+            for (cell in 0 until PieceShapes.CELLS) {
+                val cx = PieceShapes.cellX(arch, cell)
+                val cy = PieceShapes.cellY(arch, cell)
+                val hasLeft = PieceShapes.neighbour(arch, cell, -1, 0) >= 0
+                val hasRight = PieceShapes.neighbour(arch, cell, 1, 0) >= 0
+                val hasDown = PieceShapes.neighbour(arch, cell, 0, -1) >= 0
+                val hasUp = PieceShapes.neighbour(arch, cell, 0, 1) >= 0
+                for (row in 0 until lattice) {
+                    for (col in 0 until lattice) {
+                        val local = bodyLocal(cell, row, col)
+                        val x = (cx * lattice + col - centreCol) * spacing
+                        val y = (cy * lattice + row - centreRow) * spacing
+                        shapeLocalX[arch][local] = x
+                        shapeLocalY[arch][local] = y
+                        // A particle is free surface only on a cell edge with no
+                        // neighbouring cell — seam-facing edges read as interior
+                        // so they carry no rim light (ADR 0015, B2 rendering).
+                        val free = (col == 0 && !hasLeft) ||
+                            (col == lattice - 1 && !hasRight) ||
+                            (row == 0 && !hasDown) ||
+                            (row == lattice - 1 && !hasUp)
+                        shapeEdge[arch][local] = if (free) 1f else 0f
+                        val ax = if (x < 0) -x else x
+                        val ay = if (y < 0) -y else y
+                        if (ax > shapeHalfW[arch]) shapeHalfW[arch] = ax
+                        if (ay > shapeHalfH[arch]) shapeHalfH[arch] = ay
+                    }
+                }
+            }
+            if (shapeHalfH[arch] > pieceMaxHalfHeight) pieceMaxHalfHeight = shapeHalfH[arch]
+            if (shapeHalfW[arch] > pieceMaxHalfWidth) pieceMaxHalfWidth = shapeHalfW[arch]
+            buildSeams(arch)
+        }
+    }
+
+    /**
+     * Bridges every pair of adjacent cells in shape [arch] with structural,
+     * shear and area constraints across the 2r seam, then pads the unused seam
+     * slots inert (self-referential, skipped by the solver's EPS guards) so the
+     * constraint stride is the same for all seven shapes (ADR 0015).
+     */
+    private fun buildSeams(arch: Int) {
+        var d = 0
+        var a = 0
+        val L = lattice
+        for (cell in 0 until PieceShapes.CELLS) {
+            val right = PieceShapes.neighbour(arch, cell, 1, 0)
+            if (right >= 0) {
+                for (r in 0 until L) {
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, r, L - 1)
+                    shapeSeamDistB[arch][d] = bodyLocal(right, r, 0); d++
+                }
+                for (r in 0 until L - 1) {
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, r, L - 1)
+                    shapeSeamDistB[arch][d] = bodyLocal(right, r + 1, 0); d++
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, r + 1, L - 1)
+                    shapeSeamDistB[arch][d] = bodyLocal(right, r, 0); d++
+                    // Two CCW triangles of the seam cell, matching addArea's sign.
+                    shapeSeamAreaA[arch][a] = bodyLocal(cell, r, L - 1)
+                    shapeSeamAreaB[arch][a] = bodyLocal(right, r, 0)
+                    shapeSeamAreaC[arch][a] = bodyLocal(right, r + 1, 0); a++
+                    shapeSeamAreaA[arch][a] = bodyLocal(cell, r, L - 1)
+                    shapeSeamAreaB[arch][a] = bodyLocal(right, r + 1, 0)
+                    shapeSeamAreaC[arch][a] = bodyLocal(cell, r + 1, L - 1); a++
+                }
+            }
+            val up = PieceShapes.neighbour(arch, cell, 0, 1)
+            if (up >= 0) {
+                for (c in 0 until L) {
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, L - 1, c)
+                    shapeSeamDistB[arch][d] = bodyLocal(up, 0, c); d++
+                }
+                for (c in 0 until L - 1) {
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, L - 1, c)
+                    shapeSeamDistB[arch][d] = bodyLocal(up, 0, c + 1); d++
+                    shapeSeamDistA[arch][d] = bodyLocal(cell, L - 1, c + 1)
+                    shapeSeamDistB[arch][d] = bodyLocal(up, 0, c); d++
+                    shapeSeamAreaA[arch][a] = bodyLocal(cell, L - 1, c)
+                    shapeSeamAreaB[arch][a] = bodyLocal(cell, L - 1, c + 1)
+                    shapeSeamAreaC[arch][a] = bodyLocal(up, 0, c + 1); a++
+                    shapeSeamAreaA[arch][a] = bodyLocal(cell, L - 1, c)
+                    shapeSeamAreaB[arch][a] = bodyLocal(up, 0, c + 1)
+                    shapeSeamAreaC[arch][a] = bodyLocal(up, 0, c); a++
+                }
+            }
+        }
+        // Inert padding: a==b (distance) and a==b==c (area) are zero-length /
+        // zero-area, so the solver's `d < EPS` / `wsum < EPS` guards skip them.
+        while (d < shapeSeamDistA[arch].size) {
+            shapeSeamDistA[arch][d] = 0; shapeSeamDistB[arch][d] = 0; d++
+        }
+        while (a < shapeSeamAreaA[arch].size) {
+            shapeSeamAreaA[arch][a] = 0; shapeSeamAreaB[arch][a] = 0; shapeSeamAreaC[arch][a] = 0; a++
+        }
+    }
 
     // --- particle state -----------------------------------------------------
 
@@ -178,8 +370,9 @@ internal class SoftBodyWorld(val config: SimConfig) {
     // --- construction -------------------------------------------------------
 
     /**
-     * Places one body with its lattice centred on ([centerX], [centerY]) and
-     * returns its index.
+     * Places a tetromino of shape [archetype] with its bounding-box centre on
+     * ([centerX], [centerY]) and returns its index (ADR 0015). Four cells, laid
+     * out from the precomputed shape offsets and welded by seam constraints.
      *
      * **Placement is validated, not trusted.** The spike
      * (`/work/spike/solver-budget/README.md`) records that seeding bodies less
@@ -190,7 +383,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
      * this throws rather than silently seeding a scene whose physics cannot be
      * trusted.
      *
-     * @throws IllegalStateException if capacity is exhausted, or the body
+     * @throws IllegalStateException if capacity is exhausted, or the piece
      *   would start outside the well or overlapping existing material.
      */
     fun addBody(archetype: Int, centerX: Float, centerY: Float): Int {
@@ -198,17 +391,13 @@ internal class SoftBodyWorld(val config: SimConfig) {
             "soft-body capacity exhausted: $maxBodies bodies for a " +
                 "${config.wellWidth}x${config.wellHeight} well at lattice $lattice"
         }
-
-        val half = pieceWidth * 0.5f
-        check(fitsInWell(centerX, centerY)) {
-            "body at ($centerX, $centerY) does not fit inside the well " +
-                "x=[$wellMinX, $wellMaxX] y>=$wellFloorY: piece spans " +
-                "x=[${centerX - half - particleRadius}, ${centerX + half + particleRadius}] " +
-                "y>=${centerY - half - particleRadius}"
+        check(fitsInWell(archetype, centerX, centerY)) {
+            "piece $archetype at ($centerX, $centerY) does not fit inside the well " +
+                "x=[$wellMinX, $wellMaxX] y>=$wellFloorY"
         }
-        check(!overlapsExistingMaterial(centerX, centerY)) {
-            "body at ($centerX, $centerY) would be seeded overlapping existing material; " +
-                "the contact solver would convert the overlap into launch energy " +
+        check(!overlapsExistingMaterial(archetype, centerX, centerY)) {
+            "piece $archetype at ($centerX, $centerY) would be seeded overlapping existing " +
+                "material; the contact solver would convert the overlap into launch energy " +
                 "(see spike README bug 1). Callers that can legitimately be blocked " +
                 "must ask canPlace() first rather than catching this"
         }
@@ -219,40 +408,48 @@ internal class SoftBodyWorld(val config: SimConfig) {
         val particleMass = config.initialPieceMass
         val inv = 1f / particleMass
         val edgeSpan = (lattice - 1).toFloat()
+        val lx = shapeLocalX[archetype]
+        val ly = shapeLocalY[archetype]
+        val edge = shapeEdge[archetype]
 
-        for (row in 0 until lattice) {
-            for (col in 0 until lattice) {
-                val i = base + row * lattice + col
-                posX[i] = centerX - half + col * spacing
-                posY[i] = centerY - half + row * spacing
-                framePrevX[i] = posX[i]
-                framePrevY[i] = posY[i]
-                substepPrevX[i] = posX[i]
-                substepPrevY[i] = posY[i]
-                velX[i] = 0f
-                velY[i] = 0f
-                mass[i] = particleMass
-                invMass[i] = inv
-                particleBody[i] = body
-                particleU[i] = col / edgeSpan
-                particleV[i] = row / edgeSpan
-                particleEdge[i] =
-                    if (row == 0 || row == lattice - 1 || col == 0 || col == lattice - 1) 1f else 0f
-                particleCompression[i] = 1f
-                particleContact[i] = 0f
-                gravityScale[i] = 1f
-                inContactThisTick[i] = false
-                inContactLastTick[i] = false
+        for (cell in 0 until cellsPerBody) {
+            for (row in 0 until lattice) {
+                for (col in 0 until lattice) {
+                    val local = cell * particlesPerCell + row * lattice + col
+                    val i = base + local
+                    posX[i] = centerX + lx[local]
+                    posY[i] = centerY + ly[local]
+                    framePrevX[i] = posX[i]
+                    framePrevY[i] = posY[i]
+                    substepPrevX[i] = posX[i]
+                    substepPrevY[i] = posY[i]
+                    velX[i] = 0f
+                    velY[i] = 0f
+                    mass[i] = particleMass
+                    invMass[i] = inv
+                    particleBody[i] = body
+                    // UV tiles per cell (each cell 0..1), so the material grain
+                    // reads the same on a tetromino cell as on the old block.
+                    particleU[i] = col / edgeSpan
+                    particleV[i] = row / edgeSpan
+                    particleEdge[i] = edge[local]
+                    particleCompression[i] = 1f
+                    particleContact[i] = 0f
+                    gravityScale[i] = 1f
+                    inContactThisTick[i] = false
+                    inContactLastTick[i] = false
+                }
             }
         }
         particleCount += particlesPerBody
 
-        addConstraints(base)
+        addConstraints(archetype, base)
         return body
     }
 
     /**
-     * Whether a body could be seeded at ([centerX], [centerY]) right now.
+     * Whether a piece of shape [archetype] could be seeded at
+     * ([centerX], [centerY]) right now.
      *
      * The spawner needs to *ask* rather than to try and recover, because a
      * blocked spawn is not an error: it is the state ADR 0005 turns into the
@@ -261,39 +458,47 @@ internal class SoftBodyWorld(val config: SimConfig) {
      * legitimate reason to find the well full, and it must find out without
      * relying on an exception for control flow.
      */
-    fun canPlace(centerX: Float, centerY: Float): Boolean =
+    fun canPlace(archetype: Int, centerX: Float, centerY: Float): Boolean =
         bodyCount < maxBodies &&
-            fitsInWell(centerX, centerY) &&
-            !overlapsExistingMaterial(centerX, centerY)
+            fitsInWell(archetype, centerX, centerY) &&
+            !overlapsExistingMaterial(archetype, centerX, centerY)
 
-    private fun fitsInWell(centerX: Float, centerY: Float): Boolean {
-        val half = pieceWidth * 0.5f
-        return centerX - half - particleRadius >= wellMinX &&
-            centerX + half + particleRadius <= wellMaxX &&
-            centerY - half - particleRadius >= wellFloorY
+    private fun fitsInWell(archetype: Int, centerX: Float, centerY: Float): Boolean {
+        val lx = shapeLocalX[archetype]
+        val ly = shapeLocalY[archetype]
+        for (k in 0 until particlesPerBody) {
+            val x = centerX + lx[k]
+            val y = centerY + ly[k]
+            // Open top: a piece may extend above the well while it spawns.
+            if (x - particleRadius < wellMinX ||
+                x + particleRadius > wellMaxX ||
+                y - particleRadius < wellFloorY
+            ) {
+                return false
+            }
+        }
+        return true
     }
 
     /**
      * O(n*m) and deliberately so: this runs on spawn and on scene setup, not
-     * on the per-frame path.
+     * on the per-frame path. A per-existing-particle bounding-box reject keeps
+     * the inner loop off most of the pile.
      */
-    private fun overlapsExistingMaterial(centerX: Float, centerY: Float): Boolean {
-        val half = pieceWidth * 0.5f
+    private fun overlapsExistingMaterial(archetype: Int, centerX: Float, centerY: Float): Boolean {
+        val lx = shapeLocalX[archetype]
+        val ly = shapeLocalY[archetype]
         val minGapSq = (2f * particleRadius) * (2f * particleRadius)
-        // Cheap reject: outside the new body's bounding circle plus a particle
-        // diameter cannot overlap any of its particles.
-        val reach = pieceWidth * 0.7072f + 2f * particleRadius
-        val reachSq = reach * reach
+        val reachX = shapeHalfW[archetype] + 2f * particleRadius
+        val reachY = shapeHalfH[archetype] + 2f * particleRadius
         for (i in 0 until particleCount) {
             val dx = posX[i] - centerX
             val dy = posY[i] - centerY
-            if (dx * dx + dy * dy > reachSq) continue
-            for (row in 0 until lattice) {
-                for (col in 0 until lattice) {
-                    val ex = posX[i] - (centerX - half + col * spacing)
-                    val ey = posY[i] - (centerY - half + row * spacing)
-                    if (ex * ex + ey * ey < minGapSq) return true
-                }
+            if (dx < -reachX || dx > reachX || dy < -reachY || dy > reachY) continue
+            for (k in 0 until particlesPerBody) {
+                val ex = posX[i] - (centerX + lx[k])
+                val ey = posY[i] - (centerY + ly[k])
+                if (ex * ex + ey * ey < minGapSq) return true
             }
         }
         return false
@@ -403,7 +608,27 @@ internal class SoftBodyWorld(val config: SimConfig) {
         }
     }
 
-    private fun addConstraints(base: Int) {
+    /**
+     * All constraints of one piece: the four cells' own lattices, then the seam
+     * bridges that weld adjacent cells together (ADR 0015). The order — cells
+     * first, seams (padded to [MAX_SEAMS]) last — is identical for every shape,
+     * which is what keeps [distancePerBody]/[areaPerBody] a constant stride and
+     * lets [removeBody] swap a body with three contiguous copies.
+     */
+    private fun addConstraints(archetype: Int, base: Int) {
+        for (cell in 0 until cellsPerBody) {
+            addCellConstraints(base + cell * particlesPerCell)
+        }
+        val sda = shapeSeamDistA[archetype]
+        val sdb = shapeSeamDistB[archetype]
+        for (k in sda.indices) addDistance(base + sda[k], base + sdb[k])
+        val saa = shapeSeamAreaA[archetype]
+        val sab = shapeSeamAreaB[archetype]
+        val sac = shapeSeamAreaC[archetype]
+        for (k in saa.indices) addArea(base + saa[k], base + sab[k], base + sac[k])
+    }
+
+    private fun addCellConstraints(base: Int) {
         // Structural: horizontal and vertical lattice edges.
         for (row in 0 until lattice) {
             for (col in 0 until lattice - 1) {
@@ -465,5 +690,15 @@ internal class SoftBodyWorld(val config: SimConfig) {
             sum += mass[i] * (velX[i] * velX[i] + velY[i] * velY[i])
         }
         return 0.5f * sum
+    }
+
+    private companion object {
+        /**
+         * Seam slots reserved per piece. A tetromino's four cells form a tree
+         * (three adjacencies) except the O, which has a cycle (four). Reserving
+         * the maximum and padding the unused slot inert keeps the constraint
+         * stride constant across all seven shapes (ADR 0015).
+         */
+        const val MAX_SEAMS = 4
     }
 }

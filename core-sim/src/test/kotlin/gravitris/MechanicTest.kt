@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test
  */
 class MechanicTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     // --- spawning -----------------------------------------------------------
 
@@ -93,7 +93,7 @@ class MechanicTest {
         // where only the timeout can lock, is the next test.)
         val sim = Simulation(config().copy(lockTimeoutTicks = 100_000))
         assertTrue(
-            locksWithin(sim, 300),
+            locksWithin(sim, 500),
             "a piece dropped into an empty well must go still and lock via kinetic energy",
         )
     }
@@ -145,7 +145,7 @@ class MechanicTest {
     @Test
     fun `coverage bands fill from the floor up as material settles`() {
         val config = config()
-        val sim = TestScenes.pile(config, bodies = 9) // three rows
+        val sim = TestScenes.pile(config, bodies = 4) // three rows
         TestScenes.run(sim, 400)
         val fill = sim.state.bandFill
 
@@ -317,7 +317,7 @@ class MechanicTest {
     // --- shared scene helpers ----------------------------------------------
 
     private fun settledMaxFill(): Float {
-        val sim = TestScenes.pile(config(), bodies = 9)
+        val sim = TestScenes.pile(config(), bodies = 4)
         TestScenes.run(sim, 400)
         return sim.state.bandFill.max()
     }
@@ -327,7 +327,7 @@ class MechanicTest {
      * the next lock evaluates the clear rule against a well-filled floor.
      */
     private fun startedOnSettledPile(threshold: Float): Simulation {
-        val sim = TestScenes.pile(config(), bodies = 9)
+        val sim = TestScenes.pile(config(), bodies = 4)
         TestScenes.run(sim, 400)
         sim.tuning.clearThreshold = threshold
         sim.start()
