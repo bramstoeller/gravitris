@@ -46,6 +46,16 @@ APK="app/build/outputs/apk/debug/app-debug.apk"
 # time to actually fall and settle before the next screenshot. Overridable.
 SETTLE_SECONDS="${SETTLE_SECONDS:-6}"
 
+# Clear threshold for this run, passed to the app as a debug-only launch extra
+# (MainActivity honours it only on a debuggable build). The shipped default is
+# 0.90 — a band packed almost solidly — which crude adb input on a slow software
+# emulator will not reliably reach inside one scripted session. A lower,
+# reachable value lets the clear (spawn -> lock -> ignite -> remove -> re-settle)
+# actually be filmed; it changes WHEN a band clears, never HOW. Set empty to run
+# at the shipped default and prove only that the mechanic runs, not that it
+# clears.
+CLEAR_THRESHOLD="${CLEAR_THRESHOLD:-0.35}"
+
 EMULATOR_BIN="$ANDROID_HOME/emulator/emulator"
 EMULATOR_STDOUT_LOG="$OUT_DIR/emulator.stdout.log"
 EMULATOR_PID=""
@@ -201,8 +211,22 @@ if echo "$install_output" | grep -q "^Failure"; then
   exit 1
 fi
 
-echo "==> Launching $ACTIVITY"
-start_output="$(adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" 2>&1)" || {
+# Clear the log buffer right before launch so the mechanic events captured at
+# the end belong to this session only. GravitrisPlay is GameRenderer's tag for
+# clear / spawn / game-over events — the unambiguous "a band ignited" signal.
+LOG_TAG="GravitrisPlay"
+adb -s "$SERIAL" logcat -c 2>/dev/null || true
+
+# Pass the debug clear-threshold as a float extra when one is set. `--ef` is an
+# am float extra; MainActivity ignores it on a non-debuggable build.
+THRESHOLD_ARGS=()
+if [ -n "$CLEAR_THRESHOLD" ]; then
+  THRESHOLD_ARGS=(--ef gravitris.debug.clearThreshold "$CLEAR_THRESHOLD")
+  echo "==> Launching $ACTIVITY (debug clearThreshold=$CLEAR_THRESHOLD)"
+else
+  echo "==> Launching $ACTIVITY (shipped clear threshold)"
+fi
+start_output="$(adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" "${THRESHOLD_ARGS[@]}" 2>&1)" || {
   echo "FAIL: am start failed:" >&2
   echo "$start_output" >&2
   exit 1
@@ -269,41 +293,59 @@ harddrop() {  # harddrop <x>
   adb -s "$SERIAL" shell input swipe "$1" "$yTop" "$1" "$yBot" 80
 }
 
-echo "==> Play-through begins (SETTLE_SECONDS=$SETTLE_SECONDS between bursts)"
+echo "==> Play-through begins (clearThreshold=${CLEAR_THRESHOLD:-shipped})"
 
-# Give the first frame time to land. The screenshot script's own settle is the
-# reference; a play-through can afford to be more generous because it is about
-# to run for minutes anyway.
+# Give the first frame time to land.
 sleep 4
-shot 01 launch
+shot 001 launch
 
-# Burst 1: let the first piece fall on its own, then hard-drop it centre.
-sleep "$SETTLE_SECONDS"
-shot 02 first-piece-falling
-harddrop "$xC"
-sleep 2
-shot 03 first-piece-dropped
-
-# Burst 2..N: spread pieces across the well to build coverage, rotating and
-# hard-dropping into alternating columns so material lands wide rather than
-# stacking in one tower. A wide, packed layer is what pushes a coverage band
-# toward its clear threshold.
-cols=("$xL" "$xR" "$xC" "$xR" "$xL" "$xC" "$xL" "$xR" "$xC")
-i=0
-for x in "${cols[@]}"; do
-  i=$((i + 1))
-  rotate
-  move "$xC" "$x"
+# Feed pieces fast and wide, screenshotting densely, so the whole
+# spawn -> fall -> lock -> band-fill -> clear -> re-settle cycle is sampled.
+#
+# Two things make this reliable where the first cut was not:
+#
+#  - Hard-drop every spawned piece. A natural fall is ~135 ticks; a hard drop
+#    lands in a fraction of that. Software rendering runs the sim well below
+#    real time (FrameDriver drops ticks it cannot afford — this device is below
+#    the hardware floor, which is fine for a correctness check), so without the
+#    speed-up too few pieces accumulate to fill a band in a sane session.
+#  - Spread the drops across the floor. A central tower only ever fills the
+#    floor band to about one piece width no matter how tall it gets, because a
+#    band's fill is horizontal coverage; dragging each piece to a cycling column
+#    before dropping builds a wide layer that actually reaches the threshold.
+#
+# The `bodies` figure in the readout is the ground truth: it climbs as pieces
+# lock and DROPS when a band clears and its material is removed. That sawtooth,
+# across the dense frames, is the proof the mechanic runs end to end — read the
+# frames in order and watch it rise and fall.
+xs=("$xC" "$xL" "$xR" "$(( W * 38 / 100 ))" "$(( W * 62 / 100 ))" "$xL" "$xC" "$xR")
+frame=1
+for iter in $(seq 1 30); do
+  x="${xs[$(( (iter - 1) % ${#xs[@]} ))]}"
+  # Nudge the active piece toward its target column (skip a zero-length swipe,
+  # which would read as a tap and rotate), then commit it downward.
+  [ "$x" != "$xC" ] && move "$xC" "$x"
   harddrop "$x"
-  sleep "$SETTLE_SECONDS"
-  printf -v n "%02d" $((3 + i))
-  shot "$n" "piece-$i-col"
+  [ $(( iter % 6 )) -eq 0 ] && rotate
+  sleep 2
+  frame=$((frame + 1))
+  printf -v nn "%03d" "$frame"
+  shot "$nn" "t$(printf '%02d' "$iter")"
 done
 
-# Let whatever is going to happen (a clear-and-resettle, if the mechanic is
-# running) play out, then capture the final state.
-sleep "$SETTLE_SECONDS"
-shot 20 after-settle
+# Let the last clear-and-re-settle finish, then capture the final state.
+sleep 4
+shot 999 after-settle
+
+# Dump the mechanic event log — the definitive record of what actually happened:
+# every clear (with the body count and the fill that triggered it), every spawn,
+# and any game over. This is what turns the screenshots from "gel blobs on a
+# software renderer" into a yes/no.
+MECHANIC_LOG="$OUT_DIR/mechanic.log"
+adb -s "$SERIAL" logcat -d -s "$LOG_TAG:I" > "$MECHANIC_LOG" 2>/dev/null || true
+clears_logged=$(grep -c "^.*clear #" "$MECHANIC_LOG" 2>/dev/null || echo 0)
+spawns_logged=$(grep -c "^.*spawn #" "$MECHANIC_LOG" 2>/dev/null || echo 0)
+echo "==> Mechanic log: $MECHANIC_LOG ($clears_logged clears, $spawns_logged spawns)"
 
 cat <<EOF
 

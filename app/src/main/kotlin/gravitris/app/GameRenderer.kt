@@ -10,11 +10,13 @@ import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
 import gravitris.app.perf.FrameSnapshot
 import gravitris.app.perf.FrameStats
-import gravitris.app.toy.SquishToy
 import gravitris.game.InputFrame
+import gravitris.game.Phase
 import gravitris.game.SimConfig
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.ceil
+import kotlin.math.max
 
 /**
  * The render loop: the ADR 0006 accumulator, the ADR 0007 upload, the frame
@@ -39,6 +41,24 @@ class GameRenderer(
      * forty times its intended speed until the next inset change.
      */
     private val onLayout: (Float) -> Unit,
+    /**
+     * Called on the GL thread the first time the simulation reaches
+     * [Phase.GameOver] (the well topped out and the settle grace expired —
+     * ADR 0005, landed in the core by the Backend Engineer). The shell posts
+     * this to the UI thread to raise the game-over overlay; [restart] clears it.
+     *
+     * Without this the app would sit frozen on a topped-out stack with no way
+     * out — worse than the toy's honest reset, which is exactly why it is wired
+     * the moment `Simulation.start()` makes the phase reachable.
+     */
+    private val onGameOver: () -> Unit,
+    /**
+     * Debug-only clear-threshold override, or null for the [SimConfig] default.
+     * Threaded into every [GameSession] this builds; `MainActivity` supplies it
+     * only on a debuggable build. See [GameSession]'s parameter for why it
+     * exists (so `make playthrough` can force a clear on the software emulator).
+     */
+    private val clearThresholdOverride: Float? = null,
 ) : GLSurfaceView.Renderer {
 
     /** Owned by the GL thread. Never read from the UI thread — see [onLayout]. */
@@ -54,17 +74,75 @@ class GameRenderer(
      * So this is null until then, and is replaced — not mutated — if the safe
      * area changes under a rotation or a multi-window resize.
      */
-    private var toy: SquishToy? = null
+    private var session: GameSession? = null
 
-    /** The config [toy] was built from, so a layout pass that produces the same
-     *  well does not throw the player's stack away. */
-    private var toyConfig: SimConfig? = null
+    /** The config [session] was built from, so a layout pass that produces the
+     *  same well does not throw the player's stack away. */
+    private var sessionConfig: SimConfig? = null
 
-    /** [SquishToy.resets] as last seen, to notice the well being emptied. */
-    private var observedResets = 0
+    /**
+     * [gravitris.game.SimState.tick] as last seen. [FrameDriver] runs the tick
+     * loop now, so haptics are drained once per rendered frame from the last
+     * tick's impacts; comparing the published tick is how the GL thread knows
+     * whether the simulation actually advanced this frame, so a frame that ran
+     * no tick does not re-accumulate the previous one.
+     */
+    private var lastTick = 0
 
-    private val inputFrame = InputFrame()
-    private val mesh = BodyMesh(maxBodies = Tunables.TOY_MAX_BODIES, lattice = Tunables.TOY_LATTICE)
+    /** Whether [onGameOver] has already fired for the current session, so it is
+     *  raised once per game-over rather than every frame the phase holds. Reset
+     *  when a session is (re)built. */
+    private var wasGameOver = false
+
+    // --- mechanic instrumentation -------------------------------------------
+    // Counters that turn "watch gel blobs on a software renderer" into a
+    // definite yes/no: a clear is unambiguously a [Phase.Clearing] entry, a
+    // spawn an activePieceBody going from -1 to a real index. Surfaced in the
+    // readout and logged (with bodies + the fill that triggered the clear) so a
+    // play-through can prove a band actually ignites and dissolves rather than
+    // the well quietly emptying for some other reason.
+    private var clearsSeen = 0
+    private var spawnsSeen = 0
+    private var wasClearing = false
+    private var prevActivePiece = -1
+
+    fun clearCount(): Int = clearsSeen
+    fun spawnCount(): Int = spawnsSeen
+
+    /**
+     * The per-tick input drain handed to [GameSession.advance]. Field-held so
+     * the per-frame render path allocates nothing (ADR 0007). [FrameDriver]
+     * calls it with a reused frame immediately before each tick; draining the
+     * intent buffer here is what delivers a tap or a drag to exactly one tick,
+     * even when catch-up runs several — see [GameSession].
+     */
+    private val drainTick: (InputFrame) -> Unit = { intent.drainInto(it) }
+
+    /**
+     * Most bodies the mesh must ever hold — the core's own derived cap for the
+     * largest well this app can produce.
+     *
+     * The toy sized this at a fixed 40 because it reset the well before then;
+     * the real game deals pieces until the spawn region is blocked, so it fills
+     * to `SoftBodyWorld.maxBodies` — `max(64, 2*ceil(wellArea/pieceExtent^2))`.
+     * The well width is fixed and its height is capped at
+     * [Tunables.WELL_HEIGHT_MAX_WORLD], so the worst case is a known config,
+     * computed here once rather than resizing GL buffers on every rotation.
+     *
+     * This mirrors the core formula; [rebuildSimulationIfWellChanged] asserts the
+     * actual session's capacity fits, so a drift in either formula fails loudly
+     * at build-a-well time instead of overflowing the vertex buffer mid-draw.
+     */
+    private val maxBodies: Int = run {
+        val worst = SimConfig(
+            lattice = Tunables.TOY_LATTICE,
+            wellWidth = Tunables.WELL_WIDTH_WORLD,
+            wellHeight = Tunables.WELL_HEIGHT_MAX_WORLD,
+        )
+        val ext = worst.pieceExtent
+        max(64, 2 * ceil(worst.wellWidth * worst.wellHeight / (ext * ext).toDouble()).toInt())
+    }
+    private val mesh = BodyMesh(maxBodies = maxBodies, lattice = Tunables.TOY_LATTICE)
     private val wellFrame = WellFrame()
     private val stats = FrameStats()
     private val snapshot = FrameSnapshot()
@@ -120,7 +198,6 @@ class GameRenderer(
     private val scale = FloatArray(2)
     private val offset = FloatArray(2)
 
-    private var accumulatorNanos = 0L
     private var lastFrameNanos = 0L
     private var lastStatsPublishNanos = 0L
 
@@ -199,7 +276,7 @@ class GameRenderer(
      */
     fun discardFrameHistory() {
         lastFrameNanos = 0L
-        accumulatorNanos = 0L
+        session?.resetAccumulator()
         stats.reset()
     }
 
@@ -212,7 +289,7 @@ class GameRenderer(
             // would run the accumulator's full catch-up budget on the first
             // frame and the piece would jump.
             lastFrameNanos = 0L
-            accumulatorNanos = 0L
+            session?.resetAccumulator()
             stats.reset()
         }
     }
@@ -255,7 +332,7 @@ class GameRenderer(
 
         layoutDirty = true
         lastFrameNanos = 0L
-        accumulatorNanos = 0L
+        session?.resetAccumulator()
         shaderClockOriginNanos = 0L
         stats.reset()
     }
@@ -331,25 +408,61 @@ class GameRenderer(
             onLayout(layout.worldPerDp)
         }
 
-        val toy = this.toy
-        if (toy == null) {
+        val session = this.session
+        if (session == null) {
             // No well yet, so nothing to simulate or draw. Clearing keeps the
             // surface defined rather than showing whatever the buffer held.
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             return
         }
 
-        val alpha = advanceSimulation(toy, frameStart)
+        val alpha = advanceSimulation(session, frameStart)
 
-        // The toy empties the well on its own when material reaches the top.
-        // The mesh caches archetypes against the body count, which is sound
-        // while bodies are only ever added and wrong the moment they are not.
-        if (toy.resets != observedResets) {
-            observedResets = toy.resets
-            mesh.invalidateArchetypes()
+        val st = session.state
+
+        // Instrument the mechanic. A clear is exactly a [Phase.Clearing] entry;
+        // counting the *transition* (not the frames it holds) and logging the
+        // body count and the fill that triggered it is the unambiguous "a band
+        // ignited and dissolved" signal. A spawn is activePieceBody leaving -1.
+        val clearing = st.phase is Phase.Clearing
+        if (clearing && !wasClearing) {
+            clearsSeen++
+            android.util.Log.i(
+                LOG_TAG,
+                "clear #$clearsSeen tick=${st.tick} bodies=${st.bodyCount} " +
+                    "maxFill=${maxBandFill(st.bandFill)}",
+            )
+        }
+        wasClearing = clearing
+        val active = st.activePieceBody
+        if (prevActivePiece < 0 && active >= 0) {
+            spawnsSeen++
+            android.util.Log.i(LOG_TAG, "spawn #$spawnsSeen tick=${st.tick} bodies=${st.bodyCount}")
+        }
+        prevActivePiece = active
+
+        // Game over is terminal until a restart, so raise the overlay once
+        // rather than every frame the phase holds. Read-don't-retain: the phase
+        // is read fresh here and never captured (Phase.Overflow is a reused,
+        // mutated instance — see its contract). Overflow itself needs no handling
+        // — the stack simply renders while its grace counts down, then either
+        // settles back to Playing or crosses into GameOver here.
+        if (st.phase is Phase.GameOver) {
+            if (!wasGameOver) {
+                wasGameOver = true
+                android.util.Log.i(LOG_TAG, "game over tick=${st.tick} after $clearsSeen clears, $spawnsSeen spawns")
+                onGameOver()
+            }
         }
 
-        val particles = mesh.upload(toy.state, alpha)
+        // A clear removes whole bodies, so the set of bodies shrinks mid-session.
+        // The archetype cache is keyed on the body count and BodyMesh.upload
+        // rewrites the statics whenever that count changes in *either* direction
+        // (BodyMesh.kt: `state.bodyCount != uploadedBodies`), so a clear needs no
+        // separate signal here. The toy's whole-well reset, which did, is gone
+        // with the toy; archetypes are still invalidated on a well-geometry
+        // rebuild in rebuildSimulationIfWellChanged.
+        val particles = mesh.upload(session.state, alpha)
 
         // Everything above is our own work: stepping the simulation and
         // building the vertex buffer. Everything below is submission. The
@@ -375,7 +488,7 @@ class GameRenderer(
         GLES30.glUniform1f(timeUniform, shaderClock(frameStart))
         GLES30.glUniform1i(shadeTierUniform, shadeTier())
 
-        val state = toy.state
+        val state = session.state
         GLES30.glUniform1f(bandBottomYUniform, state.bandBottomY)
         GLES30.glUniform1f(bandInvHeightUniform, 1f / state.bandHeight)
         GLES30.glUniform1fv(bandFillUniform, BAND_COUNT, state.bandFill, 0)
@@ -393,43 +506,53 @@ class GameRenderer(
     }
 
     /**
-     * The ADR 0006 accumulator, verbatim in structure:
+     * Feed this frame's real elapsed time to [FrameDriver] (through the
+     * [GameSession]), run whatever whole ticks it affords, and return the render
+     * interpolation factor for `lerp(prev, current, alpha)`.
      *
-     * ```
-     * accumulator += min(frameDelta, MAX_FRAME_DELTA)
-     * while (accumulator >= TICK) { sim.step(input); accumulator -= TICK }
-     * alpha = accumulator / TICK
-     * ```
+     * The accumulator, the no-clamp policy and the catch-up drop all live in
+     * [FrameDriver] now (ADR 0013), not here. The old shell loop clamped the
+     * delta — `min(frameDelta, MAX_FRAME_DELTA)` — which discards wall-clock time
+     * on an overrun and dilates the game, exactly what the client ruled out
+     * (*"frames skippen is prima ... maar niet vertragen"*). That clamp is gone
+     * with the toy: the real delta is passed straight through, and FrameDriver
+     * answers a slow frame by running more ticks — or dropping time it cannot
+     * afford — never by running a bigger one.
+     *
+     * Input is drained *per tick* through [drainTick], so a tap or a drag delta
+     * lands on exactly one tick even when catch-up runs several; passing one
+     * frame across the whole catch-up (the plain `advance(delta, input)`) would
+     * multiply the drag and fire the one-shot on every tick.
      *
      * @return the interpolation factor for this frame.
      */
-    private fun advanceSimulation(toy: SquishToy, frameStart: Long): Float {
+    private fun advanceSimulation(session: GameSession, frameStart: Long): Float {
         if (paused) return 0f
 
         val previous = lastFrameNanos
         lastFrameNanos = frameStart
         if (previous == 0L) return 0f
 
-        val maxDelta = Tunables.TICK_NANOS * Tunables.MAX_CATCH_UP_TICKS
-        // The clamp is the anti-spiral-of-death guard: after a stall, we drop
-        // simulated time rather than trying to catch up on it, because
-        // catching up costs more time and deepens the stall.
-        accumulatorNanos += (frameStart - previous).coerceIn(0L, maxDelta)
+        // Real elapsed time, never clamped (ADR 0013). coerceAtLeast(0) guards
+        // only against a non-monotonic clock reading — FrameDriver rejects a
+        // negative delta outright, treating it as the caller bug it is.
+        val deltaSeconds = (frameStart - previous).coerceAtLeast(0L).toFloat() / 1_000_000_000f
+        val alpha = session.advance(deltaSeconds, drainTick)
 
-        while (accumulatorNanos >= Tunables.TICK_NANOS) {
-            // drainInto writes all four fields every tick, so the one-shot
-            // flags are cleared by construction. The core deliberately does not
-            // clear them itself — mutating the caller's frame would make a
-            // recorded input sequence behave differently on replay
-            // (handoff 0006) — so a shell that reused a frame without
-            // rewriting it would spin the piece every tick. This one does not.
-            intent.drainInto(inputFrame)
-            toy.step(inputFrame)
-            haptics.accumulate(toy.state.impacts)
-            accumulatorNanos -= Tunables.TICK_NANOS
+        // Haptics once per frame from the last tick's impacts — FrameDriver owns
+        // the tick loop now. Gated on the published tick advancing, so a frame
+        // that ran no tick does not re-accumulate the previous one; the honest
+        // cost is that a catch-up frame that ran several contributes only its
+        // last. Missing an impact pulse while the device is below its hardware
+        // floor (droppedTicks rising) is acceptable degradation — the readout
+        // already surfaces that as jank.
+        val tick = session.state.tick
+        if (tick != lastTick) {
+            lastTick = tick
+            haptics.accumulate(session.state.impacts)
         }
 
-        return accumulatorNanos.toFloat() / Tunables.TICK_NANOS
+        return alpha
     }
 
     /**
@@ -447,6 +570,10 @@ class GameRenderer(
             lattice = Tunables.TOY_LATTICE,
             wellWidth = layout.widthWorld,
             wellHeight = layout.heightWorld,
+            // The app's shipped difficulty (live-tunable), which becomes the
+            // initial MechanicTuning.clearThreshold. Not the core's 0.90 default
+            // — that stays as the brief's reference for tests. See Tunables.
+            clearThreshold = Tunables.CLEAR_THRESHOLD,
         )
         // The fragment shader was compiled with BAND_COUNT baked in as an array
         // bound, before any simulation existed. If a future config changed the
@@ -458,13 +585,49 @@ class GameRenderer(
                 "${config.bandCount}; recompile the fragment shader or stop overriding bandCount"
         }
 
-        if (config == toyConfig) return
+        if (config == sessionConfig) return
+        buildSession(config)
+    }
 
-        toyConfig = config
-        toy = SquishToy(config, maxBodies = Tunables.TOY_MAX_BODIES)
-        observedResets = 0
+    /**
+     * Restart after a game over: rebuild the session for the current well and
+     * clear the game-over latch.
+     *
+     * Reconstruct rather than mutate — `SimConfig` is immutable by design
+     * (ADR 0006) and [GameSession] centralises `Simulation` + `start()` +
+     * `FrameDriver`, so a fresh one *is* the restart, the same shape the toy's
+     * reset had. Called on the GL thread (`MainActivity` queues it) once the
+     * player dismisses the overlay.
+     */
+    fun restart() {
+        buildSession(sessionConfig ?: return)
+    }
+
+    /** Build a fresh [GameSession] for [config] and reset the per-session render
+     *  state. Shared by the well-geometry rebuild and [restart]. */
+    private fun buildSession(config: SimConfig) {
+        val session = GameSession(config, clearThresholdOverride)
+        // The mesh is sized once, for the largest well; every real well is
+        // smaller, so its capacity must fit. Asserted rather than trusted: if
+        // the worst-case estimate above and SoftBodyWorld.maxBodies ever drift
+        // apart, this fails loudly here instead of overflowing the vertex buffer
+        // the first time a well fills past the mesh's size.
+        val particlesPerBody = Tunables.TOY_LATTICE * Tunables.TOY_LATTICE
+        check(session.state.particleCapacity <= maxBodies * particlesPerBody) {
+            "the mesh is sized for $maxBodies bodies ($particlesPerBody particles each) but this " +
+                "well's sim capacity is ${session.state.particleCapacity} particles; the worst-case " +
+                "body estimate has drifted from SoftBodyWorld.maxBodies"
+        }
+        this.session = session
+        sessionConfig = config
+        lastTick = 0
+        wasGameOver = false
+        // Transition trackers reset with the session; the cumulative clear/spawn
+        // counters do not — they are a lifetime instrument across a restart.
+        wasClearing = false
+        prevActivePiece = -1
         mesh.invalidateArchetypes()
-        accumulatorNanos = 0L
+        session.resetAccumulator()
         lastFrameNanos = 0L
         stats.reset()
     }
@@ -489,12 +652,23 @@ class GameRenderer(
     /** Geometry actually submitted this frame, for the readout. */
     fun trianglesDrawn(): Int = mesh.trianglesDrawn()
 
-    fun bodyCount(): Int = toy?.state?.bodyCount ?: 0
+    fun bodyCount(): Int = session?.state?.bodyCount ?: 0
 
     fun dynamicBytesPerFrame(): Int =
-        (toy?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
+        (session?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
+
+    /** The fullest band right now, two decimals, for the clear log. Hand-rolled
+     *  rather than `.max()` to avoid an allocation and a nullable on the array. */
+    private fun maxBandFill(fill: FloatArray): String {
+        var m = 0f
+        for (f in fill) if (f > m) m = f
+        return String.format(java.util.Locale.US, "%.2f", m)
+    }
 
     companion object {
+        /** logcat tag for the mechanic instrumentation (clear/spawn/game-over). */
+        private const val LOG_TAG = "GravitrisPlay"
+
         /** ~4Hz. Fast enough to watch a number move, slow enough not to
          *  pollute the measurement. */
         private const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L

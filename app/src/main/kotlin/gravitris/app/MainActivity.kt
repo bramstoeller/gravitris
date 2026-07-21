@@ -6,11 +6,14 @@ import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
@@ -44,6 +47,11 @@ class MainActivity : Activity() {
     private lateinit var renderer: GameRenderer
     private lateinit var readout: FrameTimeReadout
     private lateinit var haptics: ImpactHaptics
+
+    /** Shown when the well tops out (Phase.GameOver); a tap restarts. GONE
+     *  otherwise. Minimal on purpose — the polished game-over screen is Stage 5
+     *  (docs/ux/screens/game-over.md); this only has to not strand the player. */
+    private lateinit var gameOverView: TextView
 
     private val playerIntent = PlayerIntent()
     private val renderContext = FrameTimeReadout.RenderContext()
@@ -81,11 +89,18 @@ class MainActivity : Activity() {
                 renderContext.masterVibrateOn = haptics.masterVibrateOn
                 renderContext.touchFeedbackOn = haptics.touchFeedbackOn
                 renderContext.shadeLevel = renderer.shadeLevel
+                renderContext.clears = renderer.clearCount()
+                renderContext.spawns = renderer.spawnCount()
                 readout.view.post { readout.update(snapshot, renderContext) }
             },
             onLayout = { worldPerDp ->
                 gameView.post { gameView.configureGestures(worldPerDp) }
             },
+            // Raised on the GL thread when the well tops out (Phase.GameOver);
+            // hop to the UI thread to show the overlay a View can only be touched
+            // from there.
+            onGameOver = { runOnUiThread { showGameOver() } },
+            clearThresholdOverride = debugClearThresholdOverride(),
         )
         gameView.setRenderer(renderer)
         // Must follow setRenderer(): that is what creates the GLThread this
@@ -98,6 +113,8 @@ class MainActivity : Activity() {
         // expose to a screen reader.
         gameView.contentDescription = getString(R.string.game_board)
 
+        gameOverView = buildGameOverOverlay()
+
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(
@@ -108,6 +125,8 @@ class MainActivity : Activity() {
                 ),
             )
             addView(readout.view)
+            // Last, so it sits above the surface and the readout when shown.
+            addView(gameOverView)
         }
         setContentView(root)
 
@@ -358,6 +377,46 @@ class MainActivity : Activity() {
         gameView.queueEvent { renderer.setPaused(value) }
     }
 
+    /**
+     * Build the game-over overlay: a full-bleed scrim with centred text, hidden
+     * until [showGameOver], tapping anywhere restarts.
+     *
+     * A plain `TextView`, no menu — ADR 0010 keeps this shell framework-free and
+     * `docs/ux/screens/game-over.md`'s real screen is Stage 5. This is the
+     * smallest thing that does not strand the player on a dead stack: it says
+     * what happened, and one tap deals a fresh well.
+     */
+    private fun buildGameOverOverlay(): TextView = TextView(this).apply {
+        text = getString(R.string.game_over_message)
+        // color-text on a near-black scrim over the frozen stack (tokens.md).
+        // Not true black: that would hide that a stack is even there — the high
+        // alpha reads as "over the game", not "app gone". AA-contrast either way.
+        setTextColor(Color.argb(255, 0xF2, 0xF1, 0xEC))
+        setBackgroundColor(Color.argb(0xE6, 0x0B, 0x0B, 0x0B))
+        gravity = Gravity.CENTER
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        // Operable: tap anywhere, reachable by keyboard/switch, labelled by its
+        // own text. No animation, so prefers-reduced-motion has nothing to fight.
+        isClickable = true
+        isFocusable = true
+        visibility = View.GONE
+        setOnClickListener {
+            visibility = View.GONE
+            gameView.queueEvent { renderer.restart() }
+        }
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        )
+    }
+
+    /** Raise the game-over overlay. Posted from the GL thread via the renderer's
+     *  `onGameOver`; idempotent, so a repeated call is harmless. */
+    private fun showGameOver() {
+        gameOverView.visibility = View.VISIBLE
+        gameOverView.requestFocus()
+    }
+
     override fun onResume() {
         super.onResume()
         gameView.onResume()
@@ -370,5 +429,29 @@ class MainActivity : Activity() {
         haptics.cancel()
         gameView.queueEvent { renderer.setPaused(true) }
         gameView.onPause()
+    }
+
+    /**
+     * A debug-only clear-threshold override read from the launch intent, or null
+     * to leave the [gravitris.game.SimConfig] default (0.90) in place.
+     *
+     * Gated on `FLAG_DEBUGGABLE`, the same idiom as [runSolverBenchmark] and for
+     * the same reason: the shipped game must not let anyone dial its rules from
+     * outside. It exists so `make playthrough` can pass a reachable threshold
+     * (`--ef $EXTRA_CLEAR_THRESHOLD 0.55`) and film a real band clear on the slow
+     * software emulator, where packing a band to 90% by crude `adb` input in one
+     * scripted session is not reliable. It changes *when* a band clears, never
+     * *how*. A release build ignores it entirely.
+     */
+    private fun debugClearThresholdOverride(): Float? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+        if (!intent.hasExtra(EXTRA_CLEAR_THRESHOLD)) return null
+        val value = intent.getFloatExtra(EXTRA_CLEAR_THRESHOLD, Float.NaN)
+        return if (value.isFinite() && value in 0f..1f) value else null
+    }
+
+    private companion object {
+        /** Launch-intent extra (float, 0..1) for [debugClearThresholdOverride]. */
+        const val EXTRA_CLEAR_THRESHOLD = "gravitris.debug.clearThreshold"
     }
 }

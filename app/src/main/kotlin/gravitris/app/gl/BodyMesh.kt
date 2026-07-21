@@ -276,25 +276,27 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
      * Upload everything that is constant for as long as the current set of
      * bodies exists: the archetype index, and the body UV / free-surface pair.
      *
-     * ## Archetypes are clamped into the palette's range on the way to the GPU
+     * ## Archetypes are folded onto the piece hues on the way to the GPU
      *
      * `uPalette` is a fixed-size array in GLSL and indexing it out of bounds is
      * undefined behaviour — not a wrong colour but anything the driver likes,
      * differing per GPU. The core declares seven archetypes
      * (`Simulation.ARCHETYPE_COUNT`) while docs/ux/piece-identity.md specifies
-     * six hues, so the two counts already disagree and the shell is what stands
-     * between that disagreement and the driver.
+     * six hues, so the two counts disagree and the shell is what stands between
+     * that disagreement and the driver.
      *
-     * [gravitris.app.toy.SquishToy] only ever asks for archetypes in range, so
-     * this clamp should never fire today. It is here because the failure it
-     * prevents is undebuggable from this container and would arrive the first
-     * time Stage 3 introduces a seventh piece.
+     * The real piece sequence deals **all seven** archetypes. The Milestone-1
+     * toy only ever dealt six, so a plain clamp sufficed for it; under the wired
+     * game archetype 6 would clamp to [Palette.SURFACE_INDEX] and paint a piece
+     * in the well-surface grey. [Palette.pieceHue] folds every archetype onto a
+     * real piece hue (0 until [Palette.PIECE_COUNT]) instead — see it for the
+     * 7-vs-6 collision, which is a flagged design decision, not this method's.
      */
     private fun uploadStatics(state: SimState, particles: Int) {
         val particleBody = state.particleBody
         val bodyArchetype = state.bodyArchetype
         for (i in 0 until particles) {
-            archetypeScratch[i] = bodyArchetype[particleBody[i]].coerceIn(0, Palette.SIZE - 1)
+            archetypeScratch[i] = Palette.pieceHue(bodyArchetype[particleBody[i]])
         }
 
         archetypeBuffer.position(0)
