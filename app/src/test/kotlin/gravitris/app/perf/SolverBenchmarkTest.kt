@@ -18,17 +18,25 @@ class SolverBenchmarkTest {
     private fun quickRun() = SolverBenchmark.run(warmupFrames = 60, measuredFrames = 60)
 
     /**
-     * ADR 0001's measured workload, which every budget in the project is built
-     * on: 60 bodies at lattice 4 is 960 particles. If this drifts, the derating
-     * ratio silently starts comparing two different scenes and the number the
-     * client reports becomes meaningless.
+     * The reference workload the derating ratio is built on. It is now
+     * [Simulation.BENCHMARK_BODIES] tetrominoes (ADR 0015), so the particle count
+     * is derived from the core's own scene rather than a literal — pinning a
+     * hard-coded number here is exactly how the two modules drift apart and start
+     * comparing different scenes. The scene is a whole number of four-cell bodies.
      */
     @Test
-    fun `it measures the ADR 0001 reference workload`() {
+    fun `it measures the core's reference workload`() {
+        val scene = Simulation.buildBenchmarkScene().state
         val result = quickRun()
 
-        assertEquals(960, result.particles, "not ADR 0001's 960-particle reference scene")
         assertEquals(Simulation.BENCHMARK_BODIES, result.bodies)
+        assertEquals(scene.bodyCount, result.bodies, "not the core's reference body count")
+        assertEquals(scene.particleCount, result.particles, "not the core's reference scene")
+        assertEquals(
+            Simulation.BENCHMARK_BODIES * scene.particlesPerBody,
+            result.particles,
+            "the reference scene is not a whole number of four-cell tetrominoes",
+        )
     }
 
     @Test

@@ -49,9 +49,13 @@ class SquishToyTest {
 
         assertEquals(1, toy.state.bodyCount)
         assertEquals(0, toy.state.activePieceBody, "the new piece is under player control")
+        // A tetromino is four cells (ADR 0015), so one body is particlesPerBody
+        // particles, not lattice². Read the published count rather than assuming
+        // the single-cell layout the toy used to deal.
         assertEquals(
-            Tunables.TOY_LATTICE * Tunables.TOY_LATTICE,
+            toy.state.particlesPerBody,
             toy.state.particleCount,
+            "one whole piece should be exactly one body's worth of particles",
         )
     }
 

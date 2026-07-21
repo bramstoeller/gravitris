@@ -215,14 +215,21 @@ class RenderFootprintTest {
     }
 
     /**
-     * An undeformed piece must be drawn at the size the solver says it is:
-     * `pieceExtent = PIECE_WIDTH + 2 * particleRadius`. This is the one case
-     * with an exact expected answer, so it catches an extrusion that is close
-     * but not the radius — including a corner treatment that quietly rounds the
-     * silhouette in instead of squaring it off.
+     * An undeformed piece must be drawn at the material extent the solver says it
+     * is: the particle-centre bounding box grown by exactly one [particleRadius]
+     * on every side (ADR 0011).
+     *
+     * A tetromino is four cells (ADR 0015), so its absolute size is shape-
+     * dependent and no single constant like `pieceExtent` describes it. But the
+     * render invariant is shape-agnostic and exact: the outermost cells present a
+     * free edge on every side of the bounding box, so the drawn silhouette is the
+     * centre extent plus a radius per side. Checking the *delta* rather than an
+     * absolute size still catches an extrusion that is close but not the radius —
+     * including a corner treatment that quietly rounds the silhouette in instead
+     * of squaring it off — without hard-coding which shape archetype 0 is.
      */
     @Test
-    fun `a freshly spawned piece is drawn at its full material extent`() {
+    fun `a freshly spawned piece is drawn a radius past its particle centres`() {
         for (lattice in 4..6) {
             val config = SimConfig(lattice = lattice)
             val sim = Simulation(config)
@@ -234,17 +241,20 @@ class RenderFootprintTest {
             var maxX = -Float.MAX_VALUE
             var minY = Float.MAX_VALUE
             var maxY = -Float.MAX_VALUE
+            var minCx = Float.MAX_VALUE
+            var maxCx = -Float.MAX_VALUE
+            var minCy = Float.MAX_VALUE
+            var maxCy = -Float.MAX_VALUE
             for (i in 0 until state.particleCount) {
                 minX = minOf(minX, x(buffer, i)); maxX = maxOf(maxX, x(buffer, i))
                 minY = minOf(minY, y(buffer, i)); maxY = maxOf(maxY, y(buffer, i))
+                minCx = minOf(minCx, state.positionX[i]); maxCx = maxOf(maxCx, state.positionX[i])
+                minCy = minOf(minCy, state.positionY[i]); maxCy = maxOf(maxCy, state.positionY[i])
             }
 
-            // Per ADR 0011 the material extent is the gameplay constant and the
-            // lattice is derived from it, so this is the same number at every
-            // lattice — a quality tier must not change how big a piece is.
-            val extent = config.pieceExtent
-            assertEquals(extent, maxX - minX, 1e-4f, "lattice $lattice: drawn width")
-            assertEquals(extent, maxY - minY, 1e-4f, "lattice $lattice: drawn height")
+            val r = state.particleRadius
+            assertEquals(maxCx - minCx + 2f * r, maxX - minX, 1e-4f, "lattice $lattice: drawn width")
+            assertEquals(maxCy - minCy + 2f * r, maxY - minY, 1e-4f, "lattice $lattice: drawn height")
         }
     }
 

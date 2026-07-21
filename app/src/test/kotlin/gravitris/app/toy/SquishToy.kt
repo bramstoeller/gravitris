@@ -56,15 +56,17 @@ class SquishToy(
         private set
 
     init {
-        // The renderer sizes its vertex and index buffers from [maxBodies], so
-        // a core whose derived capacity is smaller would throw out of
-        // `addPiece` partway through a session rather than here. Checked once,
-        // loudly, at construction.
-        val required = maxBodies * config.lattice * config.lattice
-        check(simulation.state.particleCapacity >= required) {
+        // The toy resets when material reaches the top of the well (see [reset]),
+        // which for tetrominoes — four cells of material each (ADR 0015) — is
+        // reached well before the [maxBodies] backstop: 40 is deliberately "more
+        // than fills any well the layout can produce" (Tunables.TOY_MAX_BODIES),
+        // so a well need not hold all maxBodies bodies and, with tetrominoes, a
+        // small one cannot. What must hold is that the well fits at least one
+        // whole piece, or the toy could never deal anything and addPiece would
+        // throw on the very first spawn. Checked once, loudly, at construction.
+        check(simulation.state.particleCapacity >= simulation.state.particlesPerBody) {
             "the simulation's derived capacity (${simulation.state.particleCapacity} particles) " +
-                "is below the $required the shell is configured for ($maxBodies bodies at " +
-                "lattice ${config.lattice}); lower Tunables.TOY_MAX_BODIES or widen the well"
+                "cannot fit even one ${simulation.state.particlesPerBody}-particle piece; widen the well"
         }
     }
 

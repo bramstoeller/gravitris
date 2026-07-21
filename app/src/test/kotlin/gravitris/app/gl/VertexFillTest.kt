@@ -215,38 +215,56 @@ class VertexFillTest {
     }
 
     /**
-     * The subsurface depth term reads `min(uv, 1 - uv)`, which is only a depth
-     * if the UV genuinely spans 0..1 across a body — and the rim term is only a
-     * rim if the boundary ring is the thing flagged as free surface. Both are
-     * assumptions about the core that the shader cannot check.
+     * The subsurface depth term reads `min(uv, 1 - uv)`, which is only a depth if
+     * the UV genuinely spans 0..1 across each cell — and the rim term is only a
+     * rim if the free-surface flag marks the piece's real outline. Both are
+     * assumptions about the core the shader cannot check.
+     *
+     * A tetromino is four `L×L` cells (ADR 0015). UV is per-cell (0..1 within a
+     * cell), and the edge flag is 1 only on the tetromino's *true outline* — a
+     * cell edge that faces a neighbour cell is a welded seam, interior to the
+     * piece, and is flagged 0 so the rim light does not draw a line down the
+     * middle of the material (backend handoff 0029). So the free surface is a
+     * *subset* of the cell boundaries, never the cell interior.
      */
     @Test
-    fun `body uv spans the full range and the edge flag marks the boundary ring`() {
+    fun `cell uv spans the full range and the edge flag marks the piece outline`() {
         val toy = movingToy()
         val state = toy.state
         val lattice = state.bodyLattice
-        val perBody = lattice * lattice
+        val perCell = lattice * lattice
 
         var sawZero = false
         var sawOne = false
+        var sawEdge = false
         for (i in 0 until state.particleCount) {
-            val row = (i % perBody) / lattice
-            val column = (i % perBody) % lattice
-            val onBoundary =
+            val row = (i % perCell) / lattice
+            val column = (i % perCell) % lattice
+            val onCellBoundary =
                 row == 0 || row == lattice - 1 || column == 0 || column == lattice - 1
+            val edge = state.particleEdge[i]
 
-            assertEquals(
-                if (onBoundary) 1f else 0f,
-                state.particleEdge[i],
-                0f,
-                "particle $i is ${if (onBoundary) "on" else "off"} the boundary ring but " +
-                    "its edge flag says otherwise; the rim light would land in the wrong place",
-            )
+            assertTrue(edge == 0f || edge == 1f, "particle $i edge flag $edge is neither 0 nor 1")
+            if (edge == 1f) {
+                assertTrue(
+                    onCellBoundary,
+                    "particle $i is flagged free surface but sits inside a cell; the rim light " +
+                        "would land in the middle of the material",
+                )
+                sawEdge = true
+            }
+            if (!onCellBoundary) {
+                assertEquals(
+                    0f, edge, 0f,
+                    "particle $i is interior to its cell yet flagged as free surface",
+                )
+            }
             if (state.particleU[i] == 0f) sawZero = true
             if (state.particleU[i] == 1f) sawOne = true
             assertTrue(state.particleU[i] in 0f..1f && state.particleV[i] in 0f..1f)
         }
-        assertTrue(sawZero && sawOne, "body uv does not span 0..1, so depth would never reach 0")
+        assertTrue(sawEdge, "no particle is flagged free surface, so the rim light never draws")
+        assertTrue(sawZero && sawOne, "cell uv does not span 0..1, so depth would never reach 0")
     }
 
     /**
