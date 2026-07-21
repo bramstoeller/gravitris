@@ -195,18 +195,6 @@ class EmberBurst(private val seed: Long = 0x9E3779B97F4A7C15uL.toLong()) {
         GLES30.glDisable(GLES30.GL_BLEND)
     }
 
-    /** True while any ember is still alive, so the renderer knows whether the
-     *  burst still needs drawing. Cheap: a scan of one Long array. */
-    fun hasLiveEmbers(nowNanos: Long): Boolean {
-        for (i in 0 until POOL) {
-            val born = spawnNanos[i]
-            if (born != 0L &&
-                (nowNanos - born) / 1_000_000_000f < EmberTrajectory.LIFE_SECONDS
-            ) return true
-        }
-        return false
-    }
-
     /** Emit one ember's two triangles (six vertices) into [scratch] at [cursor],
      *  returning the new cursor. Each vertex is [x, y, r, g, b, u, v]. */
     private fun quad(
