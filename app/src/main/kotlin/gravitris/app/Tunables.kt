@@ -226,8 +226,16 @@ object Tunables {
      * a pattern — at a strength where you notice it as a pattern it competes
      * with the compression darkening, which is the term the client has already
      * approved as the weight cue.
+     *
+     * Round 3 (§14) lowers it 0.09 → 0.06: a glossy candy surface reads smooth,
+     * and at 0.09 the mottle was strong enough on-screen to fight the new
+     * specular/subsurface "glass" read, pulling the material back toward a
+     * textured/matte look. The per-archetype grain FREQUENCIES (the identity
+     * ordering, `Palette.grainScales`) are untouched — only the global amplitude
+     * drops — so the tertiary CVD/monochrome cue is preserved, just quieter.
+     * First-pass value; the grain-vs-gloss balance is a client steer.
      */
-    const val GRAIN_GAIN = 0.09f
+    const val GRAIN_GAIN = 0.06f
 
     /** Base grain frequency in cycles across a body, before the per-archetype
      *  multiplier in [Palette.grainScales]. */
@@ -261,7 +269,7 @@ object Tunables {
      * the real tune is on-device, where the highlight's contrast against the
      * saturated base is what actually decides "glossy" vs "washed out".
      */
-    const val SPECULAR_GAIN = 0.70f
+    const val SPECULAR_GAIN = 0.85f
 
     /**
      * Half-width of the gloss streak's feather, in body-UV units (the UV spans
@@ -270,7 +278,7 @@ object Tunables {
      * what sells the material. 0.16 is a thin band; raise it for a fatter,
      * softer highlight, lower it for a harder glint. First-pass; tune on-device.
      */
-    const val SPECULAR_SHARPNESS = 0.16f
+    const val SPECULAR_SHARPNESS = 0.11f
 
     /**
      * How hard a true outer-silhouette corner fades toward `color-tray` (§16).
@@ -282,8 +290,16 @@ object Tunables {
      * own colour (a softer, less-rounded read). The apparent radius
      * (`radius-piece-corner`, ~10–15% of a cell) is reached by tuning this and
      * the shader's cube exponent together, on-device — not a raw geometry value.
+     *
+     * 0.7, not a full 1.0: the fade is toward the tray (`corner-fade-mode`),
+     * correct where a corner sits against the tray or another piece, but on an
+     * airborne piece against the bright sky the same fade reads as a slightly
+     * dark corner fringe rather than a soft round (the compromise §16 already
+     * names). Dialing the gain back keeps the stacked-corner softening the client
+     * asked for while making that airborne fringe gentle — the single most
+     * on-device-and-client-dependent value this round, flagged in the handoff.
      */
-    const val CORNER_GAIN = 1.0f
+    const val CORNER_GAIN = 0.7f
 
     // --- soft contact shadow (docs/ux/visual-direction.md §18) --------------
 
@@ -298,17 +314,25 @@ object Tunables {
     const val SHADOW_G = 0.576f * 0.65f
     const val SHADOW_B = 0.651f * 0.65f
 
-    /** Opacity of the contact shadow (`color-shadow` @ 40%). The shadow is the
-     *  one pass in the renderer that turns `GL_BLEND` on, and only for itself. */
-    const val SHADOW_ALPHA = 0.40f
+    /** Opacity of the contact shadow (`color-shadow` @ ~48%). The shadow is the
+     *  one pass in the renderer that turns `GL_BLEND` on, and only for itself.
+     *  Nudged up from the token's 40% so the offset sliver actually reads as a
+     *  soft shadow beneath the piece rather than a hairline; first-pass, tune
+     *  on-device against the real tray. */
+    const val SHADOW_ALPHA = 0.48f
 
     /**
      * Shadow offset in world units, down and slightly right (`shadow-offset-
      * piece`, §18). World units so it scales with the piece rather than the
      * screen. Positive Y is up in world space, so "down" is negative Y.
+     *
+     * The token names 0.08; this uses a little more so the shadow peeks out
+     * below the piece as a visible soft band rather than a hairline the piece
+     * almost fully covers — the offset is the only thing that makes the shadow
+     * read at all when a piece rests directly on the tray. First-pass value.
      */
-    const val SHADOW_OFFSET_X = 0.05f
-    const val SHADOW_OFFSET_Y = -0.08f
+    const val SHADOW_OFFSET_X = 0.07f
+    const val SHADOW_OFFSET_Y = -0.14f
 
     // --- antialiasing (docs/ux/visual-direction.md §17) --------------------
 
