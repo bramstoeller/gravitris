@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import gravitris.app.gl.BodyMesh
 import gravitris.app.gl.GlProgram
 import gravitris.app.gl.Shaders
+import gravitris.app.gl.UrgencyBar
 import gravitris.app.gl.WellFrame
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
@@ -144,6 +145,7 @@ class GameRenderer(
     }
     private val mesh = BodyMesh(maxBodies = maxBodies, lattice = Tunables.TOY_LATTICE)
     private val wellFrame = WellFrame()
+    private val urgencyBar = UrgencyBar()
     private val stats = FrameStats()
     private val snapshot = FrameSnapshot()
 
@@ -317,6 +319,7 @@ class GameRenderer(
 
         mesh.create()
         wellFrame.create()
+        urgencyBar.create()
 
         // color-bg #000000 (docs/ux/tokens.md). True black, not near-black:
         // on this device's OLED panel only true black costs near-zero power
@@ -498,6 +501,15 @@ class GameRenderer(
 
         wellFrame.draw()
         mesh.draw()
+
+        // The positioning-window countdown (ADR 0016), drawn last so it reads
+        // above the stack. Its own flat program — the next frame rebinds the gel
+        // program before anything else, so leaving it bound here is harmless.
+        // Zero fraction (the piece is falling, not positioning) is a no-op.
+        val urgency = PositioningUrgency.fraction(
+            state.positioningTicksRemaining, state.positioningWindowTicks,
+        )
+        urgencyBar.draw(urgency, layout.widthWorld, layout.heightWorld, scale, offset)
 
         haptics.flush()
 

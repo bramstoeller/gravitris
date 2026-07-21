@@ -381,6 +381,23 @@ object Tunables {
      */
     const val CLEAR_THRESHOLD = 0.80f
 
+    // --- positioning-window urgency cue (ADR 0016) --------------------------
+
+    /**
+     * Thickness, in world units, of the draining countdown bar that shows how
+     * long the active piece may still be slid before it drops on its own
+     * (`SimState.positioningTicksRemaining`). Drawn across the top of the well,
+     * shrinking toward the centre as the window runs out — the client's *"much
+     * less long able to move"* made visible.
+     *
+     * A deliberately plain placeholder cue: legible enough to feel the pressure,
+     * left for the visual pass to refine (colour, easing, whether it lives at the
+     * top edge or under the piece). 0.6 units is twice the wall thickness
+     * ([gravitris.app.gl.WellFrame]), so it reads as a distinct band rather than
+     * a second wall, against a 20-unit-wide well.
+     */
+    const val POSITIONING_BAR_THICKNESS_WORLD = 0.6f
+
     // --- the Milestone 1 toy ------------------------------------------------
 
     /**
