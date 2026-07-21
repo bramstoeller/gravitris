@@ -86,6 +86,15 @@ class SquishToy(
     }
 
     /**
+     * Probe affordance: shove the active piece downward at [speed], the impact
+     * path the removed hard-drop gesture used to provide (ADR 0016). A straight
+     * passthrough to [Simulation.slamActivePiece] so the material tests can put a
+     * piece at solver terminal speed without reaching through [state]. Not a
+     * player action — the drop is release, and the fall is plain gravity.
+     */
+    fun slamActivePiece(speed: Float) = simulation.slamActivePiece(speed)
+
+    /**
      * Empty the well and start again.
      *
      * A toy affordance, not a losing condition. The client is holding the phone
@@ -160,7 +169,7 @@ class SquishToy(
         val body = simulation.state.activePieceBody
         if (body < 0) return
 
-        if (input.dragX != 0f || input.rotate || input.hardDrop) {
+        if (input.dragX != 0f || input.rotate || input.drop) {
             settledTicks = 0
             return
         }
