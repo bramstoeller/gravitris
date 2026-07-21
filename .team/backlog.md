@@ -20,6 +20,12 @@ The Product Lead owns this file.
 
 ## Deferred — carried to a later iteration
 
+| D6 | Overflow warning cue — no visual signal during the settle-grace window before game-over, so losing feels abrupt. Add a warning glow/pulse as the spawn band nears overflow. | Found by Tech Writer 2026-07-21 verifying the install doc. | 2026-07-21 |
+| D7 | Distinct piece shapes — every piece is the same square lattice; variety is colour-only. A falling-block game wants several shapes (the brief's "pieces"). Needs core piece-shape support + renderer + palette rework. | Found 2026-07-21 (install-doc caveat, code-confirmed). | 2026-07-21 |
+| D8 | Game HUD — score/level display instead of the frame-time readout, and score persistence (personal best). Deferred with the mechanic. | 2026-07-21 |
+
+<!-- older deferred items below -->
+
 Not cancelled. Recorded so the reasoning survives and is not re-derived.
 
 | # | Item | Why deferred | Raised |
