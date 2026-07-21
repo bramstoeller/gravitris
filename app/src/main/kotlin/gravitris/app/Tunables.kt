@@ -159,15 +159,21 @@ object Tunables {
      * exactly, and since that tone is both darker and more saturated the piece
      * reads as a ring of hue around a dark middle — a tube, not a solid.
      *
-     * Round 3 (`visual-direction.md` §14) leans on this term harder: with true
-     * alpha transparency rejected on cost grounds, the subsurface gradient is
-     * the *primary* "this is translucent jelly" cue, so it is raised from round
-     * 2's subtle 0.55 to 0.80 — still short of the tube, but now the depth
-     * gradient is a read the client can see rather than a whisper. It now runs
-     * on body-wide UV (§15), so the gradient sweeps the whole tetromino's
-     * silhouette instead of resetting per cell. First-pass value; tune on-device.
+     * Round 3 (`visual-direction.md` §14) leaned on this term harder and raised
+     * it to 0.80, but in the wrong direction: it mixed the deep tone toward the
+     * piece CENTRE, darkening the middle and leaving the silhouette bright — the
+     * "tube" read, backwards from real candy.
+     *
+     * **Round 4 (§14.2) flips and quiets it.** The shader now concentrates the
+     * deep tone at the true silhouette EDGE (a free square of `1 - depth`), so
+     * this is the plump-jelly-bean rim cue — flat/bright body, a richer/darker
+     * rim right at the outline — not a body-wide translucency wash. Concentrated
+     * at the edge it needs far less gain to read without turning into a heavy
+     * dark ring: 0.80 → 0.40 (§14.2's 0.35–0.45 band). Still on body-wide UV
+     * (§15), so the rim follows the whole tetromino silhouette, not each cell.
+     * First-pass value; tune on-device.
      */
-    const val SUBSURFACE_GAIN = 0.80f
+    const val SUBSURFACE_GAIN = 0.40f
 
     /**
      * Saturation of the deep tone, as a multiplier away from the colour's own
@@ -227,19 +233,38 @@ object Tunables {
      * with the compression darkening, which is the term the client has already
      * approved as the weight cue.
      *
-     * Round 3 (§14) lowers it 0.09 → 0.06: a glossy candy surface reads smooth,
-     * and at 0.09 the mottle was strong enough on-screen to fight the new
-     * specular/subsurface "glass" read, pulling the material back toward a
-     * textured/matte look. The per-archetype grain FREQUENCIES (the identity
-     * ordering, `Palette.grainScales`) are untouched — only the global amplitude
-     * drops — so the tertiary CVD/monochrome cue is preserved, just quieter.
+     * Round 3 lowered it 0.09 → 0.06, but the client played that build and still
+     * called the blocks ugly: at frequency 7 the two-sine mottle aliased into a
+     * visible cross-hatch/waffle that dominated every piece — "grainy rough
+     * rubber", the round-4 correction's primary defect (§14.1).
+     *
+     * **Round 4 (§14.1) cuts it to a barely-there cloud, not a pattern:**
+     * 0.06 → 0.02, roughly a third, paired with the [GRAIN_FREQUENCY] drop
+     * below. Candy is SMOOTH — an unprimed viewer should not describe the
+     * surface as textured/grainy/patterned (§14.1's acceptance check). The
+     * per-archetype grain FREQUENCIES (`Palette.grainScales`, the CVD/monochrome
+     * tertiary identity cue) are untouched — only the global amplitude and the
+     * base frequency drop — so the backup cue survives, just quiet.
      * First-pass value; the grain-vs-gloss balance is a client steer.
      */
-    const val GRAIN_GAIN = 0.06f
+    const val GRAIN_GAIN = 0.02f
 
-    /** Base grain frequency in cycles across a body, before the per-archetype
-     *  multiplier in [Palette.grainScales]. */
-    const val GRAIN_FREQUENCY = 7.0f
+    /**
+     * Base grain frequency in cycles across a body, before the per-archetype
+     * multiplier in [Palette.grainScales].
+     *
+     * Round 4 (§14.1): 7.0 → 2.5. At 7 (up to 14 for the highest-scaled
+     * archetypes) the `mottle()` interference pattern aliased into a countable
+     * waffle grid on a piece only ~150–200px across on the reference device —
+     * the dominant "ugly" defect the client reported. At 2.5 (per-archetype
+     * range ~2.0–5.0) the mottle reads as a soft, barely-there tone rather than
+     * a grid. Note `grain`'s raw value is reused in tier 3 for the ember-shimmer
+     * phase and the dissolve break-up threshold, so this coarsens both — a look
+     * to confirm against `feel-feedback.md` (a bigger candy-chunk dissolve reads
+     * more confectionery, not less); if it ever reads wrong the fix is a
+     * separate tier-3 frequency, not reverting this (§14.1). First-pass value.
+     */
+    const val GRAIN_FREQUENCY = 2.5f
 
     /**
      * Dither amplitude, in units of the 0..1 colour channel.
@@ -272,21 +297,60 @@ object Tunables {
     const val SPECULAR_GAIN = 0.85f
 
     /**
-     * Half-width of the gloss streak's feather, in body-UV units (the UV spans
-     * ~0..1 across the whole piece, §15). Small keeps the streak a sharp bright
-     * line that feathers, not a soft lobe — §14 is emphatic that the SHAPE is
-     * what sells the material. 0.16 is a thin band; raise it for a fatter,
-     * softer highlight, lower it for a harder glint. First-pass; tune on-device.
+     * Half-width of the gloss streak's feather ACROSS its short axis, in body-UV
+     * units (the UV spans ~0..1 across the whole piece, §15). Small keeps the
+     * streak a sharp bright line that feathers, not a soft lobe.
      *
-     * 0.14, up from 0.11: on a large piece (a 4×1 I, or an L) the fixed-position
-     * streak is a thin band that can barely graze the visible mass, so those
-     * pieces read matte next to a compact O the streak crosses fully (the Product
-     * Lead flagged the green pieces reading matte). A slightly wider band gives
-     * every piece a visible glint while staying a hard-edged streak, not a lobe.
-     * The residual shape/hue dependence is a known limit of a single fixed streak
-     * — flagged in the handoff.
+     * Round 4 (§14.3): 0.14 → 0.12. The streak now also tapers ALONG its length
+     * ([SPECULAR_LENGTH]) and carries a tight [SPECULAR_HOTSPOT_RADIUS] hotspot,
+     * so the "reads as a highlight, not a stripe" work no longer rests on the
+     * across-width alone — the across feather can come down slightly and the
+     * gleam still reads. First-pass; tune on-device jointly with the two new
+     * terms below.
      */
-    const val SPECULAR_SHARPNESS = 0.14f
+    const val SPECULAR_SHARPNESS = 0.12f
+
+    /**
+     * Half-length of the gloss streak ALONG its own long axis, in body-UV units
+     * (§14.3). This is the round-4 fix for the "hard diagonal scratch": round 3
+     * had NO falloff along the streak's run direction, so the highlight was a
+     * full-length band bounded only by the piece silhouette — an infinite band
+     * that read as a glitchy scratch, not a gleam. A perpendicular taper turns
+     * it into a soft-ended elongated patch.
+     *
+     * 0.40 (§14.3's 0.35–0.45): roughly a third to half the piece's own extent,
+     * so the gleam reads as "on this piece" rather than a dot. Raise it toward a
+     * longer streak, lower it toward a rounder spot. First-pass; tune on-device.
+     */
+    const val SPECULAR_LENGTH = 0.40f
+
+    /**
+     * Radius of the small tight WET hotspot at the streak's centre, in body-UV
+     * units (§14.3) — the "small bright hotspot" of the client's own ask, riding
+     * the same across/along distance fields as the streak (no new dot product).
+     * The hotspot is the bright wet-glint core; the streak is the softer gleam it
+     * fades into.
+     *
+     * 0.07 (§14.3's 0.06–0.08): small on purpose — it is a hotspot, not a second
+     * streak. First-pass; tune on-device.
+     */
+    const val SPECULAR_HOTSPOT_RADIUS = 0.07f
+
+    /**
+     * Strength of the [SPECULAR_HOTSPOT_RADIUS] hotspot RELATIVE to the streak,
+     * before the shared [SPECULAR_GAIN] (§14.3). The shader adds `streak +
+     * hotspot * this`, then scales the sum by [SPECULAR_GAIN], so 1.0 makes the
+     * hotspot peak match the streak peak (a ~2× brighter wet core where they
+     * overlap), which is the intended small bright glint.
+     *
+     * A dedicated uniform rather than a fixed ratio of [SPECULAR_GAIN] (the
+     * choice §14.3 left to Frontend): the hotspot-vs-streak balance is exactly a
+     * look-call the client steers on-device, and this file's whole discipline is
+     * that such numbers are named constants, not literals baked into the shader.
+     * 0.9 first-pass — a clear glint that stays short of blowing the core to a
+     * hard white disc. Tune on-device.
+     */
+    const val SPECULAR_HOTSPOT_GAIN = 0.9f
 
     /**
      * The `vCorner` threshold above which a true outer-silhouette corner is

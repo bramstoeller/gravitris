@@ -440,6 +440,10 @@ class GameRenderer(
         // §14/§16 glossy jelly candy material constants.
         set("uSpecularGain", Tunables.SPECULAR_GAIN)
         set("uSpecularSharpness", Tunables.SPECULAR_SHARPNESS)
+        // §14.3 round-4 gleam reshape.
+        set("uSpecularLength", Tunables.SPECULAR_LENGTH)
+        set("uSpecularHotspotRadius", Tunables.SPECULAR_HOTSPOT_RADIUS)
+        set("uSpecularHotspotGain", Tunables.SPECULAR_HOTSPOT_GAIN)
         set("uCornerRound", Tunables.CORNER_ROUND)
         set("uGlowGain", Tunables.GLOW_GAIN)
         set("uGlowCapRatio", Tunables.GLOW_CAP_RATIO)

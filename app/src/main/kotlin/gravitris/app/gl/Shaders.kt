@@ -178,6 +178,13 @@ uniform float uDitherGain;
 // silhouette corners fade toward the tray colour (§16 rounded corners).
 uniform float uSpecularGain;
 uniform float uSpecularSharpness;
+// §14.3 round-4 gleam reshape: the streak now tapers along its OWN length
+// (uSpecularLength) and carries a tight bright hotspot (uSpecularHotspotRadius,
+// scaled by uSpecularHotspotGain) at its centre, so it reads as one soft wet
+// gleam instead of the hard full-length diagonal scratch round 3 shipped.
+uniform float uSpecularLength;
+uniform float uSpecularHotspotRadius;
+uniform float uSpecularHotspotGain;
 // §16: the vCorner threshold above which a true corner is rounded away via MSAA
 // alpha-to-coverage. Higher = a smaller (tighter) rounded region.
 uniform float uCornerRound;
@@ -378,7 +385,17 @@ void main() {
         // rather than converting to HSV keeps this to three ops and cannot
         // rotate the hue, which an HSV round-trip at mediump can.
         vec3 deep = mix(vec3(baseLuma), base, uSubsurfaceSaturate) * uSubsurfaceDarken;
-        color = mix(color, deep, depth * uSubsurfaceGain);
+        // Round-4 correction (§14.2): darken toward the true silhouette EDGE,
+        // not the core. `depth` is 0 at the edge and 1 at the core, so round 3's
+        // `mix(color, deep, depth * gain)` darkened the middle and left the rim
+        // bright — the "tube" read, backwards from real candy. Flip it with
+        // `1 - depth` (1 at edge, 0 at core) and square it — a free multiply that
+        // concentrates the darkening in a thin band right at the outline rather
+        // than spreading it across half the body — so the piece reads as a
+        // flat/bright candy with a plump richer rim, the jelly-bean volume cue.
+        float edgeCloseness = 1.0 - depth;
+        float edgeBand = edgeCloseness * edgeCloseness;
+        color = mix(color, deep, edgeBand * uSubsurfaceGain);
 
         // Contact seam / ambient occlusion. piece-identity.md ranks this the
         // PRIMARY small-screen boundary cue, above the lightness ladder,
@@ -395,11 +412,17 @@ void main() {
         float rim = vEdge * vEdge * vEdge * (1.0 - vContact);
         color += RIM_COLOR * (rim * uRimGain);
 
-        // Gloss highlight (§14). A dot product gives the signed distance across
-        // a fixed light direction; squaring a smoothstep band makes it a sharp
-        // bright core that feathers, not a soft wide lobe — which is exactly
-        // why it reads as glass/hard-candy rather than matte gel. One dot, one
-        // smoothstep, one multiply, one add: the same order of cost as the rim.
+        // Gloss highlight (§14, reshaped in round 4 §14.3 into ONE soft wet
+        // gleam). `across` is the signed distance across the streak's short
+        // axis; `along` (a free perpendicular, no second dot with a new const)
+        // is the distance along its LONG axis. Round 3 tapered only across, so
+        // the highlight ran the full silhouette in the light direction — a hard
+        // diagonal band that read as a glitchy scratch. Tapering ALONG as well
+        // (uSpecularLength) closes the ends into a soft elongated patch, and a
+        // tight bright hotspot at the centre (uSpecularHotspotRadius, on the same
+        // across/along fields) is the wet glint the streak fades out from. Still
+        // cheap: one extra dot, two smoothsteps and a couple of multiplies over
+        // round 3 — nowhere near a Phong lobe.
         //
         // Gated to pieces (pieceMask): the well frame draws this program with
         // its material attributes disabled, so vBodyUv reads the generic (0,0)
@@ -409,9 +432,17 @@ void main() {
         // face pressed against a neighbour or the tray is not a free glossy
         // surface.
         float pieceMask = vArchetype < PIECE_COUNT ? 1.0 : 0.0;
+        vec2 alongDir = vec2(-SPEC_DIR.y, SPEC_DIR.x);
         float across = dot(vBodyUv - SPEC_CENTER, SPEC_DIR);
-        float streak = 1.0 - smoothstep(0.0, uSpecularSharpness, abs(across));
-        float spec = streak * streak * pieceMask * (1.0 - vContact);
+        float along = dot(vBodyUv - SPEC_CENTER, alongDir);
+        float acrossFall = 1.0 - smoothstep(0.0, uSpecularSharpness, abs(across));
+        float alongFall = 1.0 - smoothstep(0.0, uSpecularLength, abs(along));
+        float streak = acrossFall * acrossFall * alongFall;
+        // Tight hotspot at the streak's own centre, reusing the two distances.
+        float r2 = across * across + along * along;
+        float hotspot = 1.0 - smoothstep(0.0, uSpecularHotspotRadius * uSpecularHotspotRadius, r2);
+        hotspot *= hotspot;
+        float spec = (streak + hotspot * uSpecularHotspotGain) * pieceMask * (1.0 - vContact);
         color += SPEC_COLOR * (spec * uSpecularGain);
     }
 
