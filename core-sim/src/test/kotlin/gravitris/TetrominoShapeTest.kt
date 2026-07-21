@@ -96,6 +96,167 @@ class TetrominoShapeTest {
     }
 
     @Test
+    fun `body-local UV is continuous across a cell seam, not reset per cell`() {
+        // §15 / D10: the grain, subsurface and specular all read the body UV, so
+        // if UV restarts at 0..1 every cell the piece reads as four separate
+        // tiles — the client's complaint. The I piece is four cells in a row;
+        // stepping from cell 0's right column to cell 1's left column is one grid
+        // step in world space, and the UV must advance by exactly that one step,
+        // NOT jump back from 1 to 0.
+        val config = config()
+        val sim = Simulation(config)
+        sim.addPiece(archetype = 0, centerX = 9f, centerY = 9f) // I — flat bar
+        val s = sim.state
+        val l = config.lattice
+        val cell = l * l
+        val mid = l / 2
+
+        val cell0Right = 0 * cell + mid * l + (l - 1)
+        val cell1Left = 1 * cell + mid * l + 0
+        val cell0Left = 0 * cell + mid * l + 0
+
+        val withinCellStep = s.particleU[cell0Right] - s.particleU[cell0Left]
+        val stepPerColumn = withinCellStep / (l - 1)
+        val seamStep = s.particleU[cell1Left] - s.particleU[cell0Right]
+
+        assertTrue(
+            s.particleU[cell1Left] > s.particleU[cell0Right],
+            "cell 1's left column U (${s.particleU[cell1Left]}) is not past cell 0's right column " +
+                "(${s.particleU[cell0Right]}); the UV reset per cell, so the piece reads as four tiles",
+        )
+        assertEquals(
+            stepPerColumn, seamStep, 1e-5f,
+            "the seam is not one continuous grid step (${stepPerColumn}); the grain would break at it",
+        )
+        // And the coordinate genuinely spans the whole footprint: the long axis
+        // reaches 1, the short (1-cell) axis stays at or below 1, never stretched.
+        var maxU = 0f
+        var maxV = 0f
+        for (i in 0 until s.particleCount) {
+            if (s.particleU[i] > maxU) maxU = s.particleU[i]
+            if (s.particleV[i] > maxV) maxV = s.particleV[i]
+        }
+        assertEquals(1f, maxU, 1e-5f, "the long axis of the I piece must reach U=1 across the whole body")
+        assertTrue(maxV < maxU, "the short (1-cell) axis must stay below the long axis, not stretch to 1")
+    }
+
+    @Test
+    fun `grain compensation restores one per-cell frequency for every piece`() {
+        // §15 / D10: body-wide UV would give a long piece coarser grain than a
+        // compact one. grainScaleCompensation cancels the footprint so that, once
+        // :app folds it into uGrainScale, one lattice column advances the grain
+        // coordinate by the SAME amount on every archetype. That invariant is
+        // comp[a] * (U step per column) == 1 / (lattice - 1), constant for all a.
+        val config = config()
+        val l = config.lattice
+        val expected = 1f / (l - 1)
+        for (a in 0 until Simulation.ARCHETYPE_COUNT) {
+            val sim = Simulation(config)
+            sim.addPiece(archetype = a, centerX = 9f, centerY = 9f)
+            val s = sim.state
+            // Two horizontally adjacent particles inside cell 0's bottom row.
+            val step = s.particleU[1] - s.particleU[0]
+            val compensated = s.grainScaleCompensation[a] * step
+            assertEquals(
+                expected, compensated, 1e-5f,
+                "archetype $a grain frequency is not normalised: compensated per-column step " +
+                    "$compensated != $expected — a big piece would carry coarser grain than a small one",
+            )
+        }
+        // The compensation is a real per-footprint correction, not a no-op: the
+        // four-cell-long I must carry a larger factor than the 2x2 O.
+        val sim = Simulation(config)
+        assertTrue(
+            sim.state.grainScaleCompensation[0] > sim.state.grainScaleCompensation[1],
+            "the I piece (4x1) must compensate more than the O (2x2)",
+        )
+    }
+
+    @Test
+    fun `particleCorner marks only true outer-silhouette corners`() {
+        // §16: 1 at a convex corner of the whole piece, 0 at internal cell
+        // corners and every seam, so :app rounds the real outline only. The count
+        // per shape is the pin — an O is a rectangle (4), an L or J has five, the
+        // zigzags and the T have six. Getting the elbow wrong would change these.
+        val expected = mapOf(0 to 4, 1 to 4, 2 to 6, 3 to 6, 4 to 6, 5 to 5, 6 to 5)
+        for (a in 0 until Simulation.ARCHETYPE_COUNT) {
+            val sim = Simulation(config())
+            sim.addPiece(archetype = a, centerX = 9f, centerY = 9f)
+            val s = sim.state
+            var corners = 0
+            for (i in 0 until s.particleCount) {
+                val c = s.particleCorner[i]
+                assertTrue(c == 0f || c == 1f, "corner flag $c on particle $i of archetype $a is neither 0 nor 1")
+                if (c == 1f) {
+                    corners++
+                    assertEquals(
+                        1f, s.particleEdge[i],
+                        "particle $i of archetype $a is a corner but not a free surface — a corner " +
+                            "must sit on the outline, never on an interior seam",
+                    )
+                }
+            }
+            assertEquals(
+                expected[a], corners,
+                "archetype $a has $corners silhouette corners, expected ${expected[a]}",
+            )
+        }
+    }
+
+    @Test
+    fun `the O piece rounds exactly its four extreme corners`() {
+        // The clean rectangle case: the only corner particles are the four at the
+        // geometric extremes of the silhouette, nothing interior.
+        val sim = Simulation(config())
+        sim.addPiece(archetype = 1, centerX = 9f, centerY = 9f) // O
+        val s = sim.state
+        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        for (i in 0 until s.particleCount) {
+            if (s.positionX[i] < minX) minX = s.positionX[i]
+            if (s.positionX[i] > maxX) maxX = s.positionX[i]
+            if (s.positionY[i] < minY) minY = s.positionY[i]
+            if (s.positionY[i] > maxY) maxY = s.positionY[i]
+        }
+        val eps = 1e-3f
+        for (i in 0 until s.particleCount) {
+            if (s.particleCorner[i] == 1f) {
+                val atCornerX = kotlin.math.abs(s.positionX[i] - minX) < eps || kotlin.math.abs(s.positionX[i] - maxX) < eps
+                val atCornerY = kotlin.math.abs(s.positionY[i] - minY) < eps || kotlin.math.abs(s.positionY[i] - maxY) < eps
+                assertTrue(
+                    atCornerX && atCornerY,
+                    "an O corner particle sits at (${s.positionX[i]}, ${s.positionY[i]}), not a bbox extreme",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an L stays sharp at its inner elbow`() {
+        // §16's headline case: an L must round its outline but NOT the concave
+        // notch where the vertical stub meets the bar. For archetype 6 (L: bar +
+        // top-right), that reflex vertex is the top-right corner of cell 2, the
+        // rightmost bar cell, which cell 3 sits directly above — so it is covered
+        // and must read 0, while the piece's true bottom-left corner reads 1.
+        val config = config()
+        val sim = Simulation(config)
+        sim.addPiece(archetype = 6, centerX = 9f, centerY = 9f) // L
+        val s = sim.state
+        val l = config.lattice
+        val cell = l * l
+        val elbow = 2 * cell + (l - 1) * l + (l - 1) // cell 2, top-right lattice corner
+        val trueCorner = 0 * cell + 0 * l + 0 // cell 0, bottom-left of the bar
+        assertEquals(
+            0f, s.particleCorner[elbow],
+            "the L's inner elbow was flagged for rounding; it must stay sharp where the cells meet",
+        )
+        assertEquals(
+            1f, s.particleCorner[trueCorner],
+            "the L's bottom-left outline corner must round",
+        )
+    }
+
+    @Test
     fun `a tree shape carries an inert padded seam that injects no motion`() {
         // Six of the seven shapes are trees (three seams); the O alone has four.
         // The stride is kept constant by padding the missing seam with

@@ -118,6 +118,49 @@ internal class SoftBodyWorld(val config: SimConfig) {
     /** Free-surface flag per particle: 1 on the shape's true outline, 0 inside (incl. seams). */
     private val shapeEdge = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
 
+    /**
+     * Body-local surface UV per particle, precomputed per shape (§15, D10).
+     *
+     * Aspect-preserving and body-wide: both axes are divided by the SAME
+     * footprint span (the longer of the two, in particle units), so the
+     * coordinate runs 0..1 across the whole tetromino's longer side and 0..k
+     * (k<=1) across the shorter one. It is continuous across cell seams — a
+     * particle one row up in the next cell reads one grid step further along,
+     * not a fresh 0 — so the grain, the subsurface depth and the specular sweep
+     * all read across the entire piece instead of restarting per cell (the "four
+     * separate squares" complaint). Dividing both axes by one span keeps the
+     * pattern isotropic; per-axis 0..1 would stretch the grain on the I piece.
+     */
+    private val shapeU = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+    private val shapeV = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+
+    /**
+     * True-outer-silhouette corner flag per particle (§16), 1 at a convex corner
+     * of the whole piece, 0 everywhere else including internal cell corners.
+     *
+     * A lattice-corner particle is a silhouette corner only when its cell has no
+     * neighbouring cell in EITHER of the two directions that meet at that corner
+     * — a bottom-left corner needs no cell to the left and none below. That keeps
+     * an L sharp at its inner elbow (which has a neighbour on one side) and
+     * rounds only the real outline. Vertex-interpolated on `:app` exactly like
+     * [shapeEdge], so the 0/1 here ramps to a soft curve with no new geometry.
+     */
+    private val shapeCorner = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+
+    /**
+     * Per-archetype grain-frequency compensation (§15, D10), consumed by `:app`.
+     *
+     * Body-wide UV means a piece's footprint sets its grain frequency: without
+     * compensation a four-cell-long I piece would carry coarser grain than a
+     * 2x2 O. This is the factor that cancels that — the footprint's longer side
+     * measured in cells (`maxSpan / (lattice - 1)`) — so folding it into the
+     * shader's per-archetype `uGrainScale` restores the SAME per-cell grain
+     * frequency the single-cell pieces had, now continuous across the whole
+     * piece. `:app` multiplies its palette grain scale by this; the palette's
+     * own per-archetype variation (the identity cue) survives untouched.
+     */
+    val grainCompensation = FloatArray(PieceShapes.COUNT)
+
     /** Seam distance-constraint index pairs (body-local), padded inert to [MAX_SEAMS]. */
     private val shapeSeamDistA = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamDistance) }
     private val shapeSeamDistB = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamDistance) }
@@ -173,6 +216,14 @@ internal class SoftBodyWorld(val config: SimConfig) {
             val centreCol = 0.5f * (minCol + maxCol)
             val centreRow = 0.5f * (minRow + maxRow)
 
+            // Body-wide UV divides both axes by the longer footprint span so the
+            // coordinate is isotropic and reaches 1 on the longer side (§15). The
+            // grain compensation is that span measured in cells, which cancels
+            // the footprint's effect on grain frequency (§15). Every shape is
+            // wider than one particle, so maxSpan is never zero.
+            val maxSpan = max(maxCol - minCol, maxRow - minRow).toFloat()
+            grainCompensation[arch] = maxSpan / (lattice - 1).toFloat()
+
             for (cell in 0 until PieceShapes.CELLS) {
                 val cx = PieceShapes.cellX(arch, cell)
                 val cy = PieceShapes.cellY(arch, cell)
@@ -183,18 +234,29 @@ internal class SoftBodyWorld(val config: SimConfig) {
                 for (row in 0 until lattice) {
                     for (col in 0 until lattice) {
                         val local = bodyLocal(cell, row, col)
-                        val x = (cx * lattice + col - centreCol) * spacing
-                        val y = (cy * lattice + row - centreRow) * spacing
+                        val gcol = cx * lattice + col
+                        val grow = cy * lattice + row
+                        val x = (gcol - centreCol) * spacing
+                        val y = (grow - centreRow) * spacing
                         shapeLocalX[arch][local] = x
                         shapeLocalY[arch][local] = y
+                        shapeU[arch][local] = (gcol - minCol) / maxSpan
+                        shapeV[arch][local] = (grow - minRow) / maxSpan
                         // A particle is free surface only on a cell edge with no
                         // neighbouring cell — seam-facing edges read as interior
                         // so they carry no rim light (ADR 0015, B2 rendering).
-                        val free = (col == 0 && !hasLeft) ||
-                            (col == lattice - 1 && !hasRight) ||
-                            (row == 0 && !hasDown) ||
-                            (row == lattice - 1 && !hasUp)
-                        shapeEdge[arch][local] = if (free) 1f else 0f
+                        val freeLeft = col == 0 && !hasLeft
+                        val freeRight = col == lattice - 1 && !hasRight
+                        val freeDown = row == 0 && !hasDown
+                        val freeUp = row == lattice - 1 && !hasUp
+                        shapeEdge[arch][local] = if (freeLeft || freeRight || freeDown || freeUp) 1f else 0f
+                        // A convex outer corner: a lattice corner particle whose
+                        // cell has a free surface on BOTH the meeting sides. An
+                        // internal cell corner has a neighbour on at least one
+                        // side, so it is 0 — the elbow of an L stays sharp (§16).
+                        val cornerH = freeLeft || freeRight
+                        val cornerV = freeDown || freeUp
+                        shapeCorner[arch][local] = if (cornerH && cornerV) 1f else 0f
                         val ax = if (x < 0) -x else x
                         val ay = if (y < 0) -y else y
                         if (ax > shapeHalfW[arch]) shapeHalfW[arch] = ax
@@ -303,6 +365,13 @@ internal class SoftBodyWorld(val config: SimConfig) {
     val particleU = FloatArray(particleCapacity)
     val particleV = FloatArray(particleCapacity)
     val particleEdge = FloatArray(particleCapacity)
+
+    /**
+     * True-outer-silhouette corner flag (§16), 1 at a convex corner of the whole
+     * piece and 0 elsewhere. Static per particle, set once at spawn from
+     * [shapeCorner]; never touched per frame. Drives `:app`'s corner rounding.
+     */
+    val particleCorner = FloatArray(particleCapacity)
     val particleCompression = FloatArray(particleCapacity) { 1f }
     val particleContact = FloatArray(particleCapacity)
 
@@ -407,10 +476,12 @@ internal class SoftBodyWorld(val config: SimConfig) {
         val base = body * particlesPerBody
         val particleMass = config.initialPieceMass
         val inv = 1f / particleMass
-        val edgeSpan = (lattice - 1).toFloat()
         val lx = shapeLocalX[archetype]
         val ly = shapeLocalY[archetype]
         val edge = shapeEdge[archetype]
+        val u = shapeU[archetype]
+        val v = shapeV[archetype]
+        val corner = shapeCorner[archetype]
 
         for (cell in 0 until cellsPerBody) {
             for (row in 0 until lattice) {
@@ -428,11 +499,12 @@ internal class SoftBodyWorld(val config: SimConfig) {
                     mass[i] = particleMass
                     invMass[i] = inv
                     particleBody[i] = body
-                    // UV tiles per cell (each cell 0..1), so the material grain
-                    // reads the same on a tetromino cell as on the old block.
-                    particleU[i] = col / edgeSpan
-                    particleV[i] = row / edgeSpan
+                    // Body-wide, aspect-preserving surface UV (§15): continuous
+                    // across cells so the piece reads as one shape, not four.
+                    particleU[i] = u[local]
+                    particleV[i] = v[local]
                     particleEdge[i] = edge[local]
+                    particleCorner[i] = corner[local]
                     particleCompression[i] = 1f
                     particleContact[i] = 0f
                     gravityScale[i] = 1f
@@ -548,6 +620,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
             particleU.copyInto(particleU, dst, src, src + n)
             particleV.copyInto(particleV, dst, src, src + n)
             particleEdge.copyInto(particleEdge, dst, src, src + n)
+            particleCorner.copyInto(particleCorner, dst, src, src + n)
             particleCompression.copyInto(particleCompression, dst, src, src + n)
             particleContact.copyInto(particleContact, dst, src, src + n)
             inContactThisTick.copyInto(inContactThisTick, dst, src, src + n)

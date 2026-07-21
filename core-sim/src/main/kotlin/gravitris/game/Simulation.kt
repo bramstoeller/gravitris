@@ -812,8 +812,10 @@ class Simulation(private val config: SimConfig) {
         override val particleBody: IntArray get() = world.particleBody
         override val particleU: FloatArray get() = world.particleU
         override val particleV: FloatArray get() = world.particleV
+        override val grainScaleCompensation: FloatArray = world.grainCompensation
         override val particleCompression: FloatArray get() = world.particleCompression
         override val particleEdge: FloatArray get() = world.particleEdge
+        override val particleCorner: FloatArray get() = world.particleCorner
         override val particleContact: FloatArray get() = world.particleContact
 
         override val bodyCount: Int get() = world.bodyCount
