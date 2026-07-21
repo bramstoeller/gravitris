@@ -119,6 +119,23 @@ internal class SoftBodyWorld(val config: SimConfig) {
     private val shapeEdge = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
 
     /**
+     * Per-direction free-surface mask per particle (§17, D11): a bitwise OR of
+     * [FREE_LEFT]/[FREE_RIGHT]/[FREE_DOWN]/[FREE_UP], set on the side a particle
+     * has free surface on and clear on a side facing a neighbouring cell (a
+     * seam). It is the per-direction detail behind [shapeEdge], which is only its
+     * OR — `shapeEdge == 1 ⇔ mask != 0`.
+     *
+     * `:app` needs the direction, not just the fact, of the free surface: the
+     * ADR 0011 silhouette extrusion must push a boundary particle out ONLY along
+     * the sides that are true outline and leave the seam-facing sides where they
+     * are, so the per-archetype bridge geometry ([bodyTriangleIndices]) fills the
+     * 2r seam at its natural width rather than the extrusion collapsing the two
+     * facing columns coincident (which is what put the UV discontinuity — the
+     * visible "+" — right at the join). See handoff 0038 and ADR 0018.
+     */
+    private val shapeFreeEdges = Array(PieceShapes.COUNT) { IntArray(particlesPerBody) }
+
+    /**
      * Body-local surface UV per particle, precomputed per shape (§15, D10).
      *
      * Aspect-preserving and body-wide: both axes are divided by the SAME
@@ -250,6 +267,16 @@ internal class SoftBodyWorld(val config: SimConfig) {
                         val freeDown = row == 0 && !hasDown
                         val freeUp = row == lattice - 1 && !hasUp
                         shapeEdge[arch][local] = if (freeLeft || freeRight || freeDown || freeUp) 1f else 0f
+                        // Per-direction detail behind shapeEdge, for the app's
+                        // silhouette extrusion (see shapeFreeEdges). LEFT/RIGHT
+                        // and DOWN/UP are mutually exclusive per particle, so this
+                        // OR never double-counts an axis.
+                        var mask = 0
+                        if (freeLeft) mask = mask or FREE_LEFT
+                        if (freeRight) mask = mask or FREE_RIGHT
+                        if (freeDown) mask = mask or FREE_DOWN
+                        if (freeUp) mask = mask or FREE_UP
+                        shapeFreeEdges[arch][local] = mask
                         // A convex outer corner: a lattice corner particle whose
                         // cell has a free surface on BOTH the meeting sides. An
                         // internal cell corner has a neighbour on at least one
@@ -367,6 +394,13 @@ internal class SoftBodyWorld(val config: SimConfig) {
     val particleEdge = FloatArray(particleCapacity)
 
     /**
+     * Per-direction free-surface mask (§17, D11), set once at spawn from
+     * [shapeFreeEdges] and never touched per frame. Drives `:app`'s silhouette
+     * extrusion so only true-outline sides are pushed out; see [shapeFreeEdges].
+     */
+    val particleFreeEdges = IntArray(particleCapacity)
+
+    /**
      * True-outer-silhouette corner flag (§16), 1 at a convex corner of the whole
      * piece and 0 elsewhere. Static per particle, set once at spawn from
      * [shapeCorner]; never touched per frame. Drives `:app`'s corner rounding.
@@ -436,6 +470,71 @@ internal class SoftBodyWorld(val config: SimConfig) {
         return out
     }
 
+    /**
+     * Per-archetype full-footprint render topology (§17, D11 / ADR 0018): the
+     * body-local triangle indices for a WHOLE tetromino of each shape — the four
+     * cells' own triangles PLUS the seam-bridge triangles that weld them into one
+     * continuous mesh, so an internal seam is an interior mesh line rather than
+     * the boundary between two abutting cell meshes. Built once at construction,
+     * constant for the run.
+     *
+     * This is the render form of the solver's area constraints: interior cells
+     * use the same `p00,p10,p11 / p00,p11,p01` split as [triangleIndices] (and as
+     * the cell area constraints), and the seam bridges are exactly the real seam
+     * area triples in [shapeSeamAreaA]/[shapeSeamAreaB]/[shapeSeamAreaC] (the
+     * inert padding of ADR 0015 dropped). So every render triangle across the
+     * whole piece — seams included — is one area constraint, which is what makes
+     * both the body-wide UV (§15) and [particleCompression] continuous across a
+     * seam instead of stepping by one grid unit at it (the "+" of handoff 0038).
+     *
+     * Values are in `[0, particlesPerBody)`; `:app` draws body `b` at vertex
+     * offset `b * particlesPerBody`. Length varies by shape: an O bridges four
+     * seams, the other six three, so this is a jagged array, not a fixed stride.
+     */
+    val bodyTriangleIndices: Array<IntArray> =
+        Array(PieceShapes.COUNT) { buildBodyTriangleIndices(it) }
+
+    private fun buildBodyTriangleIndices(arch: Int): IntArray {
+        val trianglesPerCell = 2 * (lattice - 1) * (lattice - 1)
+        val saa = shapeSeamAreaA[arch]
+        val sab = shapeSeamAreaB[arch]
+        val sac = shapeSeamAreaC[arch]
+
+        // A real seam triangle never repeats a particle; the inert padding is
+        // a == b == c (a degenerate point), so this filter is exact.
+        var seamTriangles = 0
+        for (k in saa.indices) {
+            if (saa[k] != sab[k] || sab[k] != sac[k]) seamTriangles++
+        }
+
+        val out = IntArray((cellsPerBody * trianglesPerCell + seamTriangles) * 3)
+        var n = 0
+        // Interior: each cell's own lattice, offset into the body's particle
+        // block. Identical winding to triangleIndices, so a cell renders exactly
+        // as it does today.
+        for (cell in 0 until cellsPerBody) {
+            val cellBase = cell * particlesPerCell
+            for (row in 0 until lattice - 1) {
+                for (col in 0 until lattice - 1) {
+                    val p00 = cellBase + row * lattice + col
+                    val p10 = p00 + 1
+                    val p01 = p00 + lattice
+                    val p11 = p01 + 1
+                    out[n++] = p00; out[n++] = p10; out[n++] = p11
+                    out[n++] = p00; out[n++] = p11; out[n++] = p01
+                }
+            }
+        }
+        // Seam bridges: the real seam area triples, already body-local and already
+        // wound to match the interior split (buildSeams emits them CCW). Reused
+        // verbatim so the render mesh cannot drift from the constraints.
+        for (k in saa.indices) {
+            if (saa[k] == sab[k] && sab[k] == sac[k]) continue
+            out[n++] = saa[k]; out[n++] = sab[k]; out[n++] = sac[k]
+        }
+        return out
+    }
+
     // --- construction -------------------------------------------------------
 
     /**
@@ -479,6 +578,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
         val lx = shapeLocalX[archetype]
         val ly = shapeLocalY[archetype]
         val edge = shapeEdge[archetype]
+        val freeEdges = shapeFreeEdges[archetype]
         val u = shapeU[archetype]
         val v = shapeV[archetype]
         val corner = shapeCorner[archetype]
@@ -504,6 +604,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
                     particleU[i] = u[local]
                     particleV[i] = v[local]
                     particleEdge[i] = edge[local]
+                    particleFreeEdges[i] = freeEdges[local]
                     particleCorner[i] = corner[local]
                     particleCompression[i] = 1f
                     particleContact[i] = 0f
@@ -620,6 +721,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
             particleU.copyInto(particleU, dst, src, src + n)
             particleV.copyInto(particleV, dst, src, src + n)
             particleEdge.copyInto(particleEdge, dst, src, src + n)
+            particleFreeEdges.copyInto(particleFreeEdges, dst, src, src + n)
             particleCorner.copyInto(particleCorner, dst, src, src + n)
             particleCompression.copyInto(particleCompression, dst, src, src + n)
             particleContact.copyInto(particleContact, dst, src, src + n)
@@ -765,7 +867,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
         return 0.5f * sum
     }
 
-    private companion object {
+    companion object {
         /**
          * Seam slots reserved per piece. A tetromino's four cells form a tree
          * (three adjacencies) except the O, which has a cycle (four). Reserving
@@ -773,5 +875,14 @@ internal class SoftBodyWorld(val config: SimConfig) {
          * stride constant across all seven shapes (ADR 0015).
          */
         const val MAX_SEAMS = 4
+
+        // Per-direction free-surface bits packed into particleFreeEdges (§17,
+        // D11 / ADR 0018). A frozen wire format: `:app` mirrors these values from
+        // the contract (docs/contracts.md §3) since it cannot see this internal
+        // class. LEFT/RIGHT and DOWN/UP are mutually exclusive per particle.
+        const val FREE_LEFT = 1
+        const val FREE_RIGHT = 2
+        const val FREE_DOWN = 4
+        const val FREE_UP = 8
     }
 }

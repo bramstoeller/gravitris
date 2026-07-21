@@ -89,6 +89,31 @@ interface SimState {
     val particleEdge: FloatArray
 
     /**
+     * Per-direction free-surface mask, static per particle (§17 / ADR 0018): a
+     * bitwise OR of the sides on which this particle is TRUE outer silhouette —
+     * `LEFT = 1`, `RIGHT = 2`, `DOWN = 4`, `UP = 8` in the particle's own lattice
+     * (row 0 at the bottom, so `DOWN` is `-y`). A side facing a neighbouring cell
+     * (a seam) is clear. [particleEdge] is exactly this collapsed to 0/1:
+     * `particleEdge[i] == 1f ⇔ particleFreeEdges[i] != 0`.
+     *
+     * This is the per-direction detail the ADR 0011 silhouette extrusion needs.
+     * `:app` must push a boundary particle outward by [particleRadius] ONLY along
+     * the sides whose bit is set — one radius per free axis, `radius * √2` only
+     * when both meeting sides are free — and leave a seam-facing side at its
+     * centre, so the per-archetype bridge geometry ([bodyTriangleIndices]) fills
+     * the `2 * particleRadius` seam at its natural width. Extruding a seam edge
+     * (as the pre-ADR-0018 per-cell extrusion did, collapsing the two facing
+     * columns coincident) is what stamped the UV/grain discontinuity — the "+" —
+     * onto the join.
+     *
+     * `LEFT`/`RIGHT` never both set, nor `DOWN`/`UP`: a particle cannot be free
+     * on opposite sides of the same axis. Additive per §5; the values are a
+     * frozen wire format, so `:app` reads them from this doc, not from a copy of
+     * the core enum.
+     */
+    val particleFreeEdges: IntArray
+
+    /**
      * True outer-silhouette corner (§16): 1 at a particle that is a convex
      * corner of the WHOLE piece, 0 everywhere else — including internal cell
      * corners and every seam. Static per particle, set once at spawn. -> `vCorner`
@@ -209,6 +234,15 @@ interface SimState {
      * Cell-local triangle indices for **one** `bodyLattice x bodyLattice` cell,
      * constant for the whole run.
      *
+     * **Superseded for rendering by [bodyTriangleIndices] (ADR 0018).** This
+     * per-cell pattern draws each cell as a separate mesh with no triangles
+     * bridging a seam, so shading (grain, specular, compression) steps by one
+     * grid unit at a seam — the "four squares" "+" the client reported (handoff
+     * 0038). Kept because the solver still defines its cell area constraints on
+     * these two triangles and `:app`'s `TopologyMatchesSolverTest` pins the
+     * per-cell split to it; a renderer that wants the piece to read as one
+     * continuous candy must consume [bodyTriangleIndices] instead.
+     *
      * **A tetromino is four cells (ADR 0015), and this is reused per CELL, not
      * per body.** A body owns [particlesPerBody] particles laid out as
      * `particlesPerBody / (bodyLattice * bodyLattice)` cells (four), so iterate
@@ -248,6 +282,40 @@ interface SimState {
      * holds its topology to this array index-for-index.
      */
     val triangleIndices: IntArray
+
+    /**
+     * Per-archetype full-footprint render topology (ADR 0018) — the fix for the
+     * internal cell seam. Indexed by [bodyArchetype], length
+     * `Simulation.ARCHETYPE_COUNT`. Each entry is the body-local triangle indices
+     * for a WHOLE tetromino of that shape: the four cells' own triangles (the
+     * same split as [triangleIndices]) PLUS the seam-bridge triangles that weld
+     * adjacent cells into ONE continuous mesh. An internal seam becomes an
+     * interior mesh line with full triangle bridging and continuous UV, so the
+     * grain/specular/compression no longer step across it — the "+" is gone.
+     *
+     * **Values are body-local, in `[0, particlesPerBody)`.** Draw body `b` at
+     * vertex offset `b * particlesPerBody` (NOT per cell — this array already
+     * spans all four cells). Because the bridges depend on the shape, the set of
+     * indices differs per archetype and its length is not uniform: an O bridges
+     * four seams, the other six three. Size the index buffer against the max over
+     * the array, and **assemble the buffer when the set of bodies changes, not
+     * once up front** — ADR 0007 §2's "one index pattern reused for every body
+     * forever" is amended by ADR 0018 to "reassembled on body-set change" (still
+     * not per frame, so zero per-frame allocation holds, and still one draw call).
+     *
+     * The bridge triangles are exactly the solver's seam area constraints, and
+     * the interior triangles its cell area constraints, so **every** render
+     * triangle across the whole piece is one area constraint. That is what keeps
+     * both the body-wide UV ([particleU]/[particleV]) and [particleCompression]
+     * continuous across a seam. Extruding the true outer silhouette is the
+     * consumer's job, driven by [particleFreeEdges]; the seams are left to this
+     * mesh.
+     *
+     * Additive per §5 (a new field, no signature removed). [triangleIndices]
+     * stays valid; it will be retired once `:app` no longer reads it (a breaking
+     * change the Architect signs then).
+     */
+    val bodyTriangleIndices: Array<IntArray>
 
     // --- coverage (ADR 0004, 0007) ---
     /**

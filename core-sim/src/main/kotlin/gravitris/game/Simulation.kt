@@ -815,6 +815,7 @@ class Simulation(private val config: SimConfig) {
         override val grainScaleCompensation: FloatArray = world.grainCompensation
         override val particleCompression: FloatArray get() = world.particleCompression
         override val particleEdge: FloatArray get() = world.particleEdge
+        override val particleFreeEdges: IntArray get() = world.particleFreeEdges
         override val particleCorner: FloatArray get() = world.particleCorner
         override val particleContact: FloatArray get() = world.particleContact
 
@@ -825,6 +826,7 @@ class Simulation(private val config: SimConfig) {
         override val particleRadius: Float = world.particleRadius
         override val particleCapacity: Int = world.particleCapacity
         override val triangleIndices: IntArray get() = world.triangleIndices
+        override val bodyTriangleIndices: Array<IntArray> get() = world.bodyTriangleIndices
 
         override val bandFill: FloatArray get() = bands.fill
         override val bandClearProgress = FloatArray(config.bandCount) { -1f }
