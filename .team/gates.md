@@ -63,3 +63,26 @@ Not required this round: menu, high scores, score persistence.
 
 Sequence: design/foundation (UX spec + tetromino + controls) → integrate the
 visual layer on the shaped+controlled game → team validation → client demo.
+
+### GATE MET — presented to the client 2026-07-21
+
+All four conditions verified, not asserted:
+- **Shape** — `PieceShapes.kt` merged to `main` (PR #23/#24, commit `08719ed`);
+  playthrough on `main` renders S, O, L, T pieces in distinct colourblind-safe
+  hues (frames `001`, `008`, `015`, `023` in `build/emulator/playthrough`).
+- **Controls** — slide→release-to-fall→rotate merged to `main`
+  (`GestureRecognizer.kt`, `InputFrame.kt`); mapping confirmed against source.
+- **Look** — visual layer merged (PR #25, commit `4e2b9d1`): indigo gradient
+  background with soft radial glows, band-clear juice, Android-View HUD, designed
+  game-over. Glow-token correction merged (PR #26). Drift `sin`/`cos` hoisted
+  CPU-side (commit `4c1ce61`) so the one full-screen pass runs zero
+  transcendentals/pixel — removing the only device-budget risk.
+- **Team endorsement** — UX signed the look unconditionally; Code Reviewer
+  cleared correctness + budget (approve-with-comments, the one comment fixed);
+  Product Lead ran `make test` (green) and viewed the playthrough frames on the
+  merged `main`. Difficulty preserved: shipping `CLEAR_THRESHOLD = 0.80`,
+  release-gated (the playthrough's 0.35 is a debug-only override).
+
+Client APK rebuilt from merged `main` at `/work/gravitris-game.apk`
+(md5 `41d6613b…`, identical to the verified build). `TESTING-NEXT.md` rewritten
+for round 2. Awaiting client field-test feedback.
