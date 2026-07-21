@@ -105,9 +105,12 @@ above is identical.
 - Coverage-band clearing is unaffected: bands stamp per particle
   (shape-agnostic) and the clear removes whole bodies by centroid band. Proven
   by test on shaped pieces.
-- The perf reference scene (`buildBenchmarkScene`) is re-defined to pack
-  tetrominoes to a comparable particle count; it stays a fixed deterministic
-  scene, which is all the device-derating calibration (ADR 0009) needs.
+- A tetromino is four cells, so ~4x the material density of a single block. The
+  measured cost of a near-full 20x44 well is ~0.78 ms/frame at lattice 4 (in
+  budget at the 12x device derating) and ~1.56 ms at lattice 5 (over). That
+  measurement is the input to **ADR 0014**, which pins the shipping lattice at
+  4; the tier decision lives there, not here. `buildBenchmarkScene` is re-defined
+  to a near-full tetromino pile as the calibration reference for that pin.
 - A tetromino spans more bands than a block, so a clear releases more material —
   the same "material in the glowing zone is released" reading ADR 0005 already
   documents, more so.

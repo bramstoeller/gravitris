@@ -50,7 +50,7 @@ class Simulation(private val config: SimConfig) {
      * state would read a zero and publish the floor band, not the spawn band.
      */
     private val spawnCenterY: Float =
-        config.wellHeight - 0.5f * world.pieceWidth - world.particleRadius
+        config.wellHeight - world.pieceMaxHalfHeight - world.particleRadius
 
     private val stateImpl = State(config)
 
@@ -516,7 +516,7 @@ class Simulation(private val config: SimConfig) {
      */
     private fun canSpawn(): Boolean =
         bands.fill[stateImpl.spawnBandIndex] <= tuning.overflowThreshold &&
-            world.canPlace(spawnX, spawnCenterY)
+            world.canPlace(sequence.peek(), spawnX, spawnCenterY)
 
     private fun doSpawn() {
         val body = world.addBody(sequence.next(), spawnX, spawnCenterY)
@@ -774,13 +774,22 @@ class Simulation(private val config: SimConfig) {
      * additively, clamped into a usable band up to the solver's terminal
      * velocity.
      *
-     * **Not a player action.** The old hard-drop gesture is gone (ADR 0016):
-     * release is the drop and the fall is plain gravity. This remains only so
-     * the solver-probe tests can put a piece at [XpbdSolver] terminal speed to
-     * exercise broadphase margin, rigidity and impact/compression at speed —
-     * the impact-velocity path the removed input used to provide. It sits
-     * alongside [addPiece]/[clearActivePiece] as a scene affordance, not the
-     * game loop.
+     * **Test/probe only — MUST NOT be called from game or production code.** The
+     * old hard-drop gesture is gone (ADR 0016): release is the drop and the fall
+     * is plain gravity, and reintroducing a velocity-injecting control here would
+     * quietly bring hard-drop back as a control path the design removed. This
+     * exists solely so the solver-probe tests (`:core-sim`) and `:app`'s
+     * compression/haptic range tests can put a piece at [XpbdSolver] terminal
+     * speed to exercise broadphase margin, rigidity and impact/compression — the
+     * impact-velocity path the removed input used to provide. It sits alongside
+     * [addPiece]/[clearActivePiece] as a scene affordance, not the game loop.
+     * (A `@VisibleForTesting` annotation would say this to the compiler, but that
+     * lives in `androidx.annotation`, which `:core-sim` deliberately cannot
+     * depend on — ADR 0002/0008 — so it is stated here and held in review.)
+     *
+     * The [SLAM_MIN_SPEED]/[SLAM_MAX_SPEED] clamp is a fixed contract: `:app`'s
+     * range tests pin their measured constants against a 30-unit slam, so the
+     * bounds must not move without telling the Frontend.
      */
     fun slamActivePiece(speed: Float) {
         val body = stateImpl.activePieceBody
@@ -879,69 +888,75 @@ class Simulation(private val config: SimConfig) {
         private const val SLAM_MIN_SPEED: Float = 6f
         private const val SLAM_MAX_SPEED: Float = 30f
 
-        /** Bodies in the reference scene, matching ADR 0001's measured row. */
-        const val BENCHMARK_BODIES: Int = 60
+        /**
+         * Tetrominoes in the reference scene: enough to nearly fill the
+         * reference well (ADR 0015). Measured: a 20x44 well tops out around
+         * 26 (lattice 4) to 31 (lattice 5) tetrominoes, so this fills it without
+         * hitting the overflow.
+         */
+        const val BENCHMARK_BODIES: Int = 24
 
         /**
-         * The configuration to re-run on a real device to close the
-         * host-to-device derating blocker (ADR 0009, `.team/blockers.md`).
+         * The calibration reference for the pinned lattice (ADR 0014), and the
+         * scene to re-run on a real device to close the host-to-device derating
+         * blocker (`.team/blockers.md`).
          *
-         * Lattice 4 with [BENCHMARK_BODIES] bodies reproduces ADR 0001's
-         * measured workload exactly: 960 particles and 3 600 constraints, at 8
-         * substeps and compliance 1e-6. Host p50 was 0.497 ms/frame.
-         *
-         * The well is deliberately **wide** rather than the tall narrow tower
-         * the spike happened to seed. ADR 0003 flags that its stability and
-         * contact numbers came from a pile ~4 units wide and ~46 tall, that "a
-         * wide well produces more simultaneous contacts per body than a narrow
-         * tower, and that specific configuration has not been measured", and
-         * that it should be checked at Milestone 1. Particle and constraint
-         * counts — which is what the cost model is built on — are identical
-         * either way; contact count is the part that differs, and this is the
-         * shape the real game has.
+         * **Lattice 4, the pinned shipping tier.** A tetromino is four cells
+         * (ADR 0015), so the material is ~4x denser per unit area than the single
+         * blocks ADR 0001 measured. The measurement, on the host, near-full
+         * 20x44 well: lattice 4 is ~1 700 particles at ~0.78 ms/frame (≈9 ms at
+         * the 12x device derating, inside the 16.67 ms budget); lattice 5 is
+         * ~3 100 particles at ~1.56 ms (≈19 ms, *over* budget). That measurement
+         * is why ADR 0014 pins the lattice at 4 and retires ADR 0009's runtime
+         * tier selection — the pin story lives in that ADR, not here; this scene
+         * is only the number behind it and the revisit-trigger for a future
+         * faster reference device.
          */
         fun benchmarkReferenceConfig(): SimConfig = SimConfig(
             lattice = 4,
             substeps = 8,
-            wellWidth = 12f,
+            wellWidth = 20f,
             wellHeight = 44f,
         )
 
         /**
-         * Seeding pitch as a multiple of a body's full extent. See
-         * [buildBenchmarkScene].
-         */
-        const val PLACEMENT_GAP: Float = 1.05f
-
-        /**
-         * Builds the reference scene: [BENCHMARK_BODIES] bodies packed from
-         * the floor up, settled by the caller.
+         * Builds the reference scene: [BENCHMARK_BODIES] tetrominoes dropped in
+         * from the top and settled into a pile, ready for the caller to measure.
          *
-         * Shared by the JVM benchmark test and `:app`'s hidden one-tap device
-         * benchmark so the two cannot drift apart and produce a derating ratio
-         * that compares different scenes.
+         * Pieces are dropped one at a time above the current pile (via
+         * [addPiece], so the dealer stays off) rather than hand-placed on a
+         * grid: a grid at a single-cell pitch would overlap the larger
+         * tetrominoes and throw (ADR 0015). Shared by the JVM benchmark test and
+         * `:app`'s hidden one-tap device benchmark so the two cannot drift apart
+         * and compare different scenes.
          */
         fun buildBenchmarkScene(config: SimConfig = benchmarkReferenceConfig()): Simulation {
+            val geom = SoftBodyWorld(config)
+            val halfExtent = geom.pieceMaxHalfExtent
+            val margin = geom.pieceExtent * 0.2f
             val sim = Simulation(config)
-            // Pitch, not extent: bodies are seeded with a deliberate gap.
-            // Placing them exactly touching would put neighbouring particles
-            // at exactly one diameter, where float rounding decides whether
-            // the seeding guard fires and whether the contact solver sees an
-            // overlap on tick one. A gap costs nothing and settles out in a
-            // few frames.
-            val pitch = sim.world.pieceExtent * PLACEMENT_GAP
-            val perRow = ((config.wellWidth - pitch) / pitch).toInt() + 1
-            check(perRow >= 1) { "benchmark well is narrower than one piece" }
+            val input = InputFrame()
+            val edgeGap = geom.pieceExtent * 0.15f
+            val leftMost = halfExtent + geom.particleRadius + edgeGap
+            val rightMost = config.wellWidth - halfExtent - geom.particleRadius - edgeGap
+            val span = (rightMost - leftMost).coerceAtLeast(0f)
+            val centre = 0.5f * config.wellWidth
             for (b in 0 until BENCHMARK_BODIES) {
-                val row = b / perRow
-                val col = b % perRow
-                sim.addPiece(
-                    archetype = b % ARCHETYPE_COUNT,
-                    centerX = pitch * 0.5f + col * pitch,
-                    centerY = pitch * 0.5f + row * pitch,
-                )
+                val frac = (b * 0.61803398875f) % 1f
+                val x = if (span <= 0f) centre else leftMost + frac * span
+                val y = sim.state.let { s ->
+                    var top = 0f
+                    for (i in 0 until s.particleCount) if (s.positionY[i] > top) top = s.positionY[i]
+                    top
+                } + halfExtent + margin
+                sim.addPiece(archetype = b % ARCHETYPE_COUNT, centerX = x, centerY = y)
+                sim.clearActivePiece()
+                var f = 0
+                while (f < 240 && sim.state.kineticEnergy > config.quietKineticEnergy) {
+                    sim.step(input)
+                    f++
+                }
             }
-            sim.clearActivePiece()
             return sim
         }
 

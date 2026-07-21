@@ -29,8 +29,8 @@ class AllocationTest {
         bean.isThreadAllocatedMemoryEnabled = true
 
         val sim = TestScenes.pile(
-            SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f),
-            bodies = 24,
+            SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f),
+            bodies = 8,
         )
         val input = InputFrame()
 
@@ -64,10 +64,10 @@ class AllocationTest {
         bean.isThreadAllocatedMemoryEnabled = true
 
         val sim = TestScenes.pile(
-            SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f),
-            bodies = 12,
+            SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f),
+            bodies = 6,
         )
-        sim.addPiece(archetype = 0, centerX = 5f, centerY = 17f)
+        sim.addPiece(archetype = 0, centerX = 9f, centerY = TestScenes.stackHeight(sim.state) + 5f)
         val input = InputFrame()
 
         fun drive(tick: Int) {
@@ -114,7 +114,7 @@ class AllocationTest {
         // A tall well so the game keeps dealing pieces — spawning and locking —
         // right through the measured window rather than filling up and idling.
         val sim = gravitris.game.Simulation(
-            SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 44f),
+            SimConfig(lattice = 5, wellWidth = 20f, wellHeight = 44f),
         )
         sim.tuning.clearThreshold = 1.01f // no fill can reach this: never clears
         sim.start()

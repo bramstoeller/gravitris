@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
  */
 class SolverBehaviourTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     // --- topology -----------------------------------------------------------
 
@@ -26,12 +26,18 @@ class SolverBehaviourTest {
         // ADR 0001's cost table is indexed by particle and constraint count,
         // and every budget in the architecture is derived from it. If this
         // drifts, the budget silently stops describing the thing being built.
-        val expected = mapOf(4 to (16 to 60), 5 to (25 to 104), 6 to (36 to 160))
+        //
+        // A tetromino is four cells (ADR 0015): particles = 4*L^2 and
+        // constraints = 4*(per-cell) + 4 seams' worth (MAX_SEAMS, padded inert
+        // for tree shapes so the stride is constant). Per cell the counts are
+        // exactly the old single-block ones (60/104/160), so a cell's cost is
+        // unchanged — there are just four of them plus the welds.
+        val expected = mapOf(4 to (64 to 304), 5 to (100 to 500), 6 to (144 to 744))
         for ((lattice, counts) in expected) {
             val world = SoftBodyWorld(config().copy(lattice = lattice))
-            world.addBody(archetype = 0, centerX = 5f, centerY = 5f)
+            world.addBody(archetype = 0, centerX = 9f, centerY = 5f)
             val (particles, constraints) = counts
-            assertEquals(particles, world.particleCount, "particles per body at lattice $lattice")
+            assertEquals(particles, world.particleCount, "particles per body (4 cells) at lattice $lattice")
             assertEquals(
                 constraints,
                 world.distanceCount + world.areaCount,
@@ -119,7 +125,7 @@ class SolverBehaviourTest {
         // This is the product, not a detail: "if the blocks end up feeling
         // stiff, we have built the wrong thing". A pile that settles with
         // every cell still at its rest area is a pile of rigid boxes.
-        val sim = TestScenes.pile(config(), bodies = 24)
+        val sim = TestScenes.pile(config(), bodies = 8)
         TestScenes.run(sim, 900)
 
         val s = sim.state
@@ -140,7 +146,7 @@ class SolverBehaviourTest {
 
     @Test
     fun `a settled pile reports contact and edge information for the renderer`() {
-        val sim = TestScenes.pile(config(), bodies = 12)
+        val sim = TestScenes.pile(config(), bodies = 6)
         TestScenes.run(sim, 900)
         val s = sim.state
 
@@ -313,9 +319,9 @@ class SolverBehaviourTest {
         // footprint and can rarely be blocked. It becomes load-bearing when
         // real piece silhouettes arrive in Stage 3.
         val sim = Simulation(config())
-        sim.addPiece(archetype = 0, centerX = 2.5f, centerY = 2f)
-        sim.addPiece(archetype = 1, centerX = 5.5f, centerY = 2f)
-        sim.addPiece(archetype = 2, centerX = 8.5f, centerY = 2f)
+        sim.addPiece(archetype = 1, centerX = 2.7f, centerY = 2.6f)
+        sim.addPiece(archetype = 1, centerX = 7.4f, centerY = 2.6f)
+        sim.addPiece(archetype = 2, centerX = 13.6f, centerY = 2.6f)
         TestScenes.run(sim, 300)
 
         // Measured as *displacement*, not as instantaneous kinetic energy.
@@ -416,23 +422,29 @@ class SolverBehaviourTest {
 
     @Test
     fun `the benchmark reference scene matches the measured workload`() {
-        // ADR 0001's reference row: 960 particles, 3 600 constraints at
-        // lattice 4. This is the scene `:app` runs on the device to close the
-        // host-to-device derating blocker, so it must not drift.
+        // The reference row is now tetrominoes (ADR 0015): four cells at
+        // lattice 4 is 64 particles and 304 constraints per piece, so
+        // BENCHMARK_BODIES of them is the workload `:app` runs on the device to
+        // close the host-to-device derating blocker. It must not drift.
         val config = Simulation.benchmarkReferenceConfig()
         assertEquals(4, config.lattice)
         assertEquals(8, config.substeps)
 
+        val perBodyParticles = 4 * config.lattice * config.lattice
         val sim = Simulation.buildBenchmarkScene(config)
-        assertEquals(960, sim.state.particleCount, "ADR 0001 reference row: 960 particles")
+        assertEquals(
+            Simulation.BENCHMARK_BODIES * perBodyParticles,
+            sim.state.particleCount,
+            "reference row: ${Simulation.BENCHMARK_BODIES} tetrominoes at $perBodyParticles particles each",
+        )
         assertEquals(Simulation.BENCHMARK_BODIES, sim.state.bodyCount)
 
         val world = SoftBodyWorld(config)
-        world.addBody(archetype = 0, centerX = 5f, centerY = 5f)
+        world.addBody(archetype = 0, centerX = 10f, centerY = 5f)
         assertEquals(
-            3600,
+            304 * Simulation.BENCHMARK_BODIES,
             (world.distanceCount + world.areaCount) * Simulation.BENCHMARK_BODIES,
-            "ADR 0001 reference row: 3 600 constraints",
+            "reference row: 304 constraints per tetromino at lattice 4",
         )
 
         // And it must actually run.
@@ -477,7 +489,11 @@ class SolverBehaviourTest {
         const val VELOCITY_INJECTION_BUDGET = 1f
 
         /** Two seconds — long enough for a rotated soft body to stop wobbling. */
-        const val ROTATION_SETTLE_FRAMES = 120
+        // A tetromino, unlike a single square, does not rotate onto its own
+        // footprint (ADR 0015): turning a settled piece reorients it and it
+        // resettles into the new shape, which takes longer to go quiet than a
+        // square's no-op turn did. The neighbours must still not be disturbed.
+        const val ROTATION_SETTLE_FRAMES = 500
 
         /**
          * Well units a piece may drift after a rotation. Measured, both the

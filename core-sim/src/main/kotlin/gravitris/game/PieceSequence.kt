@@ -50,6 +50,22 @@ internal class PieceSequence(seed: Long, private val archetypes: Int) {
         return bag[next++]
     }
 
+    /**
+     * The archetype [next] will return, without consuming it. The spawner needs
+     * this to ask whether the *actual* next shape fits before committing to deal
+     * it (shapes differ in footprint now, ADR 0015), and consuming it to look
+     * would desync the deal. Reshuffling when the bag is empty happens here just
+     * as in [next], so a peek at an empty bag returns the same value the
+     * following [next] does — the dealt sequence is unchanged by peeking.
+     */
+    fun peek(): Int {
+        if (next >= archetypes) {
+            shuffle()
+            next = 0
+        }
+        return bag[next]
+    }
+
     /** Fisher-Yates, in place. */
     private fun shuffle() {
         for (i in archetypes - 1 downTo 1) {

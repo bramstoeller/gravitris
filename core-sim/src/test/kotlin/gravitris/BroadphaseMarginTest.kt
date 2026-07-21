@@ -92,7 +92,7 @@ class BroadphaseMarginTest {
         // tier changes only render detail, the contact behaviour — how far one
         // body sinks into another — must be the same at all three.
         for (lattice in intArrayOf(4, 5, 6)) {
-            val config = SimConfig(lattice = lattice, wellWidth = 6f, wellHeight = 30f)
+            val config = SimConfig(lattice = lattice, wellWidth = 16f, wellHeight = 30f)
             val radius = particleRadius(lattice)
 
             val sim = TestScenes.pile(config, bodies = 6)

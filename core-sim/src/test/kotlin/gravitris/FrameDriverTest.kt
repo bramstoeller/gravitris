@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 class FrameDriverTest {
 
     private val tick = Simulation.TICK
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     private fun centroidX(sim: Simulation, body: Int): Float {
         val s = sim.state

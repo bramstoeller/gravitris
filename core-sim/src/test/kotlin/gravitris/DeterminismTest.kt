@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test
  */
 class DeterminismTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     /**
      * A scripted input sequence, so the replay exercises drag, rotation and
@@ -40,7 +40,7 @@ class DeterminismTest {
 
     private fun runScripted(frames: Int): IntArray {
         val sim = TestScenes.pile(config(), bodies = 8)
-        sim.addPiece(archetype = 3, centerX = 5f, centerY = 17f)
+        sim.addPiece(archetype = 3, centerX = 9f, centerY = TestScenes.stackHeight(sim.state) + 5f)
         val input = InputFrame()
         for (tick in 0 until frames) driveTick(sim, input, tick)
         return TestScenes.fingerprint(sim.state)
@@ -61,7 +61,7 @@ class DeterminismTest {
         // outside (state, input) — a wall clock, an iteration count, a lazily
         // initialised buffer — this is where it would show.
         val sim = TestScenes.pile(config(), bodies = 8)
-        sim.addPiece(archetype = 3, centerX = 5f, centerY = 17f)
+        sim.addPiece(archetype = 3, centerX = 9f, centerY = TestScenes.stackHeight(sim.state) + 5f)
         val input = InputFrame()
         for (tick in 0 until 450) driveTick(sim, input, tick)
         for (tick in 450 until 900) driveTick(sim, input, tick)
@@ -81,7 +81,7 @@ class DeterminismTest {
         // flags in place, a recorded sequence would behave differently the
         // second time it was replayed.
         val sim = TestScenes.pile(config(), bodies = 8)
-        sim.addPiece(archetype = 3, centerX = 5f, centerY = 17f)
+        sim.addPiece(archetype = 3, centerX = 9f, centerY = TestScenes.stackHeight(sim.state) + 5f)
         for (tick in 0 until 900) driveTick(sim, InputFrame(), tick)
 
         assertArrayEquals(
