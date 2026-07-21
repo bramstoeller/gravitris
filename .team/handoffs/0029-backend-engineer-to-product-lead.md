@@ -111,6 +111,26 @@ Frontend's `feat/drop-controls`):
    substitutions (same 30-unit slam, so compression/haptic tuning does NOT move)
    plus `input.hardDrop → input.drop`.
 
+## Post-commit defect found + fix coordinated (benchmark divisor)
+
+The Frontend caught this during integration and it is mine: rebuilding
+`buildBenchmarkScene` for tetrominoes changed the reference scene from 960
+single-block particles to **1536** (24 tetrominoes × 64 at lattice 4, 7296
+constraints), but `:app`'s `SolverBenchmark.HOST_P50_MS` (0.4443 ms) and its
+scene doc still describe the old 960-particle scene. No test failed — the `:app`
+derating test only checks the arithmetic, not that the divisor's scene matches —
+so it is a **semantic** defect: the client-reported host-vs-device derating ratio
+would divide a 1536-particle device time by a 960-particle host time.
+
+I re-measured the host p50 on the new scene (shipped protocol, this build host,
+three runs): 0.86 / 0.91 / 0.86 ms → **HOST_P50_MS ≈ 0.86** (≈1.94× the old,
+matching the ~2× constraint increase). `SolverBenchmark.kt` is `:app`
+(Frontend-owned), so I handed them the number and the exact doc corrections to
+apply on `feat/drop-controls` (message to the FE agent). The `:core-sim` scene
+itself is correct and green; this is purely the `:app` divisor/doc catching up.
+Recommended they add a test that the on-host derating lands in a sane band so a
+future scene change without a re-measure trips a test.
+
 ## For QA — tests whose behaviour genuinely changed with tetrominoes
 
 - Test piles were rescaled: wider wells (10→18, 6/5.5→14/16, 12→20) and ~1/4 the
