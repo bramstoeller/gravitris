@@ -493,6 +493,49 @@ for the same frame-rate-independence reason `tokens.md` and
     score/level values (see `screens/playing.md`'s note on this — a static
     "LV 1" is an honest current value, not a fake one, which is a different
     situation from next-piece's missing field entirely).
+- **Visual sign-off (2026-07-21) against `.team/reviews/0035-visual-layer/`
+  (PR #25): direction confirmed, signed.** Background reads as a world, HUD
+  matches `playing.md`, ember burst reads as a real event, Game Over closely
+  matches the wireframe. Two things I couldn't confirm from the first set of
+  stills, resolved on follow-up rather than left open:
+  - **The two §3 background glows measured invisible, not merely subtle** —
+    the Frontend Engineer found the original code added the near-black
+    `#0E1730`/`#241B3D` tokens at 4-8%, and adding a near-black colour cannot
+    brighten anything (measured: <0.1% luminance difference at the disc
+    centre). Fixed, and the token row above corrected to match — see
+    `tokens.md`'s `color-bg-glow-a`/`-b` entry for the real values now live.
+  - **The §7.1 luminance beat is built, not cut** — `ClearFlash`, a 120ms
+    triangle envelope keyed to `Phase.Clearing` onset. Confirmed by the
+    Frontend Engineer's own frame-brightness measurement (the ember capture
+    was the single brightest of 132 frames), not just asserted. No screenshot
+    will show it clearly on its own at 8%/120ms — that's by design, per this
+    document's cost table, not a shortfall.
+  - **Grain-per-cell tiling on multi-cell pieces is real, and I traced it to
+    source rather than relaying the Frontend Engineer's guess.** Visible in
+    `02-stack-hues.png`/`03`/`04`: the mottle noise restarts at each
+    tetromino cell's boundary instead of reading as one continuous mass.
+    `contracts.md:149-150` documents `particleU`/`particleV` as **body-local
+    lattice coord, 0..1**. The actual behaviour is deliberate, not a stray
+    bug: `SoftBodyWorld.kt:431-434` sets `particleU[i] = col / edgeSpan`
+    per cell, with the comment *"UV tiles per cell (each cell 0..1), so the
+    material grain reads the same on a tetromino cell as on the old block"*
+    — Backend chose cell-local tiling on purpose, to keep the grain
+    frequency matching pre-tetromino single-cell pieces. **So this is a
+    stale-contract-text problem, not an implementation bug**: `contracts.md`
+    describes something the code deliberately doesn't do, and needs
+    correcting either way. Underneath that, there's a real product
+    trade-off, not a docs typo: keep the current per-cell tiling (grain
+    scale stays consistent with single-cell pieces, at the cost of a visible
+    seam on multi-cell ones) vs. make `particleU`/`particleV` genuinely
+    body-local (continuous grain across a whole piece, at the cost of grain
+    scale changing between single- and multi-cell pieces, and touching a
+    core-sim data path several other things may depend on). That call is
+    Backend/Architect's, not mine to make unilaterally — flagged to Backend
+    with these exact line numbers so it isn't rediscovered from a
+    screenshot. Not blocking this release either way: hue continuity and
+    the rim/contact-seam — the primary and secondary identity cues — are
+    confirmed correct in the same screenshots; grain is documented in
+    `piece-identity.md` as the tertiary, least-reliable cue on purpose.
 - **Game Over's secondary "Title" action (`screens/game-over.md`) has
   nowhere to go yet** — Title (`screens/title.md`) isn't built. Agreed with
   the Frontend Engineer: ship Play Again prominently (it's the primary
