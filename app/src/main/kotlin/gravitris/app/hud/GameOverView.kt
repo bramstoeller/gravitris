@@ -35,11 +35,13 @@ import android.widget.TextView
  * - **Score** is wired to the real value, which is 0 until scoring (**D8**)
  *   lands. `game-over.md`'s "auto-shrink very large scores" rule is not needed
  *   yet and is left for D8 with the rest of scoring.
- * - **"NEW BEST" and the best-comparison row** are omitted: there is no local
- *   persistence yet (D8), so every run is `game-over.md`'s "first-ever run" state
- *   — show the score plainly, omit the best row, no badge. This keeps the
- *   `motion-celebrate` "NEW BEST" reveal meaningful for when it can actually
- *   fire. The hook is here: [showNewBest] is the single place D8 turns it on.
+ * - **"NEW BEST" and the best-comparison row** are omitted entirely: there is
+ *   no local persistence yet (D8), so every run is `game-over.md`'s "first-ever
+ *   run" state, which by its own definition shows the score plainly with **no
+ *   badge and no best row**. Building a hidden badge now would be speculative —
+ *   D8 adds the `motion-celebrate` "NEW BEST" reveal and the best row together,
+ *   when there is finally a best to beat. `Motion.CELEBRATE_MS`/`backOut` are in
+ *   place for it (`visual-direction.md` §8).
  * - **The "Title" secondary button** is omitted — there is no Title screen built
  *   (menus are deferred), so a Title button would strand the player. Play Again
  *   is the whole screen, which is exactly the "one more try" loop it exists for.
@@ -69,22 +71,6 @@ class GameOverView(
         gravity = Gravity.CENTER
     }
 
-    /**
-     * The "NEW BEST" badge — built, hidden, and never shown this round (no
-     * persistence). `game-over.md`: `color-glow` accent, `motion-celebrate` on
-     * reveal — the one screen and the one moment per session that the bigger,
-     * reserved motion token is for. [showNewBest] is where D8 wires it live.
-     */
-    private val newBest = TextView(context).apply {
-        text = "NEW BEST"
-        setTextColor(COLOR_GLOW)
-        setTypeface(Typeface.create("sans-serif", Typeface.BOLD))
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f) // type-title
-        letterSpacing = 0.1f
-        gravity = Gravity.CENTER
-        visibility = View.GONE
-    }
-
     private val playAgain = TextView(context).apply {
         text = "PLAY AGAIN"
         // Dark text on the amber pill — the highest-contrast, most
@@ -109,7 +95,6 @@ class GameOverView(
     private val column = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        addView(newBest, spacedBelow(0))
         addView(caption, spacedBelow(0))
         addView(scoreText, spacedBelow(4))
         addView(playAgain, spacedBelow(32))
@@ -160,10 +145,6 @@ class GameOverView(
      */
     fun show(scoreValue: Int) {
         scoreText.text = String.format("%,d", scoreValue)
-        // No persistence yet, so never a new best — always the first-ever-run
-        // presentation (no badge, no best row).
-        newBest.visibility = View.GONE
-
         if (view.visibility == View.VISIBLE) return
         view.visibility = View.VISIBLE
         playAgain.requestFocus()
@@ -191,31 +172,6 @@ class GameOverView(
     /** Dismiss the screen. */
     fun hide() {
         view.visibility = View.GONE
-    }
-
-    /**
-     * The single hook D8 flips to celebrate a beaten best: reveal the badge with
-     * `motion-celebrate` (or a plain cross-fade under Reduced Motion). Unused
-     * this round — there is no best to beat without persistence — but named and
-     * placed so scoring wires the one reserved celebratory moment in one spot.
-     */
-    @Suppress("unused")
-    fun showNewBest() {
-        newBest.visibility = View.VISIBLE
-        if (Motion.reduceMotion(view.context)) return
-        newBest.scaleX = 0.85f
-        newBest.scaleY = 0.85f
-        newBest.animate()
-            .scaleX(1.15f).scaleY(1.15f)
-            .setInterpolator(Motion.backOut)
-            .setDuration(Motion.CELEBRATE_MS)
-            .withEndAction {
-                newBest.animate().scaleX(1f).scaleY(1f)
-                    .setInterpolator(Motion.easeOut)
-                    .setDuration(Motion.FAST_MS)
-                    .start()
-            }
-            .start()
     }
 
     private companion object {
