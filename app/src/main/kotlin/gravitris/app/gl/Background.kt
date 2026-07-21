@@ -165,9 +165,13 @@ const vec3 BG_CORE = vec3(0.054902, 0.090196, 0.188235);
 const vec3 GLOW_A = vec3(0.020, 0.048, 0.072); // upper-left, deep teal
 const vec3 GLOW_B = vec3(0.052, 0.030, 0.082); // lower-right, deep violet
 
-// Radius of each disc, squared, since the falloff runs on squared distance to
-// avoid a per-pixel sqrt.
-const float GLOW_RADIUS2 = 0.42;
+// Radius of each disc, squared (the falloff runs on squared distance to avoid a
+// per-pixel sqrt). ~0.28 in aspect-corrected units — a disc that brightens its
+// own corner and falls to nothing well before mid-screen, so it reads as a
+// localized "distant crystal light" rather than a broad wash over the whole
+// field. A larger radius (the first pass used 0.42 ≈ 0.65 radius) covers the
+// entire screen and blends invisibly into the vertical gradient.
+const float GLOW_RADIUS2 = 0.08;
 
 // Slow drift: ~100s period as an angular rate, tiny amplitude. One sine per
 // glow — cheap enough to keep, first to cut if the budget disagrees
