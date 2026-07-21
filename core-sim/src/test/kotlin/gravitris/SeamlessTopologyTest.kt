@@ -88,37 +88,48 @@ class SeamlessTopologyTest {
     }
 
     @Test
-    fun `the render topology is exactly the solver's area constraints`() {
-        // The invariant that keeps particleCompression honest across the whole
-        // piece, seams included: every render triangle is one area constraint and
-        // vice versa. TopologyMatchesSolverTest guards this per cell in :app; this
-        // extends it to the seam bridges, which are the seam area triples verbatim.
+    fun `the render topology is the area constraints plus only the O junction fill`() {
+        // The invariant that keeps particleCompression honest across the piece,
+        // seams included: every solver area constraint (cell + seam) is a render
+        // triangle, so no constrained material goes undrawn. TopologyMatchesSolver
+        // guards this per cell in :app; this extends it to the seam bridges.
+        //
+        // The sole render triangles WITHOUT a backing area constraint are the O's
+        // two centre-junction fills (ADR 0018): they close the four-cell hole for
+        // the eye, and are render-only on purpose — a near-rigid area constraint
+        // there rings a heavy pile past its settle line, and their corners are
+        // already constrained so per-particle compression interpolates correctly.
+        val cell = config().lattice * config().lattice
         for (a in 0 until PieceShapes.COUNT) {
             val world = SoftBodyWorld(config())
             world.addBody(a, 9f, 9f) // first body: base 0, so absolute == body-local
 
             val constraints = HashSet<List<Int>>()
-            var realConstraints = 0
             for (k in 0 until world.areaCount) {
-                val tri = intArrayOf(world.acA[k], world.acB[k], world.acC[k])
+                val tri = listOf(world.acA[k], world.acB[k], world.acC[k])
                 // Inert padding is a == b == c; a real triangle never repeats.
                 if (tri[0] == tri[1] && tri[1] == tri[2]) continue
-                realConstraints++
                 constraints.add(tri.sorted())
             }
+            val renderSet = triangles(a).map { it.sorted() }.toHashSet()
 
-            val render = triangles(a)
-            val renderSet = render.map { it.sorted() }.toHashSet()
-
-            assertEquals(
-                realConstraints, render.size,
-                "archetype $a: ${render.size} render triangles vs $realConstraints area " +
-                    "constraints — the mesh and the solver disagree on triangle count",
+            assertTrue(
+                renderSet.containsAll(constraints),
+                "archetype $a has area constraints with no render triangle; the mesh omits " +
+                    "constrained material",
             )
+            // Everything the render mesh adds beyond the constraints must be a
+            // junction fill: a triangle spanning three distinct cells.
+            val extra = renderSet - constraints
+            for (t in extra) {
+                assertEquals(
+                    3, t.map { it / cell }.toSet().size,
+                    "archetype $a render triangle $t is neither an area constraint nor a junction fill",
+                )
+            }
             assertEquals(
-                constraints, renderSet,
-                "archetype $a render triangles are not the solver's area constraints; " +
-                    "compression shading would describe geometry not on screen",
+                if (a == 1) 2 else 0, extra.size,
+                "archetype $a has ${extra.size} render-only triangles, expected only the O's junction",
             )
         }
     }
@@ -200,6 +211,64 @@ class SeamlessTopologyTest {
         }
     }
 
+    @Test
+    fun `the O centre junction is triangulated, no hole`() {
+        // The O is the only shape where four cells meet at a POINT (ADR 0018).
+        // The edge-to-edge seams clip the corners of the central 2r x 2r square
+        // and leave its middle open — the hole the Frontend's correct extrusion
+        // exposed (handoff 0040). The junction fill closes it with the two
+        // triangles on the four inner corners.
+        val l = config().lattice
+        val cell = l * l
+        val p00 = 0 * cell + (l - 1) * l + (l - 1) // cell 0 (bottom-left) top-right
+        val p10 = 1 * cell + (l - 1) * l + 0       // cell 1 (bottom-right) top-left
+        val p01 = 2 * cell + 0 * l + (l - 1)       // cell 2 (top-left) bottom-right
+        val p11 = 3 * cell + 0 * l + 0             // cell 3 (top-right) bottom-left
+
+        val renderSet = triangles(1).map { it.sorted() }.toHashSet()
+        assertTrue(
+            listOf(p00, p10, p11).sorted() in renderSet,
+            "the O junction triangle {$p00,$p10,$p11} is missing; the centre is still a hole",
+        )
+        assertTrue(
+            listOf(p00, p11, p01).sorted() in renderSet,
+            "the O junction triangle {$p00,$p11,$p01} is missing; the centre is still a hole",
+        )
+
+        // Behavioural proof, index-free: the piece's geometric centre lies inside
+        // a render triangle. A per-cell mesh (or the clipped seam junction) would
+        // leave it in the gap between triangles.
+        val s = Simulation(config()).also { it.addPiece(1, 9f, 9f) }.state
+        var cx = 0f
+        var cy = 0f
+        for (i in 0 until s.particleCount) { cx += s.positionX[i]; cy += s.positionY[i] }
+        cx /= s.particleCount
+        cy /= s.particleCount
+        val covered = triangles(1).any { t ->
+            pointInTriangle(cx, cy, s.positionX, s.positionY, t[0], t[1], t[2])
+        }
+        assertTrue(covered, "the O's geometric centre ($cx, $cy) is in no render triangle — a hole")
+    }
+
+    @Test
+    fun `only the O has a four-cell junction`() {
+        // A junction triangle is the only render triangle that spans THREE
+        // distinct cells (a seam bridge spans two, an interior triangle one). So
+        // exactly the O should have any, and exactly two of them; the other six
+        // must pad the junction inert and stay seamless without a phantom centre.
+        val cell = config().lattice * config().lattice
+        for (a in 0 until PieceShapes.COUNT) {
+            val threeCell = triangles(a).count { t ->
+                setOf(t[0] / cell, t[1] / cell, t[2] / cell).size == 3
+            }
+            val expected = if (a == 1) 2 else 0
+            assertEquals(
+                expected, threeCell,
+                "archetype $a has $threeCell junction (3-cell) triangles, expected $expected",
+            )
+        }
+    }
+
     // --- helpers ------------------------------------------------------------
 
     /** The archetype's whole-piece render triangles, as `[i0, i1, i2]` triples. */
@@ -207,6 +276,24 @@ class SeamlessTopologyTest {
         val idx = Simulation(config()).state.bodyTriangleIndices[a]
         return (idx.indices step 3).map { intArrayOf(idx[it], idx[it + 1], idx[it + 2]) }
     }
+
+    /** Point-in-triangle by consistent sign of the three edge cross products,
+     *  with a small tolerance so a point on an edge (e.g. the shared diagonal)
+     *  counts as covered. */
+    private fun pointInTriangle(
+        px: Float, py: Float, x: FloatArray, y: FloatArray, a: Int, b: Int, c: Int,
+    ): Boolean {
+        val d1 = cross(px, py, x[a], y[a], x[b], y[b])
+        val d2 = cross(px, py, x[b], y[b], x[c], y[c])
+        val d3 = cross(px, py, x[c], y[c], x[a], y[a])
+        val eps = 1e-4f
+        val hasNeg = d1 < -eps || d2 < -eps || d3 < -eps
+        val hasPos = d1 > eps || d2 > eps || d3 > eps
+        return !(hasNeg && hasPos)
+    }
+
+    private fun cross(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float =
+        (ax - px) * (by - py) - (bx - px) * (ay - py)
 
     private companion object {
         val DIRS = arrayOf(intArrayOf(1, 0), intArrayOf(-1, 0), intArrayOf(0, 1), intArrayOf(0, -1))
