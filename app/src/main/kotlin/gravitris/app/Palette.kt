@@ -9,9 +9,10 @@ package gravitris.app
  * for a colour-vision-deficiency variant, without a shader change and without
  * touching the simulation.
  *
- * Values are from `docs/ux/piece-identity.md`, which is the source of truth.
- * Six cool jewel tones, ~37 degrees apart, chosen for CVD separation first and
- * aesthetics second.
+ * Values are from `docs/ux/piece-identity.md` and `docs/ux/visual-direction.md`,
+ * which are the source of truth. Seven jewel tones, >= 30 degrees apart, chosen
+ * for CVD separation first and aesthetics second — six cool tones plus Emerald,
+ * added with the tetromino redesign so each of the seven archetypes owns a hue.
  *
  * **Hue 15-65 degrees (amber/orange/gold/yellow) is reserved for the band-glow
  * signal and must never be used as a piece base hue** — otherwise the player
@@ -27,7 +28,7 @@ package gravitris.app
 object Palette {
 
     /**
-     * Six piece hues, then the well surface. Indices 0..5 are addressed by
+     * Seven piece hues, then the well surface. Indices 0..6 are addressed by
      * `bodyArchetype`; [SURFACE_INDEX] is used by the well frame geometry.
      */
     private val RGB = floatArrayOf(
@@ -43,7 +44,13 @@ object Palette {
         0xB2 / 255f, 0x3F / 255f, 0xC7 / 255f,
         // 5 Rose    #D63C6E  H335 S62% L55%
         0xD6 / 255f, 0x3C / 255f, 0x6E / 255f,
-        // 6 color-surface #1B1E29 — well walls and floor (docs/ux/tokens.md).
+        // 6 Emerald #3BA12B  H112 S58% L40% — the seventh hue, appended for the
+        //   seven tetromino archetypes (docs/ux/visual-direction.md). Additive:
+        //   the existing six are unmoved, so no CVD re-derivation. 112 degrees
+        //   is 47 clear of the reserved 15-65 glow band and continues the dark
+        //   rung of the lightness alternation at L40%.
+        0x3B / 255f, 0xA1 / 255f, 0x2B / 255f,
+        // 7 color-surface #1B1E29 — well walls and floor (docs/ux/tokens.md).
         //   Deliberately NOT #000000: tokens.md notes that if the background
         //   and the walls were both true black, the well would have no legible
         //   boundary on this device's OLED panel.
@@ -55,8 +62,9 @@ object Palette {
      * **tertiary** identity cue, the one that survives full colour blindness or
      * a monochrome screenshot.
      *
-     * Values are the spec's table verbatim: 0.8x through 1.8x in even steps,
-     * paired with the hue on the same row. It costs nothing to carry — the gel
+     * Values are the spec's table verbatim: 0.8x through 2.0x in even 0.2x
+     * steps, paired with the hue on the same row — Emerald continues the ladder
+     * at 2.0x. It costs nothing to carry — the gel
      * shader already needs a noise field for the material itself, so giving
      * each piece its own frequency is a multiply, not a second pass.
      *
@@ -71,34 +79,34 @@ object Palette {
      * with a body UV of (0, 0), where the grain term evaluates to zero. It is
      * present only so this array and [RGB] index identically.
      */
-    private val GRAIN = floatArrayOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 1.8f, 1.0f)
+    private val GRAIN = floatArrayOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 1.8f, 2.0f, 1.0f)
 
     /** Number of piece archetypes. */
-    const val PIECE_COUNT = 6
+    const val PIECE_COUNT = 7
 
     /** Palette slot for the well walls and floor. */
-    const val SURFACE_INDEX = 6
+    const val SURFACE_INDEX = 7
 
     /** Total slots uploaded to the shader. */
-    const val SIZE = 7
+    const val SIZE = 8
 
     /**
-     * Folds a core piece archetype (`0 until Simulation.ARCHETYPE_COUNT`,
-     * currently **7**) onto one of the [PIECE_COUNT] = **6** piece hues.
+     * Maps a core piece archetype (`0 until Simulation.ARCHETYPE_COUNT` = 7)
+     * onto one of the [PIECE_COUNT] = 7 piece hues.
      *
-     * The two counts disagree: the core deals seven shape-archetypes (colour
-     * only at Stage 3), while `piece-identity.md` specifies six hues. The
-     * Milestone-1 toy hid this by only ever dealing six archetypes; the real
-     * piece sequence deals all seven, and archetype 6 would otherwise index
-     * [SURFACE_INDEX] and paint a piece in the **well-surface grey** — a piece
-     * the player can barely see against the well. This folds it back onto a real
-     * hue instead, which is what makes the wired game render correctly.
+     * **The collision this used to work around is gone.** Until the tetromino
+     * redesign the core dealt seven shape-archetypes over only six hues
+     * (`piece-identity.md`), so this folded archetype 6 onto hue 0 to stop it
+     * indexing [SURFACE_INDEX] and painting a piece the well-surface grey. UX
+     * resolved it by adding a seventh hue (Emerald, `visual-direction.md`), so
+     * the counts now match and this is the identity map for every archetype the
+     * core deals.
      *
-     * It is a **placeholder for a design decision, flagged to UX**: seven
-     * archetypes over six hues forces a collision, so archetype 6 shares hue 0
-     * here. The proper resolution is one of — a seventh `piece-identity.md` hue,
-     * the core dealing six archetypes, or a designed 7->6 map — none of which the
-     * shell should make unilaterally.
+     * The `floorMod` is kept, not as a fold but as a guard: an archetype that
+     * ever arrived out of range would wrap to a real hue rather than index the
+     * surface slot and vanish into the wall. It is a one-instruction backstop on
+     * a value that comes from another module, not an abstraction with a second
+     * caller — see [gravitris.app.gl.BodyMesh], its only one.
      */
     fun pieceHue(archetype: Int): Int = Math.floorMod(archetype, PIECE_COUNT)
 

@@ -181,13 +181,14 @@ class PaletteTest {
     }
 
     /** Grain scale is the tertiary cue, and the spec's table is 0.8x through
-     *  1.8x in even steps paired row-for-row with the hues. */
+     *  2.0x in even steps paired row-for-row with the hues — Emerald extends the
+     *  ladder to 2.0x (docs/ux/visual-direction.md). */
     @Test
     fun `grain scales match the spec table and are all distinct`() {
         val grain = Palette.grainScales()
         assertEquals(Palette.SIZE, grain.size, "grain must index identically to the palette")
         val pieces = grain.take(Palette.PIECE_COUNT)
-        assertEquals(listOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 1.8f), pieces)
+        assertEquals(listOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 1.8f, 2.0f), pieces)
         assertEquals(pieces.size, pieces.toSet().size, "two pieces share a grain frequency")
     }
 

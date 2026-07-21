@@ -29,26 +29,16 @@ object Tunables {
      */
     const val TOUCH_SLOP_DP = 8f
 
-    /** 1:1 — 1dp of finger travel moves the piece 1dp in world space. */
+    /** 1:1 — 1dp of finger travel moves the piece 1dp in world space, while
+     *  the piece is being positioned. */
     const val DRAG_SENSITIVITY = 1.0f
 
-    /** 16dp of downward travel before the hard-drop velocity test is even evaluated. */
-    const val HARD_DROP_MIN_DISPLACEMENT_DP = 16f
-
-    /** +/-25 degrees from straight down. Stored as the cosine to keep the test
-     *  a dot product — no trigonometry per touch sample. */
-    const val HARD_DROP_ANGLE_COS = 0.906307787f // cos(25 degrees)
-
-    /** 1000dp/s, measured over the trailing velocity window below. */
-    const val HARD_DROP_MIN_VELOCITY_DP_PER_S = 1000f
-
-    /**
-     * ~60ms trailing window of TIMESTAMPED samples. docs/contracts.md is
-     * explicit that this must not degrade to a per-frame delta: Android
-     * samples touch above the refresh rate and the core must not lose that
-     * resolution to a 60Hz tick.
-     */
-    const val VELOCITY_WINDOW_NANOS = 60_000_000L
+    // The hard-drop threshold family (min displacement, angle cone, min
+    // velocity, and the ~60ms velocity window) is gone with the control
+    // redesign of 2026-07-21: release IS the drop and the piece then falls
+    // under real gravity, so there is no swipe-down flick to recognise and no
+    // flick speed to measure. VelocityWindow was deleted with them. The tap
+    // debounce below stays — a tap still rotates.
 
     /** 60ms. Absorbs touch-controller bounce / double-report after a tap. */
     const val ROTATE_DEBOUNCE_NANOS = 60_000_000L
@@ -341,14 +331,37 @@ object Tunables {
 
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---------
 
-    /** World units across the well. Matches `SimConfig.wellWidth`'s default so
-     *  the shell and the core agree without a conversion factor. */
-    const val WELL_WIDTH_WORLD = 10f
+    /**
+     * World units across the well.
+     *
+     * Widened 10 → 20 for the tetromino redesign (2026-07-21). A cell is
+     * `2 * particleRadius * lattice` ≈ 2.25 world units wide at lattice 5, so a
+     * 4-cell I-piece spans ~9.0; 10 units across left only ~5 columns, far too
+     * tight to slide a horizontal I-piece past a stack. 20 gives ~9 columns of
+     * play — between classic Tetris' 10 and the old 5 — which is the field the
+     * Backend Engineer sized the coverage bands (`bandColumns`) and the clear
+     * threshold against. Agreed with them, 2026-07-21.
+     *
+     * The app always passes this to `SimConfig.wellWidth` explicitly (via
+     * `WellLayout`), so it need not equal `SimConfig`'s own default; the core
+     * owns aligning that default for its tests and benchmark.
+     */
+    const val WELL_WIDTH_WORLD = 20f
 
-    /** Clamps on the derived well height, so a very tall or very square safe
-     *  area cannot produce a degenerate playfield. */
-    const val WELL_HEIGHT_MIN_WORLD = 12f
-    const val WELL_HEIGHT_MAX_WORLD = 30f
+    /**
+     * Clamps on the derived well height, so a very tall or very square safe
+     * area cannot produce a degenerate playfield.
+     *
+     * Raised with the width (2026-07-21). `WellLayout` derives height from
+     * `width * safeAspect` and keeps world units square, so at width 20 the
+     * client's ~20:9 panel wants ~41 units of height; a 30 cap would clamp that
+     * and stretch every piece vertically (the anisotropy `WellLayoutTest`'s
+     * "world units are square" case guards against). 48 clears the client
+     * device unclamped; the min rises in step so a squat/landscape safe area
+     * stays a sane field rather than a 20×12 sliver.
+     */
+    const val WELL_HEIGHT_MIN_WORLD = 24f
+    const val WELL_HEIGHT_MAX_WORLD = 48f
 
     // --- mechanic tuning shipped to the client ------------------------------
 
