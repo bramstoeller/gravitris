@@ -6,28 +6,29 @@ import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 import gravitris.app.haptics.ImpactHaptics
+import gravitris.app.hud.GameHud
+import gravitris.app.hud.GameOverView
 import gravitris.app.input.PlayerIntent
 import gravitris.app.perf.FrameTimeReadout
 import gravitris.app.perf.SolverBenchmark
 import nl.brainbuilders.gravitris.R
 
 /**
- * The game shell: one GL surface, one frame-time readout, edge-to-edge.
+ * The game shell: the GL surface, the HUD, the game-over sheet, edge-to-edge.
  *
- * Plain `Activity`, no AndroidX, no Compose — ADR 0010 §7. The game is a
- * single GL surface and the only other element on screen is a debug readout,
- * so a UI framework would earn nothing and would be the first third-party
- * dependency in a project whose merged manifest is deliberately auditable.
+ * Plain `Activity`, no AndroidX, no Compose — ADR 0010 §7. The on-screen chrome
+ * — the score/level HUD, the game-over screen, the demoted debug readout — is
+ * all plain `Canvas`-drawn Views composited over the GL surface (zero fragment
+ * cost, `visual-direction.md` §6), so a UI framework would earn nothing and
+ * would be the first third-party dependency in a project whose merged manifest
+ * is deliberately auditable.
  *
  * ## Edge-to-edge (ADR 0010 §1)
  *
@@ -48,15 +49,29 @@ class MainActivity : Activity() {
     private lateinit var readout: FrameTimeReadout
     private lateinit var haptics: ImpactHaptics
 
-    /** Shown when the well tops out (Phase.GameOver); a tap restarts. GONE
-     *  otherwise. Minimal on purpose — the polished game-over screen is Stage 5
-     *  (docs/ux/screens/game-over.md); this only has to not strand the player. */
-    private lateinit var gameOverView: TextView
+    /** The in-game HUD — score, level, pause (docs/ux/screens/playing.md §6).
+     *  Android View layer, zero GPU cost. */
+    private lateinit var hud: GameHud
+
+    /** The designed game-over screen (docs/ux/screens/game-over.md), raised when
+     *  the well tops out (Phase.GameOver). Replaces the Stage-1 bare TextView. */
+    private lateinit var gameOverView: GameOverView
 
     private val playerIntent = PlayerIntent()
     private val renderContext = FrameTimeReadout.RenderContext()
 
     private var paused = false
+
+    /**
+     * Whether the debug frame-time readout is currently shown. **Hidden by
+     * default now** (docs/ux/screens/playing.md §Frame-time readout, updated by
+     * visual-direction.md §6): the readout was standing in for a HUD and is
+     * demoted to a debug-only toggle. It stays a build-time performance
+     * instrument for us — not shown to the client — reachable only on a
+     * debuggable build via the volume-down long-standing debug affordance
+     * pattern (see [onKeyDown]). Touched only on the UI thread.
+     */
+    private var readoutVisible = false
 
     /** Guards against a second benchmark being queued while one is running.
      *  Touched only on the UI thread. */
@@ -91,15 +106,23 @@ class MainActivity : Activity() {
                 renderContext.shadeLevel = renderer.shadeLevel
                 renderContext.clears = renderer.clearCount()
                 renderContext.spawns = renderer.spawnCount()
-                readout.view.post { readout.update(snapshot, renderContext) }
+                // Capture the HUD figures on this (GL) thread and refresh the
+                // View on the UI thread. ~4Hz is imperceptible for a status
+                // number and keeps HUD work off the render thread.
+                val scoreValue = renderer.score()
+                val levelValue = renderer.level()
+                readout.view.post {
+                    readout.update(snapshot, renderContext)
+                    hud.update(scoreValue, levelValue)
+                }
             },
             onLayout = { worldPerDp ->
                 gameView.post { gameView.configureGestures(worldPerDp) }
             },
-            // Raised on the GL thread when the well tops out (Phase.GameOver);
-            // hop to the UI thread to show the overlay a View can only be touched
-            // from there.
-            onGameOver = { runOnUiThread { showGameOver() } },
+            // Raised on the GL thread when the well tops out (Phase.GameOver),
+            // carrying the final score captured there; hop to the UI thread to
+            // show the overlay, which a View can only be touched from.
+            onGameOver = { finalScore -> runOnUiThread { showGameOver(finalScore) } },
             clearThresholdOverride = debugClearThresholdOverride(),
         )
         gameView.setRenderer(renderer)
@@ -113,7 +136,12 @@ class MainActivity : Activity() {
         // expose to a screen reader.
         gameView.contentDescription = getString(R.string.game_board)
 
-        gameOverView = buildGameOverOverlay()
+        hud = GameHud(this, onPause = { togglePause() })
+        gameOverView = GameOverView(this, onPlayAgain = { onPlayAgain() })
+
+        // The debug readout is hidden by default now — it is demoted to a
+        // build-time instrument (see [readoutVisible]).
+        readout.view.visibility = View.GONE
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -124,9 +152,23 @@ class MainActivity : Activity() {
                     FrameLayout.LayoutParams.MATCH_PARENT,
                 ),
             )
+            // The HUD sits over the surface; the readout (when toggled on) over
+            // the HUD; the game-over sheet last, above everything.
+            addView(
+                hud.view,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
             addView(readout.view)
-            // Last, so it sits above the surface and the readout when shown.
-            addView(gameOverView)
+            addView(
+                gameOverView.view,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
         }
         setContentView(root)
 
@@ -257,6 +299,8 @@ class MainActivity : Activity() {
         }
 
         readout.applyInsets(left, bottom, density)
+        hud.applyInsets(left, top, right)
+        gameOverView.applyInsets(left, top, right, bottom)
 
         // The gesture recogniser is configured from the renderer's onLayout
         // callback, not here — the well's world-per-dp factor does not exist
@@ -358,17 +402,38 @@ class MainActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> {
+                revealReadoutOnDebugBuild()
                 gameView.queueEvent { renderer.cycleShadeLevel() }
                 true
             }
 
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                revealReadoutOnDebugBuild()
                 runSolverBenchmark()
                 true
             }
 
             else -> super.onKeyDown(keyCode, event)
         }
+    }
+
+    /**
+     * Reveal the demoted frame-time readout, on a debuggable build only.
+     *
+     * The readout is hidden by default now (visual-direction.md §6) so the HUD is
+     * the only chrome the client sees. But it is still the project's only
+     * on-device performance instrument, so the first press of a measurement key —
+     * the shading dial (volume-up) or the benchmark (volume-down), the affordances
+     * a measurement session already uses — brings it back. It then stays up for
+     * the session; a fresh launch hides it again, which is what keeps clean
+     * screenshots clean. Gated on `FLAG_DEBUGGABLE` exactly like
+     * [runSolverBenchmark]: a release build never surfaces it.
+     */
+    private fun revealReadoutOnDebugBuild() {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (readoutVisible) return
+        readoutVisible = true
+        readout.view.visibility = View.VISIBLE
     }
 
     private fun togglePause() {
@@ -378,43 +443,18 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Build the game-over overlay: a full-bleed scrim with centred text, hidden
-     * until [showGameOver], tapping anywhere restarts.
-     *
-     * A plain `TextView`, no menu — ADR 0010 keeps this shell framework-free and
-     * `docs/ux/screens/game-over.md`'s real screen is Stage 5. This is the
-     * smallest thing that does not strand the player on a dead stack: it says
-     * what happened, and one tap deals a fresh well.
+     * Raise the designed game-over screen with the run's final [finalScore].
+     * Posted from the GL thread via the renderer's `onGameOver`; idempotent, so
+     * a repeated call while shown just refreshes the score.
      */
-    private fun buildGameOverOverlay(): TextView = TextView(this).apply {
-        text = getString(R.string.game_over_message)
-        // color-text on a near-black scrim over the frozen stack (tokens.md).
-        // Not true black: that would hide that a stack is even there — the high
-        // alpha reads as "over the game", not "app gone". AA-contrast either way.
-        setTextColor(Color.argb(255, 0xF2, 0xF1, 0xEC))
-        setBackgroundColor(Color.argb(0xE6, 0x0B, 0x0B, 0x0B))
-        gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-        // Operable: tap anywhere, reachable by keyboard/switch, labelled by its
-        // own text. No animation, so prefers-reduced-motion has nothing to fight.
-        isClickable = true
-        isFocusable = true
-        visibility = View.GONE
-        setOnClickListener {
-            visibility = View.GONE
-            gameView.queueEvent { renderer.restart() }
-        }
-        layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        )
+    private fun showGameOver(finalScore: Int) {
+        gameOverView.show(finalScore)
     }
 
-    /** Raise the game-over overlay. Posted from the GL thread via the renderer's
-     *  `onGameOver`; idempotent, so a repeated call is harmless. */
-    private fun showGameOver() {
-        gameOverView.visibility = View.VISIBLE
-        gameOverView.requestFocus()
+    /** Dismiss the game-over screen and deal a fresh well. Wired to Play Again. */
+    private fun onPlayAgain() {
+        gameOverView.hide()
+        gameView.queueEvent { renderer.restart() }
     }
 
     override fun onResume() {

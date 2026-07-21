@@ -7,7 +7,4 @@
         this is a stated limitation, not a gap to close later."
     -->
     <string name="game_board">Game board</string>
-    <!-- Shown when the well tops out (Phase.GameOver). Minimal by design — the
-         full game-over screen is Stage 5 (docs/ux/screens/game-over.md). -->
-    <string name="game_over_message">Game over\n\nTap to play again</string>
 </resources>
