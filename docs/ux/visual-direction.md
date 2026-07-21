@@ -510,25 +510,32 @@ for the same frame-rate-independence reason `tokens.md` and
     was the single brightest of 132 frames), not just asserted. No screenshot
     will show it clearly on its own at 8%/120ms — that's by design, per this
     document's cost table, not a shortfall.
-  - **Grain-per-cell tiling on multi-cell pieces is real, logged, and turned
-    out to be a contract question, not a §4 design gap.** Visible in
+  - **Grain-per-cell tiling on multi-cell pieces is real, and I traced it to
+    source rather than relaying the Frontend Engineer's guess.** Visible in
     `02-stack-hues.png`/`03`/`04`: the mottle noise restarts at each
     tetromino cell's boundary instead of reading as one continuous mass.
-    `contracts.md` documents a tetromino as **one body of four cells**
-    (`particlesPerBody` = "4·bodyLattice²") and `particleU`/`particleV` as
-    **body-local**, 0..1 — if that held, the noise would NOT restart per
-    cell. The Frontend Engineer didn't touch the gel shader or `vBodyUv`
-    this round, so whatever is populating those varyings per-cell instead of
-    per-body predates this work. **This needs the Backend Engineer to
-    confirm which side is wrong — the contract's description or the
-    populated values** — before anyone reaches for the shader fix (sampling
-    grain from `vWorldPos` instead, which reopens the "grain slides under a
-    fixed pattern" problem §4 rejected for single-cell pieces). Not blocking
-    this release: hue continuity and the rim/contact-seam — the primary and
-    secondary identity cues — are confirmed correct in the same screenshots;
-    grain is documented in `piece-identity.md` as the tertiary,
-    least-reliable cue on purpose. Flagged to Backend directly; logged here
-    so it isn't only a chat message.
+    `contracts.md:149-150` documents `particleU`/`particleV` as **body-local
+    lattice coord, 0..1**. The actual behaviour is deliberate, not a stray
+    bug: `SoftBodyWorld.kt:431-434` sets `particleU[i] = col / edgeSpan`
+    per cell, with the comment *"UV tiles per cell (each cell 0..1), so the
+    material grain reads the same on a tetromino cell as on the old block"*
+    — Backend chose cell-local tiling on purpose, to keep the grain
+    frequency matching pre-tetromino single-cell pieces. **So this is a
+    stale-contract-text problem, not an implementation bug**: `contracts.md`
+    describes something the code deliberately doesn't do, and needs
+    correcting either way. Underneath that, there's a real product
+    trade-off, not a docs typo: keep the current per-cell tiling (grain
+    scale stays consistent with single-cell pieces, at the cost of a visible
+    seam on multi-cell ones) vs. make `particleU`/`particleV` genuinely
+    body-local (continuous grain across a whole piece, at the cost of grain
+    scale changing between single- and multi-cell pieces, and touching a
+    core-sim data path several other things may depend on). That call is
+    Backend/Architect's, not mine to make unilaterally — flagged to Backend
+    with these exact line numbers so it isn't rediscovered from a
+    screenshot. Not blocking this release either way: hue continuity and
+    the rim/contact-seam — the primary and secondary identity cues — are
+    confirmed correct in the same screenshots; grain is documented in
+    `piece-identity.md` as the tertiary, least-reliable cue on purpose.
 - **Game Over's secondary "Title" action (`screens/game-over.md`) has
   nowhere to go yet** — Title (`screens/title.md`) isn't built. Agreed with
   the Frontend Engineer: ship Play Again prominently (it's the primary
