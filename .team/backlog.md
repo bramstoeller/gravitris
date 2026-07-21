@@ -24,6 +24,7 @@ The Product Lead owns this file.
 | D7 | Distinct piece shapes — every piece is the same square lattice; variety is colour-only. A falling-block game wants several shapes (the brief's "pieces"). Needs core piece-shape support + renderer + palette rework. | Found 2026-07-21 (install-doc caveat, code-confirmed). | 2026-07-21 |
 | D8 | Game HUD — score/level display instead of the frame-time readout, and score persistence (personal best). Deferred with the mechanic. | 2026-07-21 |
 
+| D9 | Next-piece preview in the HUD. Additive (`SimState.nextArchetype`, cached at spawn — NOT a live peek, which would perturb the bag RNG; no Architect sign-off needed per contracts.md §5). Silhouette version (b) preferred now that pieces have real shapes — also needs PieceShapes' per-archetype cell layout exposed so :app doesn't re-derive the 7 shapes. Backend offered to implement fast on a fresh branch. Deferred this round (client OK'd a lean version); the visual-layer HUD leaves room for the slot. | Client scoped lean 2026-07-21; UX flagged, Backend sized. | 2026-07-21 |
 <!-- older deferred items below -->
 
 Not cancelled. Recorded so the reasoning survives and is not re-derived.
