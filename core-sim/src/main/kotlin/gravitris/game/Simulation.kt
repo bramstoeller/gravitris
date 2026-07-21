@@ -153,6 +153,22 @@ class Simulation(private val config: SimConfig) {
         // A clear takes precedence over an overflow grace (ADR 0005): a clear
         // that drops the stack resolves the would-be overflow, so it is run
         // first and, because a clear holds the spawn, the two never overlap.
+        //
+        // The invariant this order rests on: `clearTicks` and `overflowTicks`
+        // are never both >= 0. A clear is only ever begun from a *lock* (an
+        // active piece settling), and overflow only from a *due spawn* (no
+        // active piece), so the states are mutually exclusive by construction.
+        // This ordering is documentation of intent, not a live dependency —
+        // reordering the branches is harmless. What is NOT harmless is a future
+        // change that lets the two coexist (e.g. beginning overflow while a
+        // piece is still active); the check below fails loudly the moment that
+        // becomes possible, which is the executable form of the invariant a
+        // reordering test could never express. `check` is inline with a lazy
+        // message, so it costs a boolean compare and nothing on the happy path.
+        check(clearTicks < 0 || overflowTicks < 0) {
+            "clear ($clearTicks) and overflow ($overflowTicks) are live at once; " +
+                "the two states must be mutually exclusive (ADR 0005)"
+        }
         if (clearTicks >= 0) {
             advanceClear()
             return
