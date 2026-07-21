@@ -126,6 +126,10 @@ class MechanicTest {
 
     /** Whether [sim]'s first dealt piece releases control within [ticks]. */
     private fun locksWithin(sim: Simulation, ticks: Int): Boolean {
+        // Drop almost immediately so this measures the lock timeout, not the
+        // positioning window (ADR 0016) that would otherwise add 50 ticks of
+        // hover before the piece even begins to fall.
+        sim.tuning.positioningTicks = 1
         sim.start()
         val first = sim.state.activePieceBody
         val input = InputFrame()

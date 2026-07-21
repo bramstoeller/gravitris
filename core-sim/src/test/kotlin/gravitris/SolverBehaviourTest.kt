@@ -99,10 +99,8 @@ class SolverBehaviourTest {
 
         val faller = sim.addPiece(archetype = 1, centerX = 5f, centerY = 18f)
         val input = InputFrame()
-        input.hardDrop = true
-        input.hardDropVelocity = 30f
+        sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016), replaces the old hard drop
         sim.step(input)
-        input.clear()
         TestScenes.run(sim, 600)
 
         val restingTop = bodyMaxY(sim, resting)
@@ -236,24 +234,25 @@ class SolverBehaviourTest {
         // number of ticks *without* the drag. Comparing against the previous
         // tick of the same run would just measure gravity, which is a much
         // larger effect than the one under test.
+        // Drag now applies only while positioning (ADR 0016), where the piece is
+        // parked and frozen. Sliding must translate it and derive no velocity —
+        // the substep buffers move with the position — so the piece carries
+        // nothing sideways into the fall it is released to.
         val dragged = Simulation(config())
-        val free = Simulation(config())
-        dragged.addPiece(archetype = 0, centerX = 5f, centerY = 10f)
-        free.addPiece(archetype = 0, centerX = 5f, centerY = 10f)
+        dragged.addPositioningPiece(archetype = 0, centerX = 5f, centerY = 10f)
 
         val input = InputFrame()
         input.dragX = 0.3f
         val before = centroidX(dragged)
         dragged.step(input)
-        free.step(InputFrame())
         val after = centroidX(dragged)
 
         assertTrue(after > before + 0.2f, "drag should move the piece, moved ${after - before}")
         assertTrue(
-            dragged.state.kineticEnergy < free.state.kineticEnergy + VELOCITY_INJECTION_BUDGET,
-            "drag injected kinetic energy (${dragged.state.kineticEnergy} against an " +
-                "undragged ${free.state.kineticEnergy}); position and previous-position " +
-                "buffers must move together",
+            dragged.state.kineticEnergy < VELOCITY_INJECTION_BUDGET,
+            "sliding a positioning piece injected kinetic energy " +
+                "(${dragged.state.kineticEnergy}); position and previous-position " +
+                "buffers must move together so no velocity is derived from the slide",
         )
     }
 

@@ -206,7 +206,9 @@ internal class XpbdSolver(private val world: SoftBodyWorld) {
             world.substepPrevX[i] = world.posX[i]
             world.substepPrevY[i] = world.posY[i]
             if (world.invMass[i] == 0f) continue
-            world.velY[i] += gh
+            // gravityScale is 1 normally and 0 for a piece being positioned
+            // (ADR 0016) — a multiply, so a weightless piece adds no branch here.
+            world.velY[i] += gh * world.gravityScale[i]
             world.posX[i] += world.velX[i] * h
             world.posY[i] += world.velY[i] * h
         }

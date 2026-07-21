@@ -118,7 +118,7 @@ internal class InterlockJitterTest {
         val sim = Simulation(config)
         sim.addPiece(0, NEIGHBOUR_X, REST_Y)
         sim.clearActivePiece()
-        sim.addPiece(0, DRAGGED_X, REST_Y)
+        sim.addPositioningPiece(0, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val meter = TremorMeter(sim.state)
@@ -185,7 +185,7 @@ internal class InterlockJitterTest {
     fun `dragging through empty space injects no energy`() {
         val config = config()
         val sim = Simulation(config)
-        sim.addPiece(0, DRAGGED_X, REST_Y)
+        sim.addPositioningPiece(0, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val input = InputFrame()
