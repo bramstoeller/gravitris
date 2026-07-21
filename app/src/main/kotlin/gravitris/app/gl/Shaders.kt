@@ -178,7 +178,9 @@ uniform float uDitherGain;
 // silhouette corners fade toward the tray colour (§16 rounded corners).
 uniform float uSpecularGain;
 uniform float uSpecularSharpness;
-uniform float uCornerGain;
+// §16: the vCorner threshold above which a true corner is rounded away via MSAA
+// alpha-to-coverage. Higher = a smaller (tighter) rounded region.
+uniform float uCornerRound;
 
 // --- band glow (docs/ux/band-glow.md) ------------------------------------
 uniform float uBandFill[BAND_COUNT];
@@ -214,12 +216,6 @@ const vec3 RIM_COLOR = vec3(0.96, 0.97, 1.0);
 // never per piece — same reason as RIM_COLOR: a tinted highlight would shift the
 // hue exactly where the player reads the piece.
 const vec3 SPEC_COLOR = vec3(1.0, 0.99, 0.96);
-
-// color-tray #7C93A6 (docs/ux/tokens.md). Used only by the §16 corner fade:
-// a piece's true corner is physically adjacent to the tray or another piece
-// everywhere in the well, never to the outer sky, so it fades toward the tray
-// (corner-fade-mode), never toward color-sky-*.
-const vec3 TRAY_COLOR = vec3(0.486, 0.576, 0.651);
 
 // Fixed gloss geometry (§14): a bright band biased through the upper-left,
 // running along the piece's long axis. SPEC_DIR is the across-streak normal
@@ -441,19 +437,24 @@ void main() {
     float darken = min(compression * uCompressionGain, uCompressionMax);
     color *= 1.0 - darken;
 
-    // --- rounded corners (§16), tier 1+ -----------------------------------
-    // Fade ONLY true outer-silhouette corners toward the tray colour, so a
-    // square corner reads as softened without new geometry. vCorner is 1 only
-    // at a real convex corner of the whole piece (an L stays sharp at its
-    // elbow, an O rounds all four — backend handoff 0036) and ramps to 0 over
-    // one lattice spacing. Cubing it with multiplies (no pow at mediump) pulls
-    // the fade in tight to the tip — "slightly rounded, not a die/cube". The
-    // walls carry vCorner generic 0, so this is a no-op for them, and it fades
-    // to the tray (never the sky): a corner is always adjacent to the tray or
-    // another piece in the well, never to the outer background.
+    // --- rounded corners (§16), tier 1+, via MSAA alpha-to-coverage --------
+    // Round ONLY true outer-silhouette corners, by dropping the fragment's
+    // ALPHA near the corner tip. With MSAA enabled the driver's alpha-to-
+    // coverage converts that alpha into reduced sample coverage, so the square
+    // corner is eaten into a soft curve that shows the TRUE background behind it
+    // — sky, tray, or another piece — and therefore reads as rounded against
+    // ANY backdrop, with NO blend and NO discard (the shader's rules hold).
+    //
+    // vCorner is 1 only at a real convex corner of the whole piece (an L stays
+    // sharp at its elbow, an O rounds all four — backend handoff 0036) and ramps
+    // to 0 over one lattice spacing; internal seam corners carry 0, and the walls
+    // carry the generic 0, so neither rounds. The rounded region is vCorner in
+    // [uCornerRound, 1]; below uCornerRound the piece is fully opaque. If MSAA is
+    // unavailable the alpha is simply ignored (no blend) and corners stay square
+    // — graceful, not a black screen.
+    float cornerCoverage = 1.0;
     if (uShadeTier >= 1) {
-        float corner = vCorner * vCorner * vCorner;
-        color = mix(color, TRAY_COLOR, min(corner * uCornerGain, 1.0));
+        cornerCoverage = 1.0 - smoothstep(uCornerRound, 1.0, vCorner);
     }
 
     // --- tier 3: band glow -------------------------------------------------
@@ -573,7 +574,9 @@ void main() {
         color += dither() * uDitherGain;
     }
 
-    fragColor = vec4(color, 1.0);
+    // Alpha carries the §16 corner coverage for MSAA alpha-to-coverage; 1.0
+    // (fully opaque) everywhere except the rounded corner tips.
+    fragColor = vec4(color, cornerCoverage);
 }
 """
 

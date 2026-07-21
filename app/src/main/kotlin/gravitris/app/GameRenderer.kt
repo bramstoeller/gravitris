@@ -440,7 +440,7 @@ class GameRenderer(
         // §14/§16 glossy jelly candy material constants.
         set("uSpecularGain", Tunables.SPECULAR_GAIN)
         set("uSpecularSharpness", Tunables.SPECULAR_SHARPNESS)
-        set("uCornerGain", Tunables.CORNER_GAIN)
+        set("uCornerRound", Tunables.CORNER_ROUND)
         set("uGlowGain", Tunables.GLOW_GAIN)
         set("uGlowCapRatio", Tunables.GLOW_CAP_RATIO)
         set("uIgnitionCapRatio", Tunables.IGNITION_CAP_RATIO)
@@ -637,7 +637,13 @@ class GameRenderer(
             GLES30.glUseProgram(program)
         }
 
+        // §16 rounded corners: alpha-to-coverage is enabled ONLY for the body
+        // draw (the gel shader writes a corner-coverage alpha; the walls write
+        // 1.0). It is a no-op without MSAA, and must stay off for the blended
+        // shadow pass above, so it is scoped tightly here.
+        GLES30.glEnable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
         mesh.draw()
+        GLES30.glDisable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
 
         // The positioning-window countdown (ADR 0016), drawn last so it reads
         // above the stack. Its own flat program — the next frame rebinds the gel

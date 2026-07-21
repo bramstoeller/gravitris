@@ -277,62 +277,73 @@ object Tunables {
      * line that feathers, not a soft lobe — §14 is emphatic that the SHAPE is
      * what sells the material. 0.16 is a thin band; raise it for a fatter,
      * softer highlight, lower it for a harder glint. First-pass; tune on-device.
+     *
+     * 0.14, up from 0.11: on a large piece (a 4×1 I, or an L) the fixed-position
+     * streak is a thin band that can barely graze the visible mass, so those
+     * pieces read matte next to a compact O the streak crosses fully (the Product
+     * Lead flagged the green pieces reading matte). A slightly wider band gives
+     * every piece a visible glint while staying a hard-edged streak, not a lobe.
+     * The residual shape/hue dependence is a known limit of a single fixed streak
+     * — flagged in the handoff.
      */
-    const val SPECULAR_SHARPNESS = 0.11f
+    const val SPECULAR_SHARPNESS = 0.14f
 
     /**
-     * How hard a true outer-silhouette corner fades toward `color-tray` (§16).
+     * The `vCorner` threshold above which a true outer-silhouette corner is
+     * rounded away by MSAA alpha-to-coverage (§16).
      *
-     * The shader cubes `vCorner` (which already ramps 1→0 over one lattice
-     * spacing) before applying this, so the visible fade is pulled tight to the
-     * corner tip — the client's "slightly rounded, not a die/cube". 1.0 fades
-     * the very tip fully to the tray; below 1 leaves the tip partly the piece's
-     * own colour (a softer, less-rounded read). The apparent radius
-     * (`radius-piece-corner`, ~10–15% of a cell) is reached by tuning this and
-     * the shader's cube exponent together, on-device — not a raw geometry value.
+     * **Reworked from the earlier fade-to-tray approach.** Fading a corner toward
+     * the tray colour only reads as "rounded" where the tray is actually behind
+     * the corner; on an airborne piece against the bright sky it read as a dark
+     * corner smudge (the Product Lead flagged exactly this on the first pass).
+     * Alpha-to-coverage instead drops the fragment's coverage at the corner tip,
+     * so the square corner is eaten into a curve that shows the REAL background —
+     * sky, tray or another piece — and reads as a genuine soft round against any
+     * backdrop, with no blend and no discard.
      *
-     * 0.7, not a full 1.0: the fade is toward the tray (`corner-fade-mode`),
-     * correct where a corner sits against the tray or another piece, but on an
-     * airborne piece against the bright sky the same fade reads as a slightly
-     * dark corner fringe rather than a soft round (the compromise §16 already
-     * names). Dialing the gain back keeps the stacked-corner softening the client
-     * asked for while making that airborne fringe gentle — the single most
-     * on-device-and-client-dependent value this round, flagged in the handoff.
+     * `vCorner` ramps 1 at the true corner particle to 0 one lattice spacing in.
+     * This value is where the coverage starts dropping: the rounded region is
+     * `vCorner ∈ [CORNER_ROUND, 1]`. 0.5 rounds the outer ~half of that ramp
+     * (~10–15% of a cell, the `radius-piece-corner` target). Higher = a tighter,
+     * subtler round; lower = a bigger, more obviously rounded corner. First-pass;
+     * the client steers "how rounded". Needs MSAA (falls back to square without).
      */
-    const val CORNER_GAIN = 0.7f
+    const val CORNER_ROUND = 0.5f
 
     // --- soft contact shadow (docs/ux/visual-direction.md §18) --------------
 
     /**
-     * The piece contact shadow's colour: `color-shadow` = `color-tray` darkened
-     * 35%. NOT black — a black shadow on a saturated candy world reads as a
-     * hole; a darkened-tray tone reads as the tray in shade, which is what makes
-     * the candy look like it is resting *in* the world (§18). `color-tray`
-     * #7C93A6 × 0.65.
+     * The piece contact shadow's colour: `color-shadow`, a darkened `color-tray`.
+     * NOT black — a black shadow on a saturated candy world reads as a hole; a
+     * darkened-tray tone reads as the tray in shade (§18).
+     *
+     * `color-tray` #7C93A6 × 0.45. The token names a 35% darken (×0.65), but the
+     * Product Lead couldn't see the shadow at all against the light tray — a
+     * shadow only a little darker than the surface it falls on vanishes on a
+     * bright scene. Darkened harder (×0.45) so it clearly reads as a shadow while
+     * staying a tray tone, not black. First-pass; tune on the real panel.
      */
-    const val SHADOW_R = 0.486f * 0.65f
-    const val SHADOW_G = 0.576f * 0.65f
-    const val SHADOW_B = 0.651f * 0.65f
+    const val SHADOW_R = 0.486f * 0.45f
+    const val SHADOW_G = 0.576f * 0.45f
+    const val SHADOW_B = 0.651f * 0.45f
 
-    /** Opacity of the contact shadow (`color-shadow` @ ~48%). The shadow is the
-     *  one pass in the renderer that turns `GL_BLEND` on, and only for itself.
-     *  Nudged up from the token's 40% so the offset sliver actually reads as a
-     *  soft shadow beneath the piece rather than a hairline; first-pass, tune
-     *  on-device against the real tray. */
-    const val SHADOW_ALPHA = 0.48f
+    /** Opacity of the contact shadow. Raised to 0.55 (from the token's 40%) for
+     *  the same reason the colour is darker: it has to read against a light tray
+     *  and light sky, where a faint shadow disappears. First-pass. */
+    const val SHADOW_ALPHA = 0.55f
 
     /**
      * Shadow offset in world units, down and slightly right (`shadow-offset-
      * piece`, §18). World units so it scales with the piece rather than the
      * screen. Positive Y is up in world space, so "down" is negative Y.
      *
-     * The token names 0.08; this uses a little more so the shadow peeks out
-     * below the piece as a visible soft band rather than a hairline the piece
-     * almost fully covers — the offset is the only thing that makes the shadow
-     * read at all when a piece rests directly on the tray. First-pass value.
+     * The token names 0.08; this uses more so the shadow peeks out below the
+     * piece as a visible soft band rather than a hairline the piece almost fully
+     * covers — the offset is the main thing that makes the shadow read at all
+     * when a piece rests directly on the tray. First-pass value.
      */
-    const val SHADOW_OFFSET_X = 0.07f
-    const val SHADOW_OFFSET_Y = -0.14f
+    const val SHADOW_OFFSET_X = 0.08f
+    const val SHADOW_OFFSET_Y = -0.18f
 
     // --- antialiasing (docs/ux/visual-direction.md §17) --------------------
 
