@@ -183,12 +183,21 @@ the file is UI chrome. Kept to four values on the same "resist growth"
 discipline as the rest of this document — full derivation and the shader
 mechanics in `visual-direction.md` §13–§17.
 
+**Round-4 correction (2026-07-21):** the client rejected the shipped
+execution of this material as "grainy rough rubber" — the grain amplitude/
+frequency, the body-gradient direction, and the specular's shape were all
+retuned in `visual-direction.md` §14.1–§14.3. **No value in this table
+changed** — `color-specular` is still the right fixed colour, `color-shadow`
+and `shadow-offset-piece` are untouched (those are §18's shadow pass, a
+different track). What changed is the *shader terms* consuming
+`color-specular`, described below.
+
 | Token | Value | Use |
 |---|---|---|
-| `color-specular` | `#FFFFFF` @ 92%, warm-neutral (not tinted per piece) | The hard gloss highlight on every piece — fixed, like the retired `RIM_COLOR`, for the same reason: a coloured highlight would shift the apparent hue exactly where players read pieces. Confirmed against real Candy Crush references (`visual-direction.md` §12): the highlight is near-white, not tinted to the candy's hue. |
+| `color-specular` | `#FFFFFF` @ 92%, warm-neutral (not tinted per piece) | The gloss highlight on every piece — fixed, like the retired `RIM_COLOR`, for the same reason: a coloured highlight would shift the apparent hue exactly where players read pieces. Confirmed against real Candy Crush references (`visual-direction.md` §12): the highlight is near-white, not tinted to the candy's hue. **Corrected shape, same colour** (`visual-direction.md` §14.3): no longer a single hard-edged streak with no length falloff (read as a diagonal scratch); now a soft-ended elongated patch (tapered along its own length, not just across it) plus a small brighter hotspot at its centre — still fixed-direction, fixed-position, suppressed at contact. |
 | `color-shadow` | `color-tray` darkened 35%, @ 40% opacity | The soft contact shadow cast by every piece onto whatever is beneath it (tray or another piece). Not pure black — a black shadow on a saturated candy world reads as a hole; a darkened-tray-colour shadow reads as the tray in shade, per the real references' soft, coloured-not-black shadow read. |
 | `shadow-offset-piece` | 0.08 world units, down + slightly right | Fixed offset for the piece contact-shadow pass, §17. World units so it scales with the piece, not the screen. |
-| `corner-fade-mode` | fade-to-`color-tray` | Not a colour, a rule: §15's corner mask fades a piece's true outer corners toward `color-tray`, never toward `color-sky-*` — a corner is always physically adjacent to the tray/another piece in this game's layout, never to the outer sky, so fading to the sky would be visibly wrong deep in a stack. See §15 for why this was the one place the mechanism had to be checked against where pieces actually sit in the well, not just against the outermost visible row. |
+| `corner-fade-mode` | fade-to-`color-tray` | Not a colour, a rule: §15's corner mask fades a piece's true outer corners toward `color-tray`, never toward `color-sky-*` — a corner is always physically adjacent to the tray/another piece in this game's layout, never to the outer sky, so fading to the sky would be visibly wrong deep in a stack. See §15 for why this was the one place the mechanism had to be checked against where pieces actually sit in the well, not just against the outermost visible row. **Stale as of the shipped code:** `Tunables.kt`'s `CORNER_ROUND` comment records that this was reworked to MSAA alpha-to-coverage instead (dropping fragment alpha at the corner, not fading toward a colour) after the fade read as a dark smudge against the sky. Not corrected here — corner/rounding is a mesh-and-coverage concern, a different lane than this material correction — flagged so whoever next opens this table fixes the row rather than trusting it. |
 
 ## Shadow / elevation
 

@@ -12,6 +12,15 @@ verbatim below as the record of what shipped and why, not deleted and not
 silently reversed. §11 onward is the current direction — build against that,
 not against this section.**
 
+**Further superseded, within §14 only, by a round-4 correction — see §14.1–
+§14.4.** Round 3's background/tray/corners/shadow direction (§13, §15–§19)
+shipped and the client confirmed the background specifically: keep it. But
+the material itself (§14, as originally written) rendered as grainy rough
+rubber, not glossy candy — a real defect in the execution the team owns,
+diagnosed against the actual shipped frames and corrected in place. §14's
+original text is kept as §14.5, marked and not deleted, for the same reason
+§1–§10 were kept above.
+
 Client verdict after playing the real build on the Fairphone 6: the graphics
 are **"far below par."** Two references were named: **99 Bricks Wizard
 Academy** and **Candy Crush Saga**. This document diagnoses why, cites what
@@ -756,28 +765,230 @@ honest-procedural approach that already built the rest of this game.
 
 ## 14. The material — glossy translucent jelly candy
 
-Every term below is additive to, or a retune of, the existing gel material
-(`Shaders.kt`) — nothing here proposes a second shader or a second draw
-path. §2's earlier rejection of "glossy hard-candy specular highlights" (*"a
-different material entirely... would fight the tactile, organic, squashable
-identity"*) is explicitly overridden by the client's own follow-up answer —
-noted here so the reversal is visible, not silently different from what §4
-already said.
+**Round-4 correction (2026-07-21) — this section's ORIGINAL execution is
+superseded below, kept as the record of what was tried and why it read
+wrong, not deleted.** The client played the built render
+(`feat/candy-material-render`, PR #31) and said, plainly: the light candy
+background is good, keep it — *"die blokken zijn zo lelijk"* — the blocks
+are ugly. I reviewed the actual frames the Frontend Engineer captured
+(`.team/reviews/0037-candy-material-render/02-L-rounded-corners-sharp-elbow-shadow.png`,
+`03-O-rounded-corners-shadow-and-remaining-seam.png`,
+`04-settled-rounded-with-shadows.png`) before writing a word of this
+correction. What ships today reads as **grainy rough rubber, not smooth
+glossy candy**: a fine cross-hatch/stipple texture dominates every piece's
+surface, the base colour is flat with no sense of volume, and the cyan
+piece's specular is a hard diagonal streak that looks glitchy rather than
+wet. Three concrete defects, diagnosed against the real code
+(`Shaders.kt`, `Tunables.kt` on `feat/candy-material-render`) and against
+real Candy Crush references (§12, plus a fresh corroborating fetch of
+[Wikipedia's current screenshot](https://en.wikipedia.org/wiki/Candy_Crush_Saga) —
+APKPure itself now blocks automated fetches that succeeded in the §12 pass;
+§12's own detailed, already-cited high-res analysis stands as the primary
+reference and is not being re-derived from memory). §14.1–§14.4 below are
+the fix. Everything else in the original text (translucency-via-subsurface
+as the honest proxy for real alpha transparency, the rim/fresnel
+dual-purpose retune, the rejection of true `GL_BLEND` transparency) is
+**not** in question and is kept verbatim as §14.5.
 
-**Base translucency/subsurface — kept, not reinvented.** The existing
-subsurface term (`Shaders.kt` tier 1: `depth = min(vBodyUv, 1-vBodyUv)*2`,
-darkened+saturated toward the body's core, lighter toward its edge) is
-*already* the right physical story for "light passing slightly through a
-jelly body" — thin material near an edge lets more light through and reads
-brighter/less saturated; thick material at the core reads deeper and richer.
-Round 2 used it as a subtle darkening; round 3 leans on it harder (raise
-`uSubsurfaceGain`) as the primary "this is translucent" cue, since a true
-alpha-blended see-through body is explicitly rejected below on cost grounds.
-**Once §15 lands, this term runs on true body-wide UV** rather than
-per-cell UV, so the depth gradient reads across the whole tetromino's
-silhouette, not each cell's — this is the same underlying fix that also
-resolves the seam complaint, restated here because it also directly serves
-translucency.
+### 14.1 Kill the grain — it's the dominant defect
+
+**What's on screen is `mottle()`** (`Shaders.kt`: `sin(uv.x*3.1+uv.y*1.7) *
+sin(uv.y*2.6-uv.x*1.1)`, applied as `color *= 1.0 + grain * uGrainGain`,
+`GRAIN_FREQUENCY = 7.0` scaled per-archetype `0.8×`–`2.0×`, `GRAIN_GAIN =
+0.06`). `piece-identity.md` files this as the **tertiary**, CVD-backup
+identity cue — explicitly the first thing to cut if budget or legibility
+disagrees, never meant to be visible as a pattern. At a base frequency of 7
+cycles across a piece (up to 14 for the highest-scaled archetypes) it is
+fine enough, on a piece that's maybe 150–200px across on the reference
+device, to alias into a dense waffle/cross-hatch grid — that grid is
+exactly what reads as "grainy rubber" in the frames. Real Candy Crush
+candies (§12) show **no comparable surface texture at all** on the glossy
+pieces — "the base body colour is flat and highly saturated... nearly all
+of the 3D-ness comes from the highlight and edge-darkening, not a soft
+body-wide gradient." A backup identity cue is not supposed to be the most
+visually dominant thing on the surface; today it is.
+
+**Fix — cut both frequency and amplitude, don't remove the term:**
+
+- `GRAIN_FREQUENCY`: `7.0` → **~2.5**, so the per-archetype range becomes
+  roughly 2.0–5.0 cycles across a piece instead of 5.6–14. At that
+  frequency the mottle reads as a soft, barely-there cloud of tone, not a
+  countable grid.
+- `GRAIN_GAIN`: `0.06` → **~0.02**, roughly a third of today's value.
+- **Acceptance check, stated so it's testable, not just tunable:** on the
+  reference device, at arm's length, an unprimed viewer should not
+  spontaneously describe the piece surface as "textured," "grainy," or
+  "patterned." If a CVD simulation still needs to find the frequency
+  difference between archetypes to back up hue, it will — that's the only
+  job this term has left.
+- **Side effect to check, not silently absorb:** `grain`'s raw value (not
+  scaled by `uGrainGain`) is reused as the ember-shimmer phase offset and
+  the dissolve break-up threshold (`Shaders.kt` tier 3). Lowering
+  `GRAIN_FREQUENCY` changes those patterns' coarseness too — coarser ember
+  chunks and a coarser dissolve break-up. That may well look fine or even
+  better (bigger candy-chunk dissolve reads more "confectionery" than fine
+  noise), but it is Frontend's to actually look at against
+  `feel-feedback.md`'s dissolve description before shipping, not to assume
+  unaffected. If it reads wrong, the fix is a **second**, separate low
+  uniform reserved for tier-3's noise field rather than reverting the tier
+  1/2 fix that solves the client's actual complaint — flagged here so that
+  trade is made deliberately if it comes up.
+
+### 14.2 Fix the body gradient — it currently darkens the wrong half
+
+**The subsurface term's direction is inverted relative to both the real
+reference and the "plump jelly bean" read this document is chasing.**
+Read literally against the code: `depth = min(vBodyUv, 1-vBodyUv) * 2` is
+**0 at the true silhouette edge and 1 at the body's core**, and
+`color = mix(color, deep, depth * uSubsurfaceGain)` mixes *toward* the
+darker, more-saturated `deep` tone as `depth → 1` — i.e., **today the
+piece darkens toward its centre and stays at full undarkened brightness
+at its edge.** That is backwards. §12's own reference analysis says real
+candy is "flat... almost no gradient of its own beyond a touch of
+edge-darkening at the true silhouette boundary" — edge darker, body flat —
+and it's also backwards from the "brighter toward the centre, richer/
+deeper toward the edge" plump-volume read this correction is chasing. Both
+independent checks agree on the same direction, and the shipped code has
+the other one.
+
+**Fix — invert which end of the gradient darkens, and concentrate it near
+the edge rather than spreading it across the whole body:**
+
+```
+// was: depth is 0 at the true edge, 1 at the body's core (unchanged, kept)
+vec2 d = min(vBodyUv, 1.0 - vBodyUv);
+float depth = min(d.x, d.y) * 2.0;
+color = mix(color, deep, depth * uSubsurfaceGain);
+
+// becomes:
+float edgeCloseness = 1.0 - depth;               // 1 at edge, 0 at core
+float edgeBand = edgeCloseness * edgeCloseness;  // free square, same trick
+                                                  // as the rim's cubic —
+                                                  // concentrates the darkening
+                                                  // near the true edge instead
+                                                  // of spreading it across half
+                                                  // the body
+color = mix(color, deep, edgeBand * uSubsurfaceGain);
+```
+
+One swapped operand and one free multiply — not a new term, not a new
+uniform. `deep`'s own construction (`SUBSURFACE_SATURATE = 1.35`,
+`SUBSURFACE_DARKEN = 0.62` — same hue, darker and more saturated, never
+shifted toward brown/grey) is correct per `piece-identity.md`'s rule and is
+unchanged; only *where on the body* it's mixed in was wrong.
+
+**Retune `SUBSURFACE_GAIN` down from `0.80` to roughly `0.35`–`0.45`,
+first-pass.** `0.80` was raised specifically to make the (wrongly-directed)
+gradient read as visible translucency; the corrected, edge-concentrated
+version needs less gain to read clearly as "richer at the rim" without
+becoming a heavy dark ring around every piece. Tune on-device like every
+other gain in this shader.
+
+**This is what actually produces the "plump, voluminous jelly bean" read**
+the client is asking for — not a literal alpha-blended body, which stays
+rejected on cost grounds (§14.5) — and it's a body-wide effect once §15's
+body-wide UV lands, exactly like the original term already specified.
+
+### 14.3 Reshape the specular — a gleam, not a scratch
+
+**Diagnosis, read against the shipped shader:**
+
+```
+float across = dot(vBodyUv - SPEC_CENTER, SPEC_DIR);
+float streak = 1.0 - smoothstep(0.0, uSpecularSharpness, abs(across));
+float spec = streak * streak * pieceMask * (1.0 - vContact);
+```
+
+This measures distance **only across** the streak's width. There is no
+falloff **along** its length — the highlight is a band of constant peak
+intensity that runs the full extent of the piece's silhouette in that
+direction, bounded only by where the shape itself ends. That is precisely
+why it reads as a hard diagonal scratch/glitch on the cyan piece in frame
+03 rather than a localized gleam: a real highlight (§12: "sharply bright at
+its brightest point and **feathering out**... not a soft wide Phong lobe,"
+seen as an elongated streak that still has ends) tapers at both ends of its
+own long axis. Ours currently doesn't taper at all along that axis.
+
+**Fix — add a second, perpendicular falloff so the streak becomes a
+soft-ended elongated patch instead of an infinite band, plus a small
+brighter hotspot at its centre (the client's own ask: "a small bright
+hotspot plus a softer falloff"):**
+
+```
+vec2 alongDir = vec2(-SPEC_DIR.y, SPEC_DIR.x);      // perpendicular, free
+float along = dot(vBodyUv - SPEC_CENTER, alongDir);
+
+// existing across-axis term, unchanged:
+float acrossFall = 1.0 - smoothstep(0.0, uSpecularSharpness, abs(across));
+// new along-axis taper — SPEC_LENGTH is the new half-length of the streak:
+float alongFall  = 1.0 - smoothstep(0.0, uSpecularLength, abs(along));
+float streak = acrossFall * acrossFall * alongFall;
+
+// small tight hotspot at the streak's own centre, same distance fields,
+// no new dot product:
+float r2 = across * across + along * along;
+float hotspot = 1.0 - smoothstep(0.0, uSpecularHotspotRadius * uSpecularHotspotRadius, r2);
+hotspot *= hotspot;
+
+float spec = (streak + hotspot * uSpecularHotspotGain) * pieceMask * (1.0 - vContact);
+```
+
+Two new uniforms (`uSpecularLength`, `uSpecularHotspotRadius`; the hotspot's
+own gain can be a third or folded into a fixed ratio of `uSpecularGain` —
+Frontend's call) plus one more dot product, two more `smoothstep`s and a
+multiply — still the same order of cost as the rim term, nowhere near a
+second shader or a real Phong/BRDF evaluation. Everything else about the
+term is unchanged and correct: fixed direction and position, fixed
+near-white colour (never tinted per piece — `color-specular`), gated to
+pieces, suppressed at contact.
+
+**First-pass values, tune on-device:** `uSpecularLength` ≈ 0.35–0.45
+body-UV units (roughly a third to half of the piece's own extent, so the
+gleam reads as "on this piece" rather than "a dot"); `uSpecularHotspotRadius`
+≈ 0.06–0.08 (small — it's the "small bright hotspot," not a second streak);
+`uSpecularSharpness` (the across-axis feather) can likely come down slightly
+from `0.14` now that the along-axis taper is doing some of the
+"reads-as-a-highlight-not-a-stripe" work, but that's a joint tune, not a
+number fixed here.
+
+### 14.4 Richer colour — no new hues, and no hue-shift gradient
+
+**No palette change.** `Palette.kt`'s seven jewel-tone hexes (`#1FB37A`,
+`#1B9FC0`, `#3162E0`, `#7148E0`, `#B23FC7`, `#D63C6E`, `#3BA12B`) are
+already saturated, already CVD-derived, and are not the source of the
+"flat poster paint" read — the grain-noise (§14.1) and the wrongly-directed
+darkening (§14.2) were muddying an already-good palette. Once both are
+fixed, the same seven hues read richer and juicier without touching a
+single RGB value.
+
+**Correcting one specific idea, since I was asked to confirm or correct
+against the references: no subtle hue-shift across the gradient.** Real
+Candy Crush candies (§12) show no hue-shift across a single candy's body —
+value and saturation change slightly, hue does not. This also isn't
+optional here: `piece-identity.md`'s standing rule for the deep tone is
+explicit that it must stay "the *same* hue... never shifted toward brown or
+grey," because hue is the primary identity cue and a gradient that drifts
+hue would muddy exactly the signal that has to survive a glance. §14.2's
+`deep` tone already satisfies this (it saturates and darkens via a luma
+mix, which cannot rotate hue) — that mechanism is being kept and
+relocated, not replaced with anything that shifts hue.
+
+### 14.5 What was already right, and stays
+
+Everything below is the original text, unchanged, still true, and not part
+of this correction:
+
+**Base translucency/subsurface — kept, not reinvented.** The subsurface
+term (`Shaders.kt` tier 1) is *already* the right physical story for
+"light passing slightly through a jelly body" — thin material near an edge
+lets more light through and reads brighter/less saturated; thick material
+at the core reads deeper and richer. §14.2 corrects *which end of the
+gradient* implements that story; the underlying premise (a depth gradient
+is the honest, cheap proxy for translucency, since real alpha transparency
+is rejected below on cost grounds) is unchanged. **Once §15 lands, this
+term runs on true body-wide UV** rather than per-cell UV, so the depth
+gradient reads across the whole tetromino's silhouette, not each cell's —
+the same underlying fix that also resolves the seam complaint.
 
 **True alpha transparency — considered and rejected.** Seeing background or
 neighbouring-piece colour literally through a piece would need `GL_BLEND`
@@ -789,51 +1000,29 @@ it reads as "light passing through" without ever compositing two fragments.
 Flagged, not attempted, in the same spirit §3 flagged a literal parallax
 scene as out of scope.
 
-**Specular highlight — new term, the client's explicit ask.**
-
-- **Shape and position:** a single fixed-direction highlight streak, biased
-  toward the upper-left of each piece (matching every real reference in
-  §12), computed as a smoothed threshold of `bodyUv · lightDir` where
-  `lightDir` is a fixed 2D constant (≈ pointing up-and-left in body space) —
-  the same "cheapest approximation that still reads" discipline as the
-  existing rim term (no `pow`, no `normalize`; a dot product and a
-  `smoothstep`). Width and sharpness are one gain/one sharpness uniform,
-  `uSpecularGain`/`uSpecularSharpness`, tuned on-device like every other gain
-  in this shader — not fixed here.
-- **Colour:** fixed, near-white, neutral (`color-specular`, `tokens.md`) —
-  **never tinted per piece**, for the identical reason `RIM_COLOR` is fixed:
-  a coloured highlight would shift the apparent hue exactly where players
-  read a piece, and hue is the primary identity cue (`piece-identity.md`).
-- **Suppressed where `vContact` is high** — a face pressed against a
-  neighbour or the tray is not a free glossy surface, same logic the
-  existing rim term already applies, same uniform, no new state.
-- **Runs on body-wide UV** (§15) so the highlight sweeps across an entire
-  multi-cell piece as one continuous streak — this is the literal mechanism
-  behind the brief's "the specular highlight sweeping across the entire
-  piece," not a separate feature.
-- **Cost:** one dot product, one `smoothstep`, one `mix` — the same order of
-  cost as the existing rim term it sits alongside. Not the expensive part of
-  this direction; see §17 for what actually is.
-
-**Fresnel / edge behaviour — the existing rim term, retuned and dual-purposed.**
-The existing rim light (`Shaders.kt`: cubic falloff of `vEdge`, fixed
-neutral cool-white) already is a cheap fresnel approximation (brightening at
-a free, grazing surface). It keeps its existing role as the primary
-small-screen boundary/identity cue (`piece-identity.md`) and takes on a
-second one: retuned warmer/brighter toward `color-specular`, it reads as the
-glassy edge-catch-the-light cue real glass/gel material shows at its
+**Fresnel / edge behaviour — the existing rim term, retuned and
+dual-purposed.** The existing rim light (`Shaders.kt`: cubic falloff of
+`vEdge`, fixed neutral cool-white) already is a cheap fresnel approximation
+(brightening at a free, grazing surface). It keeps its existing role as the
+primary small-screen boundary/identity cue (`piece-identity.md`) and takes
+on a second one: retuned warmer/brighter toward `color-specular`, it reads
+as the glassy edge-catch-the-light cue real glass/gel material shows at its
 silhouette. No new term, no new uniform beyond retuning `uRimGain` and the
 rim colour constant — both already exist.
 
-**Rounded glossy bevel** is specified separately in §16, because it needs
-its own data (a new per-particle corner signal) rather than being a shading
-retune — read it as part of this same material, not a separate feature.
+**Rounded glossy bevel** is specified separately in §16 (now shipped via
+MSAA alpha-to-coverage rather than the fade-to-tray approach originally
+described there — a mesh/corner concern, out of this correction's lane) —
+read it as part of this same material, not a separate feature.
 
-**Net shader cost of this section:** one new term (specular: dot product +
-smoothstep + mix, ~4 ops) plus retuned constants on two existing terms
-(subsurface gain, rim gain/colour) — no new uniforms beyond the two named
-above, no new transcendentals, no new draw call. This is the cheapest of
-the four round-3 asks; §16–§18 carry the real costs.
+**Net shader cost, updated for this correction:** §14.1–§14.3 add one new
+dot product, three new `smoothstep`s and up to three new uniforms
+(`uSpecularLength`, `uSpecularHotspotRadius`, optionally a hotspot gain),
+retune four existing constants (`GRAIN_FREQUENCY`, `GRAIN_GAIN`,
+`SUBSURFACE_GAIN`, and the subsurface mix operand — free), and swap one
+existing multiply's operand (§14.2). Still the cheapest of the visual
+tracks in flight — no new draw call, no new transcendental, nothing that
+touches §17's MSAA cost or §18's shadow pass.
 
 ## 15. Continuous whole-piece surface — D10 promoted from deferred to required
 
@@ -1197,3 +1386,41 @@ version of five documents instead of a careful version of one.
 - **Shape-to-hue mapping remains Backend/Frontend's call** (§5, unchanged) —
   nothing in round 3 touches which archetype gets which hue, only how each
   hue is rendered.
+
+## 23. Round-4 correction — sequencing
+
+- **This lands on top of the open PR, not as a rewrite.** `feat/candy-material-render`
+  (PR #31) already has the body-wide UV, the specular term's structure, the
+  subsurface term, and the rounded corners — §14.1–§14.3 are retunes and one
+  small additive term (the specular's along-axis falloff + hotspot) on that
+  same branch, not a new material or a new draw path. Handed to the Frontend
+  Engineer directly (handoff + message), since they own that branch.
+- **Mesh/topology is explicitly out of this correction's scope.** The
+  internal "+" seam on multi-cell pieces (frame 03,
+  `.team/reviews/0037-candy-material-render/README.md`'s own diagnosis,
+  handoff 0038 frontend→backend) is a separate defect with a separate owner
+  (`feat/candy-seamless-mesh`, Backend Engineer) and nothing in §14.1–§14.3
+  touches vertex data, mesh topology, or the extrusion. Do not conflate the
+  two fixes in one PR review — a reviewer should be able to judge "does the
+  material look like candy" independently of "do the cells join."
+- **Order of visual impact, so Frontend can sanity-check early rather than
+  tuning all three blind:** §14.1 (grain) first — it's the single most
+  visible defect in the frames and the cheapest change (two constants).
+  §14.2 (gradient direction) second — also cheap, one swapped operand.
+  §14.3 (specular reshape) third — the only one needing new uniforms and a
+  genuine on-device tuning pass for length/hotspot radius. Recommend
+  screenshotting after each step against the same frame (a settled two-piece
+  stack, matching `04-settled-rounded-with-shadows.png`'s composition) so the
+  three corrections can be judged individually before being judged together.
+- **What I did not do:** re-tune `SPECULAR_GAIN` (0.85) itself, re-derive the
+  palette, or touch `color-tray`/`color-sky-*`/the shadow pass — none of
+  those were named as wrong and the client explicitly confirmed the
+  background. Scope stayed to grain, gradient direction, and specular shape,
+  per the dispatch.
+- **Open question for the client, to sanity-check before the next build is
+  shown:** the target material described in §14.1–§14.3, in one line —
+  *a smooth, flat-saturated candy body with a subtle darker/richer rim right
+  at its silhouette edge, no visible surface texture, and one soft
+  wet-looking gleam (a small bright hotspot fading into a longer soft
+  streak) biased toward the upper-left of each piece.* If that's not the
+  target, better to say so before Frontend spends the tuning pass in §14.3.
