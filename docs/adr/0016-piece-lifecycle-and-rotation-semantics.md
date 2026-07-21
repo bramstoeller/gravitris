@@ -1,6 +1,15 @@
 # ADR 0016 — Piece lifecycle (position → fall) and rotation semantics
 
-Date: 2026-07-21 · Status: accepted · Author: Backend Engineer
+Date: 2026-07-21 · Status: superseded by 0017 · Author: Backend Engineer
+
+> **Superseded by [ADR 0017](0017-single-controlled-descent-control-scheme.md)
+> (2026-07-21).** The client field-tested this scheme and rejected the
+> positioning lockout: they want to steer *and* rotate for the whole descent
+> under gravity, with no phase where control is taken away. The lifecycle below
+> (POSITIONING→FALLING, the gravity-suppress freeze, the tick-counted window,
+> the phase-gated input and the `drop` intent) is replaced by a single
+> controlled descent. **The rotation semantics in this ADR still hold verbatim**
+> — only *when* rotation is allowed changed (now: the whole descent).
 
 ## Context
 
