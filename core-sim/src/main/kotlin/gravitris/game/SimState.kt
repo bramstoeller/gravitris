@@ -37,7 +37,20 @@ interface SimState {
     /** Index into the body arrays. */
     val particleBody: IntArray
 
-    /** Body-local lattice coordinate, 0..1. -> `vBodyUv` */
+    /**
+     * Material coordinate for procedural grain/noise, **0..1 within each CELL** —
+     * not across the whole body. A tetromino's four cells each span 0..1
+     * (`SoftBodyWorld.addBody`), and that is deliberate: it keeps the grain
+     * *frequency* identical to the pre-tetromino single-cell block, at the cost
+     * that the grain tiles per cell rather than reading as one continuous mass.
+     * The trade-off is accepted because hue and the rim/contact-seam carry piece
+     * identity and grain is the tertiary cue (`docs/ux/piece-identity.md`); the
+     * internal seam is hidden in the rim light (`particleEdge` = 0 on seam faces)
+     * but not in the grain. A continuous whole-piece grain is possible but is a
+     * deliberate data-path change (continuous body-space UV, and a frequency
+     * that then varies with piece size unless compensated) — loop the Architect;
+     * see the backlog. -> `vBodyUv`
+     */
     val particleU: FloatArray
     val particleV: FloatArray
 
