@@ -140,15 +140,26 @@ interface SimState {
 
     // --- rendering topology (static per tier, ADR 0007) ---
     /**
-     * Body-local triangle indices. Valid for one body and reused for every body
-     * with an offset of `bodyIndex * bodyLattice * bodyLattice`. Constant for
-     * the whole run.
+     * Cell-local triangle indices for **one** `bodyLattice x bodyLattice` cell,
+     * constant for the whole run.
+     *
+     * **A tetromino is four cells (ADR 0015), and this is reused per CELL, not
+     * per body.** A body owns [particlesPerBody] particles laid out as
+     * `particlesPerBody / (bodyLattice * bodyLattice)` cells (four), so iterate
+     * cells — `cellCount = particleCount / (bodyLattice * bodyLattice)` — and
+     * draw this index set for cell `k` at vertex offset `k * bodyLattice *
+     * bodyLattice`. The seam gap between cells is not triangulated; the ADR 0011
+     * silhouette closes it, and [particleEdge] is 0 on seam-facing edges so the
+     * interior seams do not rim-light (the "B2" rendering agreed with the
+     * Frontend). The values are unchanged from the old single-square piece — a
+     * cell *is* the old block — so a renderer that iterated bodies at
+     * `bodyLattice²` now iterates cells at the same stride, `4x` as many.
      *
      * **Length is `6 * (bodyLattice - 1) * (bodyLattice - 1)`** — six indices
      * per lattice cell, two triangles each. The *values* it contains run
-     * `0 until bodyLattice * bodyLattice` (the particle indices), a different
-     * and smaller number: 96 versus 25 at lattice 5. Size an index buffer from
-     * the length, never from the value range.
+     * `0 until bodyLattice * bodyLattice` (the cell-local particle indices), a
+     * different and smaller number: 96 versus 25 at lattice 5. Size an index
+     * buffer from the length, never from the value range.
      *
      * For the cell at lattice row `r`, column `c` — row 0 at the bottom, so
      * world `y` increases with `r` — name the four corners by particle index

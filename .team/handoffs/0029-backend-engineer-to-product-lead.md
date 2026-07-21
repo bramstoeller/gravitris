@@ -1,6 +1,6 @@
 # 0029 — Backend Engineer → Product Lead
 
-Date: 2026-07-21 · Branch: `feat/tetromino-pieces` · Commits: `90d7c2a`, `9c13e84`
+Date: 2026-07-21 · Branch: `feat/tetromino-pieces` · Commits: `90d7c2a`, `9c13e84`, review-pass (lattice-4 pin + doc alignment)
 
 ## What I did
 
@@ -31,6 +31,20 @@ Frontend's `feat/drop-controls`):
   outline. Spawn/placement generalised; benchmark and test piles rebuilt to
   drop-from-top. Physics scale unchanged → approved feel preserved.
 
+**Review pass** (after the pin decision):
+
+- `SimConfig.lattice` default 5→**4** (ADR 0014 pin); well defaults 10×20→20×40
+  for the shaped game. All test configs are explicit, so this is game-default
+  only — 84 tests still green.
+- `slamActivePiece` doc hardened: **test/probe only, must not be called from game
+  code** (Architect's nit). Stated in the doc rather than `@VisibleForTesting`,
+  because that annotation is in `androidx.annotation` and `:core-sim` is
+  Android-free (ADR 0002/0008). The `[6,30]` clamp is called out as a fixed
+  contract the Frontend's range tests depend on.
+- `SimState.triangleIndices` doc corrected to per-CELL reuse (was per-body);
+  benchmark/ADR 0015 tier wording softened to the measurement only, deferring the
+  pin story to ADR 0014.
+
 ## Agreements recorded
 
 - Full contract co-design with the Frontend in
@@ -44,16 +58,23 @@ Frontend's `feat/drop-controls`):
 
 ## What I did NOT do / needs you
 
-1. **PERF — a real decision, flagged with numbers.** A tetromino is ~4× the
+1. **PERF/TIER — DECIDED (was open; now resolved).** A tetromino is ~4× the
    material of a single block. Measured on the host: a near-full 20×44 well is
    ~1 700 particles at lattice 4 (~0.78 ms/frame, ≈9 ms at the 12× device
    derating — in budget) but ~3 100 at lattice 5 (~1.56 ms, ≈**19 ms — OVER**
-   the 16.67 ms budget). This is exactly what the ADR 0009 startup tier
-   selection exists for: I made the benchmark measure tetromino density, so the
-   reference device now selects **lattice 4** and lattice 5 is reserved for
-   devices that benchmark faster. Nothing to do unless you or the Architect want
-   a different call (smaller well, or shipping L5). The real-device measurement
-   (open blocker) will confirm.
+   the 16.67 ms budget). **Decision (you + Architect): pin the lattice at 4, no
+   runtime tier selection** — recorded in the Architect's **ADR 0014**
+   (supersedes ADR 0009's tier part, repairs ADR 0013's dangling refs; on the
+   Architect's PR #22). Pinning also closes the `pieceExtent`-varies-per-lattice
+   leak by construction. In this branch I set `SimConfig.lattice` **default to 4**
+   and sized the well defaults (20×40) for the shaped game; the geometry stays
+   lattice-agnostic (4/5/6 all correct) so tests still exercise 5 and a future
+   faster reference device can re-pin at build time. The real-device measurement
+   (open blocker) still confirms the 12× derating assumption. **Note:** ADR 0014
+   itself lands via PR #22, so my in-code "ADR 0014" refs dangle until that
+   merges; `decisions.md` on this branch adds only 0015/0016 (I dropped my
+   0012–0014 placeholder — the Architect indexes those on PR #22, so expect a
+   small `decisions.md` merge reconcile).
 2. **Well width is the Frontend's, but it interacts with me.** They're going
    ~20 wide / up to ~48 tall for ~9 columns. I'll scale `bandColumns` and
    retune `clearThreshold` (a live dial) on the wider/taller field in front of
@@ -63,13 +84,32 @@ Frontend's `feat/drop-controls`):
    `:app` is **red on `feat/tetromino-pieces` in isolation** — it references the
    removed `hardDrop`/`hardDropVelocity` and the not-yet-landed `drop`. The two
    halves are green only **combined**: the Frontend merges my branch into
-   `feat/drop-controls`, fixes four `:app` files (all mechanical —
-   `slamActivePiece(30f)` reproduces the old 30-unit slam so the compression/
-   haptic tuning does NOT move), and you land the combined result. **The
-   Frontend is blocked** on a worktree-binding env issue and has escalated to
-   you — unblocking them is the path to a green combined PR. My PR is opened for
-   review/audit and is `:core-sim`-green; its `:app` red is by design and handed
-   over per the above, not a defect to chase.
+   `feat/drop-controls`, and you land the combined result. The Frontend already
+   built and greened their `:app` side on `feat/drop-controls` (PR #23, commit 1
+   merged) but that branch does **not** yet have commit 2 (geometry) — so
+   whoever finishes `feat/drop-controls` must pull commit 2 in. **The Frontend
+   was blocked** on a worktree-binding env issue (escalated to you; you said a
+   fresh FE agent is finishing from `feat/drop-controls`). My PR (#24) is opened
+   for review/audit and is `:core-sim`-green; its `:app` red is by design and
+   handed over, not a defect to chase.
+
+   **Two `:app` changes commit 2 requires** (from the Frontend, recorded so they
+   are not lost):
+   - **Buffer sizing must consume `SimState.particlesPerBody` /
+     `particleCapacity`**, not re-derive `lattice²`. `GameRenderer`'s `maxBodies`
+     mirror and `BodyMesh(maxBodies, lattice)` size off a single-cell
+     `pieceExtent²` today; against a 4×-denser tetromino that under-sizes the
+     vertex buffer / trips the capacity assert in `rebuildSimulationIfWellChanged`
+     on the first piece. This is the one non-mechanical `:app` change.
+   - **The render loop iterates CELLS, not bodies**: `cellCount =
+     particleCount / bodyLattice²`, draw `triangleIndices` per cell at offset
+     `cell·bodyLattice²`. The Frontend measured that their `extrudeBoundary`
+     needs **zero** change — it already walks per `bodyLattice²` block, which is
+     now a cell. B2 confirmed working against commit 2.
+
+   The four range/mechanical `:app` fixes are all `slamActivePiece(30f)`
+   substitutions (same 30-unit slam, so compression/haptic tuning does NOT move)
+   plus `input.hardDrop → input.drop`.
 
 ## For QA — tests whose behaviour genuinely changed with tetrominoes
 

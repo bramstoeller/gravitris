@@ -774,13 +774,22 @@ class Simulation(private val config: SimConfig) {
      * additively, clamped into a usable band up to the solver's terminal
      * velocity.
      *
-     * **Not a player action.** The old hard-drop gesture is gone (ADR 0016):
-     * release is the drop and the fall is plain gravity. This remains only so
-     * the solver-probe tests can put a piece at [XpbdSolver] terminal speed to
-     * exercise broadphase margin, rigidity and impact/compression at speed —
-     * the impact-velocity path the removed input used to provide. It sits
-     * alongside [addPiece]/[clearActivePiece] as a scene affordance, not the
-     * game loop.
+     * **Test/probe only — MUST NOT be called from game or production code.** The
+     * old hard-drop gesture is gone (ADR 0016): release is the drop and the fall
+     * is plain gravity, and reintroducing a velocity-injecting control here would
+     * quietly bring hard-drop back as a control path the design removed. This
+     * exists solely so the solver-probe tests (`:core-sim`) and `:app`'s
+     * compression/haptic range tests can put a piece at [XpbdSolver] terminal
+     * speed to exercise broadphase margin, rigidity and impact/compression — the
+     * impact-velocity path the removed input used to provide. It sits alongside
+     * [addPiece]/[clearActivePiece] as a scene affordance, not the game loop.
+     * (A `@VisibleForTesting` annotation would say this to the compiler, but that
+     * lives in `androidx.annotation`, which `:core-sim` deliberately cannot
+     * depend on — ADR 0002/0008 — so it is stated here and held in review.)
+     *
+     * The [SLAM_MIN_SPEED]/[SLAM_MAX_SPEED] clamp is a fixed contract: `:app`'s
+     * range tests pin their measured constants against a 30-unit slam, so the
+     * bounds must not move without telling the Frontend.
      */
     fun slamActivePiece(speed: Float) {
         val body = stateImpl.activePieceBody
@@ -888,21 +897,20 @@ class Simulation(private val config: SimConfig) {
         const val BENCHMARK_BODIES: Int = 24
 
         /**
-         * The configuration the device benchmark measures to pick a quality tier
-         * (ADR 0009), and the scene to re-run on a real device to close the
-         * host-to-device derating blocker (`.team/blockers.md`).
+         * The calibration reference for the pinned lattice (ADR 0014), and the
+         * scene to re-run on a real device to close the host-to-device derating
+         * blocker (`.team/blockers.md`).
          *
-         * **Lattice 4, the shipping tier for tetrominoes.** A tetromino is four
-         * cells (ADR 0015), so the material is ~4x denser per unit area than the
-         * single blocks ADR 0001 measured. A near-full 20x44 well is ~1 700
-         * particles at lattice 4 and ~3 100 at lattice 5; measured on the host,
-         * lattice 4 runs ~0.78 ms/frame (≈9 ms at the 12x device derating,
-         * inside the 16.67 ms budget) while lattice 5 runs ~1.56 ms (≈19 ms,
-         * *over* budget). So the reference device tier for tetrominoes is 4, and
-         * this benchmark is what makes that selection honest — the old
-         * single-block benchmark would have under-counted the real cost 4x. The
-         * lattice-5 tier stays available for devices that benchmark faster than
-         * the reference. **Flagged to the Architect (ADR 0009) and Product Lead.**
+         * **Lattice 4, the pinned shipping tier.** A tetromino is four cells
+         * (ADR 0015), so the material is ~4x denser per unit area than the single
+         * blocks ADR 0001 measured. The measurement, on the host, near-full
+         * 20x44 well: lattice 4 is ~1 700 particles at ~0.78 ms/frame (≈9 ms at
+         * the 12x device derating, inside the 16.67 ms budget); lattice 5 is
+         * ~3 100 particles at ~1.56 ms (≈19 ms, *over* budget). That measurement
+         * is why ADR 0014 pins the lattice at 4 and retires ADR 0009's runtime
+         * tier selection — the pin story lives in that ADR, not here; this scene
+         * is only the number behind it and the revisit-trigger for a future
+         * faster reference device.
          */
         fun benchmarkReferenceConfig(): SimConfig = SimConfig(
             lattice = 4,
