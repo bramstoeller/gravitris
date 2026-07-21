@@ -493,6 +493,42 @@ for the same frame-rate-independence reason `tokens.md` and
     score/level values (see `screens/playing.md`'s note on this — a static
     "LV 1" is an honest current value, not a fake one, which is a different
     situation from next-piece's missing field entirely).
+- **Visual sign-off (2026-07-21) against `.team/reviews/0035-visual-layer/`
+  (PR #25): direction confirmed, signed.** Background reads as a world, HUD
+  matches `playing.md`, ember burst reads as a real event, Game Over closely
+  matches the wireframe. Two things I couldn't confirm from the first set of
+  stills, resolved on follow-up rather than left open:
+  - **The two §3 background glows measured invisible, not merely subtle** —
+    the Frontend Engineer found the original code added the near-black
+    `#0E1730`/`#241B3D` tokens at 4-8%, and adding a near-black colour cannot
+    brighten anything (measured: <0.1% luminance difference at the disc
+    centre). Fixed, and the token row above corrected to match — see
+    `tokens.md`'s `color-bg-glow-a`/`-b` entry for the real values now live.
+  - **The §7.1 luminance beat is built, not cut** — `ClearFlash`, a 120ms
+    triangle envelope keyed to `Phase.Clearing` onset. Confirmed by the
+    Frontend Engineer's own frame-brightness measurement (the ember capture
+    was the single brightest of 132 frames), not just asserted. No screenshot
+    will show it clearly on its own at 8%/120ms — that's by design, per this
+    document's cost table, not a shortfall.
+  - **Grain-per-cell tiling on multi-cell pieces is real, logged, and turned
+    out to be a contract question, not a §4 design gap.** Visible in
+    `02-stack-hues.png`/`03`/`04`: the mottle noise restarts at each
+    tetromino cell's boundary instead of reading as one continuous mass.
+    `contracts.md` documents a tetromino as **one body of four cells**
+    (`particlesPerBody` = "4·bodyLattice²") and `particleU`/`particleV` as
+    **body-local**, 0..1 — if that held, the noise would NOT restart per
+    cell. The Frontend Engineer didn't touch the gel shader or `vBodyUv`
+    this round, so whatever is populating those varyings per-cell instead of
+    per-body predates this work. **This needs the Backend Engineer to
+    confirm which side is wrong — the contract's description or the
+    populated values** — before anyone reaches for the shader fix (sampling
+    grain from `vWorldPos` instead, which reopens the "grain slides under a
+    fixed pattern" problem §4 rejected for single-cell pieces). Not blocking
+    this release: hue continuity and the rim/contact-seam — the primary and
+    secondary identity cues — are confirmed correct in the same screenshots;
+    grain is documented in `piece-identity.md` as the tertiary,
+    least-reliable cue on purpose. Flagged to Backend directly; logged here
+    so it isn't only a chat message.
 - **Game Over's secondary "Title" action (`screens/game-over.md`) has
   nowhere to go yet** — Title (`screens/title.md`) isn't built. Agreed with
   the Frontend Engineer: ship Play Again prominently (it's the primary

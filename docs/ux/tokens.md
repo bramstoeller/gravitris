@@ -57,7 +57,7 @@ values, not only to the glow ramp and AO darkening named above.
 |---|---|---|
 | `color-bg-deep` | `#05050C` | Environment gradient — top/bottom of frame (was `color-bg` `#000000`) |
 | `color-bg-core` | `#0E1730` | Environment gradient — vertical centre of frame |
-| `color-bg-glow-a` / `color-bg-glow-b` | `#0E1730` / `#241B3D` @ 4-8% peak, radial falloff | The two fixed "distant crystal light" discs, `visual-direction.md` §3. Cool hues only — never amber, that's `color-glow`'s alone. |
+| `color-bg-glow-a` / `color-bg-glow-b` | `#050C12` / `#0D0815`, added directly at each disc's centre, radial falloff | The two fixed "distant crystal light" discs, `visual-direction.md` §3. Cool hues only — never amber, that's `color-glow`'s alone. **Corrected 2026-07-21**: the original row (`#0E1730`/`#241B3D` — this table's own `color-bg-core`/a near-neighbour, alpha-blended at 4-8%) was measured invisible by the Frontend Engineer — blending toward a near-black colour cannot brighten a dark field, whatever the opacity. These values are the peak colour **added** directly (not alpha-blended toward a base hue, unlike every other opacity-suffixed token in this table) and read as ~4-5% white luminance at each centre — verified against the refreshed `01-background-hud.png` in `.team/reviews/0035-visual-layer/`, both discs now clearly visible as soft localized light. |
 | `color-surface` | `#1B1E29` | Well walls/floor, HUD chip backgrounds |
 | `color-overlay-scrim` | `#000000` @ 82% | Dims the game canvas behind Paused/Settings/Game Over sheets |
 | `color-text` | `#F2F1EC` | Primary text |
