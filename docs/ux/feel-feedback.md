@@ -70,6 +70,11 @@ correct-but-too-subtle-or-too-fast to read, needing an explicit shader-side
 
 ## The band-clear sequence (the payoff)
 
+**This timeline is the source of truth and is unchanged.** `visual-direction.md`
+§7 layers a Candy-Crush-grade juice upgrade onto it (a screen-wide luminance
+beat, an ember-particle burst, a HUD-layer score pop) — read that section for
+the additions, not a restatement of the timeline below.
+
 Full timeline from the moment a band is confirmed to clear:
 
 | Time | Event |
@@ -108,6 +113,42 @@ threshold a moment later. This sequence should only ever start once the band
 Architect** as a debounce/quiescence requirement (e.g. band-average velocity
 below some epsilon for >100ms) rather than solved here, since it depends on
 what the solver already tracks.
+
+## Overflow warning (D6, added 2026-07-21)
+
+Losing currently has no visual warning at all — `docs/contracts.md` already
+reserves an `uOverflow` uniform (0..1, ADR 0005) for exactly this, but nothing
+reads it (`GameRenderer.kt` never sets it), which is why the backlog records
+D6: "no visual signal during the settle-grace window before game-over, so
+losing feels abrupt."
+
+**Trigger:** `Phase.Overflow(remainingTicks)`, which starts at
+`graceTicks = 90` (~1.5s at 60Hz, `SimConfig` default) and counts down. If the
+stack clears the spawn band and goes quiet within the grace, play resumes
+with no penalty (ADR 0005) — the warning must resolve cleanly in that case,
+not linger or leave an afterimage.
+
+**Treatment:** the spawn band's top edge pulses in `color-warn` (`#FF5A5A`,
+`tokens.md` — reserved for this since before the losing condition existed,
+never assigned until now). Pulse rate tied to `remainingTicks / graceTicks`:
+slow at the start of the grace, accelerating as it runs out — the same
+"cause → warning → payoff" grammar `band-glow.md` already established for
+clearing, reused here for losing instead. This is a warning, not a glow:
+**red, never amber**, so a player can never mistake "about to lose" for
+"a band about to clear" even though both share the accelerating-pulse
+language.
+
+**Cost:** reuses the existing per-band-fill uniform-array upload path already
+in the shader — one new uniform (`uOverflow`, already named in the contract),
+one new `if` branch gated on `vArchetype < PIECE_COUNT` exactly like the
+existing band-glow gate. No new varying, no new draw call.
+
+**No screen shake and no haptic for this state.** Overflow is sustained, not
+an impact event — shaking the screen or buzzing continuously for up to 1.5s
+would read as an alarm rather than a warning, and would sit uncomfortably
+close to `accessibility.md`'s "no visual element may flash faster than 3
+times per second" rule in spirit even in a different modality. The pulse is
+the whole warning.
 
 ## Frame-rate independence
 

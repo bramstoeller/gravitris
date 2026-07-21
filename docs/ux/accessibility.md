@@ -18,6 +18,7 @@ A single ON/OFF toggle in Settings (default **off**). When on:
 | Band-glow pulse rate | 2.4s period (70–85% fill) tightening to 0.9s (85–90%+) | Floor of 1.2s period even at the fastest (final-approach) stage — brightness ramp logic is unchanged, only the oscillation *rate* is slowed |
 | Ignition flash (120ms, single event) | Plays | **Unchanged** — it's a single event, not a repeating flash, so it isn't the kind of motion this setting targets |
 | Clear-sequence timing (dissolve, minimum watch window) | As specified | **Unchanged** — reduced motion addresses oscillatory/jitter/camera motion, not the core feedback loop the player needs to read the game |
+| `motion-pop` / `motion-celebrate` (score pop, next-piece swap, Game Over's "NEW BEST" — `visual-direction.md` §8, added 2026-07-21) | Overshoot scale animation as specified | Collapses to a plain `motion-fast` cross-fade — no scale, no overshoot. The content itself (the number, the badge) still appears immediately; only the decorative bounce is removed, same category of change as jiggle/shake above |
 
 Rationale for what's *not* touched: this game's core feedback genuinely is
 motion (squash reads as weight, the re-settle is the payoff), so reduced
@@ -56,18 +57,21 @@ pulse rate past it later while chasing more urgency.
 ## Colourblind-safe palette
 
 Full palette, rationale, and verification status live in
-`piece-identity.md`. Summary for this document: six piece hues spaced ≥37°
-apart, a reserved amber band (15°–65°) that no piece may use (kept exclusive
-to the band-glow signal), a lightness ladder and a grain-scale cue as
-backups. Checked on paper against Okabe-Ito and IBM's published CVD-safe
-references for protanopia, deuteranopia and tritanopia — **not** run through
-an actual simulator, because none was available in this environment. Two
-pairs are flagged there as higher-risk and covered by the backup cues.
+`piece-identity.md`. Summary for this document: **seven** piece hues (updated
+2026-07-21, `visual-direction.md` §5 — was six) spaced ≥30-37° apart, a
+reserved amber band (15°–65°) that no piece may use (kept exclusive to the
+band-glow signal), a lightness ladder and a grain-scale cue as backups.
+Checked on paper against Okabe-Ito and IBM's published CVD-safe references
+for protanopia, deuteranopia and tritanopia — **not** run through an actual
+simulator, because none was available in this environment. Two pairs from
+the original six are flagged there as higher-risk and covered by the backup
+cues; the new seventh hue (Emerald) has not been individually re-checked
+against the simulator either — same open item, not a new one.
 
 **Action item, restated here because it's an accessibility gate item:** QA
-must run the final rendered, lit, glowing pieces through a CVD simulator
-(Android Accessibility's "Simulate color space," or Coblis on screenshots)
-before the release gate.
+must run the final rendered, lit, glowing pieces — all seven hues — through
+a CVD simulator (Android Accessibility's "Simulate color space," or Coblis
+on screenshots) before the release gate.
 
 ## Haptics
 

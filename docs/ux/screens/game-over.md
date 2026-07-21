@@ -1,5 +1,26 @@
 # Screen: Game Over
 
+## Visual treatment (added 2026-07-21, `visual-direction.md`)
+
+This screen's layout and states below were already fully specified — the gap
+was that they were never built (`MainActivity.kt` ships a bare `TextView`
+in their place, see `visual-direction.md` §1). Building it does not need new
+design decisions, but two things from the wider visual-direction pass apply
+here specifically:
+
+- **The frozen final stack and the environment (`visual-direction.md` §3)
+  stay visible, dimmed**, behind `color-overlay-scrim` — this screen is a
+  sheet over the game, not a replacement for it, consistent with `ia.md`'s
+  framing that a run always ends here rather than cutting away from it. A
+  player should be able to see roughly how their stack looked at the moment
+  it ended.
+- **"NEW BEST" uses `motion-celebrate`** (`tokens.md`), not `motion-pop` —
+  this is the one screen where the bigger, reserved-for-one-moment motion
+  token applies, per its own definition ("used once per run, at most").
+  Everything else on this screen (the score number appearing, the Play
+  Again button) uses ordinary `motion-base`/`motion-fast` — the celebration
+  is deliberately singular, not a general "everything bounces" screen.
+
 ## Purpose
 
 Show the result, show it against the player's best, and offer the one thing
