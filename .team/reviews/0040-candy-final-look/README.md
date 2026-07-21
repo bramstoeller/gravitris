@@ -30,39 +30,38 @@ shape that has only edge-seams.
 | ---- | ----- |
 | `01-L-green-rounded-outer-sharp-elbow-seamless.png` | Emerald **L**. Rounded OUTER corners, SHARP inner elbow, ONE continuous candy — no internal "+". The L acid-test: passes. |
 | `02-J-rose-glossy-wet-gleam-seamless.png` | Rose **J** mid-fall + purple **S** settled. Smooth glossy body, one soft wet gleam, no waffle grain, seamless across cells. This is the material read the client asked for. |
-| `03-O-cyan-CENTER-HOLE-core-defect.png` | Cyan **O**. Outer body reads continuous (pairwise seams bridged) BUT the dead-centre shows a white square HOLE — see below. |
+| `03-O-cyan-solid-seamless-FIXED.png` | Two cyan **O** pieces settled. Each reads as ONE solid glossy candy block with a wet gleam — the dead-centre hole is GONE. The O acid-test: passes. Re-shot on `fix/o-centre-junction` (PR #35) which fills the junction. |
 | `04-S-purple-smooth-material-no-waffle.png` | Purple **S** at spawn (undeformed). Smooth flat-saturated body, no surface texture — grain fix confirmed. |
+| `05-O-airborne-solid-glossy-gleam.png` | Cyan **O** in a live stack (with a green L and rose J) — solid centre, glossy, one wet gleam. |
 
 ## Honest status against the bar
 
 - Smooth glossy candy, no grainy cross-hatch/waffle — **yes** (all frames).
 - Plump/voluminous, brighter body + richer rim — **yes**, best seen on the rose J.
 - One soft wet gleam, not a hard scratch — **yes**.
-- No internal "+", one continuous candy — **yes for I/T/S/Z/J/L**, **NO for the O**
-  (see below).
+- No internal "+", one continuous candy — **yes for all seven, the O included**.
 - Rounded outer / sharp elbow / soft shadow / light world kept — **yes**.
 
-## The one remaining miss: the O's centre is a hole (CORE defect, not `:app`)
+## The O centre-hole is FIXED (was a core defect; the Backend Engineer closed it)
 
-The O is the only shape where four cells meet at a POINT (a 2×2 block). The core's
-seam model is strictly edge-to-edge (`SoftBodyWorld`: "a seam bridges two facing
-L-particle edges"), so its four pairwise edge-bridges each clip one corner of the
-central 2r×2r square and leave the middle open. Measured on
-`bodyTriangleIndices[1]` (O, lattice 5): the four inner-corner particles are
-`{24,45,54,75}`; triangles touching ≥2 of them = 4 (one per edge-bridge);
-triangles that actually FILL the junction (≥3 of the four) = **0**. So the centre
-renders the background straight through.
+The original `03-O-...CENTER-HOLE` shot (now replaced) showed a white square where
+the O's four cells meet at a point — a core `bodyTriangleIndices` gap, since
+`SoftBodyWorld`'s seam model is strictly edge-to-edge and its four pairwise bridges
+left the central 2r×2r square open (I measured: `bodyTriangleIndices[1]`, inner
+corners `{24,45,54,75}`, triangles filling the junction = **0**). My correct
+extrusion exposed it; the old per-cell extrusion had been masking it.
 
-My correct extrusion EXPOSED this; the old per-cell extrusion was hiding it by
-collapsing the four inner corners over the centre. The fix is the backend's,
-because it is coupled to the solver: `SeamlessTopologyTest` requires every render
-triangle to be a solver area constraint, so a centre-junction quad needs two
-matching area constraints (and the junction isn't a "seam", so it likely needs
-budget past `MAX_SEAMS`). I cannot add it from `:app` without re-deriving topology,
-which ADR 0018 deliberately removed. **Escalated to the Product Lead in handoff
-0040 to dispatch the Backend Engineer.** Once the O's `bodyTriangleIndices` gains
-the junction, `:app` needs zero changes (it assembles whatever the core publishes,
-and the capacity sizing already keys off the longest per-archetype entry) — I will
-re-shoot the O to confirm the hole is gone before the client sees it.
+The Backend Engineer fixed it on `fix/o-centre-junction` (PR #35, off this branch):
+`bodyTriangleIndices[O]` now carries two triangles `{24,45,75}` and `{24,75,54}`
+that fill the junction. It is a **deliberate, recorded** render-only fill — no
+solver area constraint, because a near-rigid junction constraint destabilised heavy
+piles (measured), and the four seam-welds already hold the hole shut. `:app` needed
+ZERO changes: `BodyMesh` assembles the IBO by length, so it picked up the two extra
+triangles automatically.
+
+**Verified visually here.** I rebuilt the debug APK from `fix/o-centre-junction`
+(PR #35 CI green) and re-shot with the same `make playthrough` harness. The O now
+reads as one solid smooth glossy candy like the other six — see `03` (two settled
+O's) and `05` (an O in a live stack). No white centre, no internal "+".
 
 *— **Frontend Engineer***
