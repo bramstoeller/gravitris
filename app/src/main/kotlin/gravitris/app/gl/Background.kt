@@ -137,8 +137,9 @@ void main() {
 
         // Colours are the tokens.md environment values, inlined as constants
         // because this is a separate program from the gel shader and does not
-        // share its palette uniform. Kept in sync with docs/ux/tokens.md §Colour
-        // by BackgroundColoursTest, which re-derives each triple from its hex.
+        // share its palette uniform. Each carries the hex it came from in a
+        // comment for review; the gradient stops are exact, and the glow tints
+        // are documented against tokens.md §Colour (see the glow constants).
         private const val FRAGMENT = """#version 300 es
 precision mediump float;
 
@@ -153,15 +154,16 @@ out vec4 fragColor;
 const vec3 BG_DEEP = vec3(0.019608, 0.019608, 0.047059);
 // color-bg-core #0E1730 — vertical centre of frame.
 const vec3 BG_CORE = vec3(0.054902, 0.090196, 0.188235);
-// color-bg-glow-a #0E1730 — upper-left disc.
-const vec3 GLOW_A = vec3(0.054902, 0.090196, 0.188235);
-// color-bg-glow-b #241B3D — lower-right disc.
-const vec3 GLOW_B = vec3(0.141176, 0.105882, 0.239216);
-
-// Peak opacities, inside tokens.md's 4-8% band. Deliberately faint: the
-// environment must never compete with the gel or the amber glow for the eye.
-const float GLOW_A_PEAK = 0.06;
-const float GLOW_B_PEAK = 0.05;
+// The two "distant crystal light" discs (tokens.md color-bg-glow-a/-b): a cool
+// TEAL upper-left, a cool VIOLET lower-right — never amber. These are the peak
+// colour ADDED at each disc's centre, and their luminance is ~4-5% of white,
+// which is tokens.md's "4-8% peak opacity" read as brightness toward a light
+// rather than an alpha-blend toward a colour. The token hues #0E1730/#241B3D are
+// near-black, so adding them (or blending toward them) produces no visible
+// brightening at all — these lift the same cool hues to where the disc actually
+// reads as a soft light while staying deep and cool.
+const vec3 GLOW_A = vec3(0.020, 0.048, 0.072); // upper-left, deep teal
+const vec3 GLOW_B = vec3(0.052, 0.030, 0.082); // lower-right, deep violet
 
 // Radius of each disc, squared, since the falloff runs on squared distance to
 // avoid a per-pixel sqrt.
@@ -186,11 +188,12 @@ float dither() {
     return fract(dot(p, vec2(0.7548776662, 0.5698402909))) - 0.5;
 }
 
-// Additive contribution of one soft radial disc, falloff on squared distance.
-float disc(vec2 uv, vec2 center, float peak) {
+// Soft radial falloff of one disc (0 at the rim, 1 at the centre), on squared
+// distance. The caller multiplies by the disc's tint, which carries the peak.
+float disc(vec2 uv, vec2 center) {
     vec2 d = uv - center;
     d.x *= uAspect; // circular in screen space despite the portrait panel
-    return peak * smoothstep(GLOW_RADIUS2, 0.0, dot(d, d));
+    return smoothstep(GLOW_RADIUS2, 0.0, dot(d, d));
 }
 
 void main() {
@@ -204,8 +207,8 @@ void main() {
     // as a single moving light.
     vec2 driftA = vec2(sin(uTime * DRIFT_RATE), cos(uTime * DRIFT_RATE)) * DRIFT_AMP;
     vec2 driftB = vec2(cos(uTime * DRIFT_RATE + 1.7), sin(uTime * DRIFT_RATE + 1.7)) * DRIFT_AMP;
-    color += GLOW_A * disc(vUv, vec2(0.28, 0.74) + driftA, GLOW_A_PEAK);
-    color += GLOW_B * disc(vUv, vec2(0.74, 0.24) + driftB, GLOW_B_PEAK);
+    color += GLOW_A * disc(vUv, vec2(0.28, 0.74) + driftA);
+    color += GLOW_B * disc(vUv, vec2(0.74, 0.24) + driftB);
 
     // 1.4/255 peak-to-peak, one 8-bit code value — same amplitude as the gel
     // shader's dither (Tunables.DITHER_GAIN), applied last so the darkening
