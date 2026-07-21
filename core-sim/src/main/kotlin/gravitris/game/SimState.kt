@@ -304,12 +304,18 @@ interface SimState {
      * not per frame, so zero per-frame allocation holds, and still one draw call).
      *
      * The bridge triangles are exactly the solver's seam area constraints, and
-     * the interior triangles its cell area constraints, so **every** render
-     * triangle across the whole piece is one area constraint. That is what keeps
-     * both the body-wide UV ([particleU]/[particleV]) and [particleCompression]
-     * continuous across a seam. Extruding the true outer silhouette is the
-     * consumer's job, driven by [particleFreeEdges]; the seams are left to this
-     * mesh.
+     * the interior triangles its cell area constraints, so almost every render
+     * triangle is one area constraint — which keeps both the body-wide UV
+     * ([particleU]/[particleV]) and [particleCompression] continuous across a
+     * seam. The **one exception is the O's two centre-junction triangles** (ADR
+     * 0018): the O is the only shape where four cells meet at a point, and those
+     * two triangles close that hole for the eye without a backing constraint (a
+     * near-rigid one there destabilises heavy piles; the welded seam perimeter
+     * keeps the centre from tearing, and per-particle compression interpolates
+     * across the fill). Nothing on the `:app` side depends on the distinction —
+     * the buffer is assembled by length. Extruding the true outer silhouette is
+     * the consumer's job, driven by [particleFreeEdges]; the seams are left to
+     * this mesh.
      *
      * Additive per §5 (a new field, no signature removed). [triangleIndices]
      * stays valid; it will be retired once `:app` no longer reads it (a breaking

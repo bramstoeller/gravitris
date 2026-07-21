@@ -329,9 +329,12 @@ interface SimState {
      * bodyArchetype[b]] offset by b*particlesPerBody), not once in
      * onSurfaceCreated — ADR 0007 §2 is amended by ADR 0018 accordingly (still
      * not per-frame, still one draw call). The bridges are exactly the solver's
-     * seam area constraints, so every render triangle is one area constraint and
-     * particleCompression is continuous across a seam too, not only the UV.
-     * Additive per §5; triangleIndices stays valid until :app stops reading it.
+     * seam area constraints, so almost every render triangle is one area
+     * constraint and particleCompression is continuous across a seam too, not only
+     * the UV. The one exception: the O's two centre-junction triangles are
+     * render-only (four cells meet at a point there — ADR 0018), closing the hole
+     * without a backing constraint. :app assembles by length and needs no special
+     * case. Additive per §5; triangleIndices stays valid until :app stops reading it.
      */
     val bodyTriangleIndices: Array<IntArray>
 
