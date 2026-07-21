@@ -28,8 +28,12 @@ data class SimConfig(
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
 
-    // --- quality tier (ADR 0009) ---
-    val lattice: Int = 5,               // particles per piece edge: 4 | 5 | 6
+    // --- lattice: PINNED at 4 (ADR 0014) ---
+    // Particles per cell edge. Pinned, not a runtime tier: tetrominoes put
+    // lattice 5 over the frame budget on the reference device, and a varying
+    // lattice leaks piece size/packing per device. A change is a build-time
+    // re-pin with re-tuning (ADR 0014), not a startup selection (was ADR 0009).
+    val lattice: Int = 4,
 
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
     val wellWidth: Float = 10f,
@@ -40,11 +44,11 @@ data class SimConfig(
     val bandColumns: Int = 40,          // changing resolution invalidates the
     val bandRows: Int = 4,              // tuned threshold below — see ADR 0004
     /**
-     * PER-TIER. Coarser lattices stamp larger particle disks, so the same pile
-     * reads as a different fill percentage at each quality tier. Left as one
-     * shared constant, the startup quality tier would silently become a
-     * gameplay difference. Calibrate medium properly and derive the others.
-     * See ADR 0004 and ADR 0009.
+     * A single calibrated constant. It was per-tier under ADR 0009 (coarser
+     * lattices stamp larger disks, so the same pile read as a different fill
+     * percentage per tier), but the lattice is now pinned (ADR 0014) so there is
+     * one lattice, one disk size, one threshold — and no cross-tier equivalence
+     * test to maintain. See ADR 0004 and ADR 0014.
      */
     val clearThreshold: Float = 0.90f,
 

@@ -50,7 +50,7 @@ proportional to `h`:
 
 So **you cannot buy CPU time without enlarging `h`**, and enlarging `h` walks
 toward the measured stability cliff (ADR 0003: floor at ~3–4 substeps at 60Hz,
-and 6 measures *worse* than 8 on device). With particle count pinned (ADR 0011)
+and 6 measures *worse* than 8 on device). With particle count pinned (ADR 0014)
 and substeps pinned (ADR 0003), there is no honest degradation path that preserves
 both wall-clock time and physics fidelity.
 
@@ -100,7 +100,7 @@ death-spirals into a freeze, which serves the client worse than judder.
 **5. The primary mitigation for weak hardware is render-side scaling**, which
 already exists (ADR 0009) and is already the only runtime lever. This matters
 because the likely bottleneck on an older phone is the **fragment shader**, not
-the solver (ADR 0009, ADR 0011). Reducing resolution scale and shader quality
+the solver (ADR 0009, ADR 0014). Reducing resolution scale and shader quality
 frees budget, the simulation keeps 60 ticks/second, wall clock stays honest, and
 the frame rate drops — which is precisely the trade the client asked for.
 
@@ -198,7 +198,7 @@ ADR 0006, and this ADR strengthens the reason: it makes `h` a function of device
 load, so material stiffness and stack stability would vary with frame rate.
 
 **Reintroduce quality tiers for weak devices** — rejected, and the client
-explicitly is not asking for them back. ADR 0011's reasoning stands: shipping
+explicitly is not asking for them back. ADR 0014's reasoning stands: shipping
 three subtly different games was the wrong trade, and piece size varying with a
 performance setting was a gameplay leak.
 
