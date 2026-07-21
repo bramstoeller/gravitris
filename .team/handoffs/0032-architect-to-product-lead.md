@@ -87,36 +87,42 @@ determinism-critical claims against the pushed code, not the prose:
   fall velocity survives a rotate — verified: `applyRotate` leaves `velX/velY`
   untouched and the solver carries velocity there (`integrate` line 210).
 - Numbering 0015/0016 dodges the 0012/0013 collision and `decisions.md` is
-  updated for both. 0014 is now a gap (flagged so nobody hunts for it).
+  updated for both. The 0014 gap is now filled by the lattice-pin ADR below.
 
-## Escalation — needs a Product Lead decision (lattice tier)
+## Lattice tier — DECIDED and recorded (ADR 0014)
 
-The Backend asked me to confirm the tetromino shipping tier is consistent with
-ADR 0009 and record it. It is not a simple record — full analysis in
-`.team/reviews/review-lattice-tier-tetromino.md`. In short:
+You decided: pin lattice 4, no tier selection. Recorded as **ADR 0014** ("Pin the
+lattice at 4; the piece's material extent is the gameplay constant"), with the
+rationale you gave. In the same commit I reconciled the record:
 
-- **Endorsed:** the corrected device benchmark (the old one under-counted
-  tetromino cost ~4×), and lattice 4 as the reference-device tier (lattice 5 is
-  over the 16.67 ms budget with tetrominoes).
-- **Cannot sign off:** shipping lattice 5 as a *runtime tier for faster devices*.
-  `SimConfig.kt:187` makes `pieceExtent` vary with lattice (2.40 at L4 vs 2.25 at
-  L5), so tiers give different phones a different game and break cross-device
-  replay. And it contradicts **ADR 0013 (already on main)**, which states the
-  particle count is pinned and rejects "three subtly different games" — while ADR
-  0009 keeps tiers live. Main holds two contradictory positions right now.
-- **My recommendation:** pin lattice 4 as the single shipping config, retire ADR
-  0009's runtime tier selection. It matches the measurement, removes the leak,
-  and makes ADR 0013 true. This changes the shipping story ("one quality tuned
-  for reference" vs "scales up on faster phones") — **your call**. I will draft
-  the ADR (the 0014 gap is free) once you decide, and it must also fix the
-  dangling references below.
+- **ADR 0009** status updated — its startup tier selection (§3) and per-tier
+  `clearThreshold` are superseded by 0014; its reference device, dropped 2020
+  floor, pinned substeps and render-side scaling still stand.
+- **ADR 0013** — its three references to "ADR 0011" for a pinned particle count /
+  rejected tiers were dangling on main (main's 0011 is the silhouette ADR); fixed
+  to point at ADR 0014, which is the pin they assumed.
+- **decisions.md** — added the missing rows for 0012, 0013 and 0014 (the
+  cherry-pick had landed the ADR files but not their index rows) and marked
+  0009's tier part superseded.
+- **contracts.md** — `lattice` default shown as 4 (pinned, ADR 0014);
+  `clearThreshold` noted as a single constant, not per-tier.
 
-**Two record defects the cherry-pick created (independent of the decision):**
-ADR 0013 on main references "particle count pinned (ADR 0011)" and "ADR 0011's
-reasoning... three different games was the wrong trade" (lines 53, 103, 201-202),
-but main's ADR 0011 is the *silhouette* ADR — the pinned-lattice ADR from
-`chore/architecture` was not carried over with 0012/0013. Those three references
-dangle, and ADR 0009 (tiers) vs ADR 0013 (pinned) now openly conflict on main.
+The Backend owns the matching `:core-sim` code default (`SimConfig.lattice = 4`);
+I've told them, and confirmed no sizing-formula refactor is needed (pinning makes
+`pieceExtent = 2.40` a single constant by construction).
+
+**Your look question, answered from the numbers:** lattice 4 does **not** degrade
+the approved squash feel, because the reference-device feel the client already
+approved was produced *at lattice 4* — it is the only tier that fit the device, so
+the on-device tuning you approved was lattice-4 tuning. Each tetromino cell is the
+same lattice-4 material. The open risk is purely *visual coarseness* at tetromino
+scale (a cell is a 4×4 particle grid), which is a render concern — if it reads as
+faceted in the emulator, the fix is render-side (draw-time subdivision / shader),
+not more sim particles. So: no feel veto from me; your emulator look-check is the
+right gate.
+
+The full pre-decision analysis (why runtime tiers couldn't ship, the leak, the
+dangling references) is in `.team/reviews/review-lattice-tier-tetromino.md`.
 
 ## Item 2 (determinism) — verified handled
 
