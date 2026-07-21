@@ -7,6 +7,7 @@ import gravitris.app.gl.BodyMesh
 import gravitris.app.gl.ClearFlash
 import gravitris.app.gl.EmberBurst
 import gravitris.app.gl.GlProgram
+import gravitris.app.gl.PieceShadow
 import gravitris.app.gl.Shaders
 import gravitris.app.gl.UrgencyBar
 import gravitris.app.gl.WellFrame
@@ -161,6 +162,10 @@ class GameRenderer(
     private val background = Background()
     private val clearFlash = ClearFlash()
     private val emberBurst = EmberBurst()
+
+    /** The §18 soft contact shadow: a second cheap draw of the body geometry,
+     *  offset and blended, so pieces read as resting in the world. */
+    private val pieceShadow = PieceShadow()
 
     /** Wall-clock start of the current luminance beat, or 0 when none is
      *  running. Set on a clear onset, read back into an intensity envelope. */
@@ -375,6 +380,7 @@ class GameRenderer(
         background.create()
         clearFlash.create()
         emberBurst.create()
+        pieceShadow.create()
 
         // The environment pass (Background) now paints the frame every frame, so
         // this clear colour is only ever seen for the one frame before the well
@@ -417,7 +423,7 @@ class GameRenderer(
         )
         GLES30.glUniform1fv(
             GLES30.glGetUniformLocation(program, "uGrainScale"),
-            Palette.SIZE, Palette.grainScales(), 0,
+            Palette.SIZE, foldedGrainScales(), 0,
         )
         fun set(name: String, value: Float) =
             GLES30.glUniform1f(GLES30.glGetUniformLocation(program, name), value)
@@ -431,6 +437,14 @@ class GameRenderer(
         set("uGrainGain", Tunables.GRAIN_GAIN)
         set("uGrainFrequency", Tunables.GRAIN_FREQUENCY)
         set("uDitherGain", Tunables.DITHER_GAIN)
+        // §14/§16 glossy jelly candy material constants.
+        set("uSpecularGain", Tunables.SPECULAR_GAIN)
+        set("uSpecularSharpness", Tunables.SPECULAR_SHARPNESS)
+        // §14.3 round-4 gleam reshape.
+        set("uSpecularLength", Tunables.SPECULAR_LENGTH)
+        set("uSpecularHotspotRadius", Tunables.SPECULAR_HOTSPOT_RADIUS)
+        set("uSpecularHotspotGain", Tunables.SPECULAR_HOTSPOT_GAIN)
+        set("uCornerRound", Tunables.CORNER_ROUND)
         set("uGlowGain", Tunables.GLOW_GAIN)
         set("uGlowCapRatio", Tunables.GLOW_CAP_RATIO)
         set("uIgnitionCapRatio", Tunables.IGNITION_CAP_RATIO)
@@ -443,6 +457,36 @@ class GameRenderer(
         set("uPulseRateFast", Tunables.PULSE_RATE_FAST)
         set("uPulseAmplitude", Tunables.PULSE_AMPLITUDE)
         set("uShimmerGain", Tunables.SHIMMER_GAIN)
+    }
+
+    /**
+     * The per-archetype grain scale actually uploaded: the palette's identity
+     * grain (`piece-identity.md`'s tertiary cue) times the core's footprint
+     * compensation (`SimState.grainScaleCompensation`, §15 / backend handoff
+     * 0036), exactly `uGrainScale[a] = paletteGrainScale[a] *
+     * grainScaleCompensation[a]`.
+     *
+     * With body-wide UV a long piece would otherwise carry coarser grain than a
+     * compact one; the compensation cancels the footprint term so every piece
+     * regains the SAME per-cell grain frequency it had before, now continuous
+     * across the whole piece. Static — the compensation is constant for the run
+     * (it depends only on the frozen `PieceShapes` cell layouts, not on the
+     * well), so this is folded once here with the palette, never per frame, and
+     * read from the never-stepped [worstCaseState].
+     *
+     * Index-aligned because [Palette.pieceHue] is the identity map for every
+     * archetype the core deals (0..6 → 0..6, see `Palette`): hue index `i` is
+     * archetype `i`, so `grainScaleCompensation[i]` is the right factor for
+     * `uGrainScale[i]`. Slot 7 (the well surface) has no archetype and keeps its
+     * grain of 1.0 unmultiplied — it is never read anyway (the frame draws at UV
+     * (0,0) where the grain term is zero).
+     */
+    private fun foldedGrainScales(): FloatArray {
+        val base = Palette.grainScales()
+        val comp = worstCaseState.grainScaleCompensation
+        return FloatArray(base.size) { i ->
+            base[i] * if (i < comp.size) comp[i] else 1f
+        }
     }
 
     override fun onSurfaceChanged(unused: GL10?, width: Int, height: Int) {
@@ -575,7 +619,35 @@ class GameRenderer(
         )
 
         wellFrame.draw()
+
+        // §18 soft contact shadow: a second draw of the same body geometry,
+        // offset down+right and blended in a darkened tray tone, BEFORE the real
+        // bodies so each piece paints over its own shadow. This is the one pass
+        // that turns GL_BLEND on, and only for itself — restored to the global
+        // "blend off" immediately after (onSurfaceCreated). It reuses the mesh's
+        // VAO/IBO through mesh.draw() while the shadow program is bound. Gated on
+        // the shadow tier being live so it rides the cut ladder (§18): the well
+        // is empty of shadows to draw when there are no bodies anyway, so the
+        // indexCount==0 guard in mesh.draw() also makes this free on an empty
+        // well.
+        if (shadeLevel >= SHADOW_MIN_SHADE_LEVEL) {
+            GLES30.glEnable(GLES30.GL_BLEND)
+            GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+            pieceShadow.use(scale, offset)
+            mesh.draw()
+            GLES30.glDisable(GLES30.GL_BLEND)
+            // Re-bind the gel program the shadow pass switched away from; its
+            // uniforms still live in the program object, so nothing is re-set.
+            GLES30.glUseProgram(program)
+        }
+
+        // §16 rounded corners: alpha-to-coverage is enabled ONLY for the body
+        // draw (the gel shader writes a corner-coverage alpha; the walls write
+        // 1.0). It is a no-op without MSAA, and must stay off for the blended
+        // shadow pass above, so it is scoped tightly here.
+        GLES30.glEnable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
         mesh.draw()
+        GLES30.glDisable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
 
         // The positioning-window countdown (ADR 0016), drawn last so it reads
         // above the stack. Its own flat program — the next frame rebinds the gel
@@ -786,6 +858,20 @@ class GameRenderer(
 
         /** Top of the shading dial — the full art direction. See [shadeLevel]. */
         const val SHADE_LEVEL_MAX = 4
+
+        /**
+         * Lowest [shadeLevel] at which the §18 contact-shadow pass runs, folding
+         * it into the same cut ladder as the shader tiers (§18's recommendation).
+         *
+         * 2 keeps the shadow on for the three highest levels (the shipped look
+         * and the two steps below it) and drops it for levels 1 and 0 — the two
+         * Stage-1 baselines whose whole purpose is to measure the floor without
+         * the round-3 additions. The shadow is high legibility value (it is much
+         * of why the candy reads as physical) but a real vertex + blend cost, so
+         * it belongs in the measured ladder, not assumed free. Where exactly it
+         * should sit is an on-device call once the frame time is known.
+         */
+        const val SHADOW_MIN_SHADE_LEVEL = 2
 
         /**
          * Lifetime of the screen-wide luminance beat, 120ms (visual-direction.md

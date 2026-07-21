@@ -166,3 +166,71 @@ Bands stamp every particle's disk (`CoverageBands.update` loops particles,
 shape-agnostic); the clear removes whole bodies by centroid band. Both work on
 tetrominoes with no change. Adding a test that a band fills and clears with
 shaped pieces to prove it.
+
+---
+
+# Seamless render topology — B1 adopted (later same day)
+
+Branch `feat/candy-seamless-mesh` (off `feat/candy-material-render`). Fixing the
+internal cell-seam "+" — the client's loudest surviving complaint — per Frontend
+handoff 0038. This is the open "render exposure" sub-item above, now resolved: we
+switch from **B2** to **B1**, recorded as **ADR 0018**.
+
+## Why B1 now
+
+The Frontend measured the "+" to source: the render mesh is per-cell
+(`triangleIndices` tiled per cell, no bridging triangles), and body-wide UV can't
+fix a *missing-geometry* problem — at a seam the two cells' facing columns differ
+by one UV grid step with nothing interpolating across it, so grain/specular step
+right at the join. Their `extrudeBoundary` closes the 2r gap only by collapsing
+the facing columns coincident, which is what puts the discontinuity on the join.
+B1 (per-archetype mesh that bridges seams with real geometry) removes it at
+source. B2's premise — "the extrusion closes a 2r seam cleanly" — turned out
+false in exactly the way ADR 0015 flagged as the trigger to switch.
+
+## The one thing that made this clean
+
+The solver already added seam **area** constraints (this reverses the "leaving
+area per-cell" note above — seam area was added when the tetromino work landed;
+`buildSeams` populates `shapeSeamAreaA/B/C`). So I define the whole-piece render
+topology as *the solver's area-constraint triangulation*: interior cell areas +
+seam areas. The bridges are the seam area triples verbatim. Consequence beyond
+seamless UV: `particleCompression` (a per-area-constraint ratio) is now
+continuous across a seam too, and the render mesh cannot drift from the
+constraints. `SeamlessTopologyTest` pins render triangles == area constraints.
+
+## Contract — two additive `SimState` fields (§5, no signature removed)
+
+- `bodyTriangleIndices: Array<IntArray>` — per-archetype whole-piece body-local
+  topology (interior cells + seam bridges). Jagged: O has 4 seams, the rest 3.
+- `particleFreeEdges: IntArray` — per-particle silhouette-direction bitmask
+  (LEFT=1/RIGHT=2/DOWN=4/UP=8); `particleEdge == (mask != 0)`. The "what do I give
+  them instead" for constraining the extrusion to true silhouette — the Frontend
+  had only the OR'd `particleEdge` and no way to tell a silhouette edge from a
+  seam edge.
+
+`triangleIndices` kept (solver diagonal doc + `TopologyMatchesSolverTest`);
+retired once `:app` stops reading it (breaking change, Architect signs then).
+Amends **ADR 0007 §2**: IBO is per-archetype, assembled on body-set change (still
+off the per-frame path, still one draw call).
+
+## Agreement carried in the record, not in a live conversation
+
+I tried `SendMessage` to both **Architect** (owns the ADR/contract) and
+**Frontend** (consumer, owns the `:app` half) to review the field shapes before
+the code leans on them — neither was reachable. Per the dispatch's fallback the
+agreement is written down instead of spoken: ADR 0018, `docs/contracts.md` §3
+(the consumer-reviewable artifact), this record, and handoff **0039** to the
+Frontend carry it in full. The `:core-sim` half is additive and independently
+green, so it does not depend on that review to land; the Frontend must review the
+contract as its consumer before their half leans on it, and the Architect should
+confirm the ADR 0007 §2 amendment. Both asks are in 0039 and the ADR.
+
+## Split of work
+
+`:core-sim` (mine, this branch): the two fields + `SeamlessTopologyTest`, done
+and green. `:app` (Frontend, handoff 0039): switch `BodyMesh`/`LatticeTopology`
+to consume `bodyTriangleIndices`, move IBO assembly to the body-set-change path,
+rewrite `extrudeBoundary` to gate on `particleFreeEdges`, update the app topology
+tests, re-render the O and L to confirm the "+" is gone (the real, visual proof —
+this container has no GPU).

@@ -7,10 +7,11 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
+import java.nio.ShortBuffer
 
 /**
  * The deforming geometry: one dynamic position buffer for every body in the
- * well, one static index buffer, one draw call.
+ * well, one index buffer assembled on body-set change, one draw call.
  *
  * Implements ADR 0007 §1-3. Every body's geometry is new every frame — the
  * opposite of the static-mesh case GPUs are optimised for — so the per-frame
@@ -47,13 +48,19 @@ import java.nio.IntBuffer
  * nothing per frame, and leaves ADR 0007's actual structure — one upload, one
  * draw call — intact.
  *
- * ## Index buffer sizing
+ * ## Index buffer sizing and topology (ADR 0018)
  *
- * `GL_UNSIGNED_SHORT`, not `GL_UNSIGNED_INT`. At the default tier the maximum
- * vertex index is 60 bodies x 25 particles = 1500, comfortably inside 65535,
- * and halving index bandwidth is free. This assumption is asserted at
- * construction so a future quality tier that breaks it fails loudly here
+ * `GL_UNSIGNED_SHORT`, not `GL_UNSIGNED_INT`. The maximum vertex index is
+ * `maxParticles - 1`, asserted `<= 65536` at construction, so halving index
+ * bandwidth is free; a future quality tier that breaks it fails loudly here
  * rather than rendering garbage.
+ *
+ * The index buffer is **not** one per-cell pattern tiled forever. A tetromino
+ * reads as ONE continuous candy only if its four cells are welded by seam-bridge
+ * triangles, so the buffer is assembled from [SimState.bodyTriangleIndices] —
+ * the whole-piece, per-archetype topology (interior + bridges) — on each
+ * body-set change (see [uploadIndexBuffer]). It is still not touched per frame,
+ * and the whole stack is still one draw call.
  */
 class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
 
@@ -69,9 +76,6 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
 
     /** Cells the buffers are sized for — the worst-case particle capacity in cells. */
     private val maxCells = maxParticles / particlesPerCell
-
-    /** Indices for one cell; the index buffer repeats this pattern per cell. */
-    private val indicesPerCell = LatticeTopology.indicesPerBody(lattice)
 
     private var vao = 0
     private var dynamicVbo = 0
@@ -110,6 +114,28 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
     private var uploadedBodies = -1
 
     private var indexCount = 0
+
+    /**
+     * CPU-side scratch and native buffer for the assembled index data (ADR
+     * 0018), mirroring the [vertexScratch]/[vertexBuffer] split. Both are sized
+     * lazily on the first assembly from [BodyIndexAssembly.capacityShorts],
+     * because the whole-piece topology — and so the worst-case index count per
+     * body — is not known until a `SimState` is in hand. They are held across
+     * context loss (plain heap/native buffers), while [iboStoreAllocated] tracks
+     * the GL-side store, which is not.
+     */
+    private var indexScratch: ShortArray? = null
+    private var indexBuffer: ShortBuffer? = null
+    private var iboCapacityShorts = 0
+
+    /**
+     * Whether the IBO's GL data store has been allocated in the CURRENT context.
+     * Reset in [create] so a context-loss rebuild re-allocates it — the CPU
+     * [indexScratch] survives the loss but the GL buffer store does not, and
+     * gating the allocation on `indexScratch == null` alone would skip it on the
+     * second `create` and leave the IBO empty.
+     */
+    private var iboStoreAllocated = false
 
     init {
         require(maxParticles % particlesPerCell == 0) {
@@ -177,6 +203,16 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
             ATTRIB_EDGE, 1, GLES30.GL_FLOAT, false,
             MATERIAL_STRIDE_BYTES, 2 * Float.SIZE_BYTES,
         )
+        // §16 rounded corners: the true-silhouette-corner flag, static per
+        // particle (SimState.particleCorner), on the same slow-update buffer as
+        // UV and edge — it changes only when the set of bodies changes, so it
+        // costs nothing per frame. Interpolated across the mesh exactly like
+        // aEdge; the shader shapes the rounding from it (backend handoff 0036).
+        GLES30.glEnableVertexAttribArray(ATTRIB_CORNER)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_CORNER, 1, GLES30.GL_FLOAT, false,
+            MATERIAL_STRIDE_BYTES, 3 * Float.SIZE_BYTES,
+        )
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, archetypeVbo)
         GLES30.glBufferData(
@@ -191,36 +227,80 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
         // silently reinterpret the bits and index the palette with nonsense.
         GLES30.glVertexAttribIPointer(ATTRIB_ARCHETYPE, 1, GLES30.GL_INT, 0, 0)
 
-        uploadIndices()
+        // Record the IBO as this VAO's element buffer while the VAO is bound —
+        // the element-array binding is VAO state (ADR 0018). Its data store is
+        // NOT filled here: with per-archetype topology (bodyTriangleIndices) the
+        // buffer is assembled on the first body-set change, once a SimState is in
+        // hand — see uploadIndexBuffer. glBufferData/SubData there reallocates the
+        // store of this same buffer object, which the VAO keeps referencing by
+        // name, so binding it once here is enough to wire it into the VAO.
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ibo)
 
         GLES30.glBindVertexArray(0)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, 0)
         uploadedBodies = -1
+        // The GL store belongs to the old, now-destroyed context on a rebuild;
+        // force uploadIndexBuffer to re-allocate it against the new one.
+        iboStoreAllocated = false
     }
 
     /**
-     * Build the index buffer once. ADR 0007 §2: a cell's lattice topology never
-     * changes, only its vertex positions do — so this is uploaded once and
-     * reused for every cell forever. The pattern for cell 0 is repeated with a
-     * vertex offset for each subsequent cell (a tetromino is four cells,
-     * ADR 0015), which is what lets the whole stack share a single draw call.
+     * Assemble and upload the whole stack's index buffer from the per-archetype
+     * full-footprint topology (ADR 0018), on a body-set change.
+     *
+     * ADR 0007 §2's "one index pattern reused for every body forever" is amended
+     * by ADR 0018 to "reassembled on body-set change": each body's indices are
+     * [SimState.bodyTriangleIndices] for its archetype — the four cells' own
+     * triangles PLUS the seam bridges that weld them into one continuous mesh —
+     * offset by `b * particlesPerBody`. The bridges depend on the shape, so the
+     * length differs per archetype (an O bridges four seams, the others three)
+     * and the buffer is jagged; [indexCount] is the running total, not a per-cell
+     * formula. Still not per frame (this runs only when the set of bodies
+     * changes), so zero per-frame allocation holds, and still one draw call.
+     *
+     * The seam-bridged interior is what removes the internal "+"; the true outer
+     * silhouette is extruded separately, gated on [SimState.particleFreeEdges]
+     * (see [VertexFill.fill]).
      */
-    private fun uploadIndices() {
-        val indices = LatticeTopology.buildIndices(maxCells, lattice)
+    private fun uploadIndexBuffer(state: SimState) {
+        if (indexScratch == null) {
+            val maxBodies = maxParticles / state.particlesPerBody
+            iboCapacityShorts = BodyIndexAssembly.capacityShorts(state, maxBodies)
+            indexScratch = ShortArray(iboCapacityShorts)
+            indexBuffer = ByteBuffer
+                .allocateDirect(iboCapacityShorts * Short.SIZE_BYTES)
+                .order(ByteOrder.nativeOrder())
+                .asShortBuffer()
+        }
 
-        val buffer = ByteBuffer
-            .allocateDirect(indices.size * Short.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asShortBuffer()
-        buffer.put(indices).position(0)
+        if (!iboStoreAllocated) {
+            GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ibo)
+            GLES30.glBufferData(
+                GLES30.GL_ELEMENT_ARRAY_BUFFER,
+                iboCapacityShorts * Short.SIZE_BYTES,
+                null,
+                GLES30.GL_DYNAMIC_DRAW,
+            )
+            iboStoreAllocated = true
+        }
+
+        val scratch = indexScratch!!
+        val count = BodyIndexAssembly.assemble(state, scratch)
+
+        val buffer = indexBuffer!!
+        buffer.position(0)
+        buffer.put(scratch, 0, count)
+        buffer.position(0)
 
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ibo)
-        GLES30.glBufferData(
+        GLES30.glBufferSubData(
             GLES30.GL_ELEMENT_ARRAY_BUFFER,
-            indices.size * Short.SIZE_BYTES,
+            0,
+            count * Short.SIZE_BYTES,
             buffer,
-            GLES30.GL_STATIC_DRAW,
         )
+        indexCount = count
     }
 
     /**
@@ -281,14 +361,23 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
 
         if (state.bodyCount != uploadedBodies) {
             uploadStatics(state, particles)
+            // The per-archetype IBO depends on the archetype SEQUENCE, exactly
+            // like the archetype attribute buffer above, so it is keyed to the
+            // same body-set-change gate (ADR 0018). indexCount is set inside, from
+            // the assembled jagged length, and persists until the set changes
+            // again — it is not a per-cell formula any more.
+            //
+            // Uneasy note carried from the backend handoff: this gate is a proxy
+            // for "the archetype sequence changed". It holds because every set
+            // change also changes the count within a tick; if a future change
+            // ever mutated the body set at a CONSTANT count between two rendered
+            // frames, both the colours and the topology would go stale together.
+            uploadIndexBuffer(state)
             uploadedBodies = state.bodyCount
         }
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
-        // Draw by CELL, not by body: a tetromino is four cells and the index
-        // pattern is per-cell (ADR 0015). particleCount is always a whole number
-        // of cells, so this is exact.
-        indexCount = (particles / particlesPerCell) * indicesPerCell
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, 0)
         return particles
     }
 
@@ -382,13 +471,14 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
         const val ATTRIB_CONTACT = 3
         const val ATTRIB_BODY_UV = 4
         const val ATTRIB_EDGE = 5
+        const val ATTRIB_CORNER = 6
 
         /** `[x, y, compression, contact]` — the dynamic, per-frame vertex. */
         const val FLOATS_PER_VERTEX = 4
         const val VERTEX_STRIDE_BYTES = FLOATS_PER_VERTEX * Float.SIZE_BYTES
 
-        /** `[u, v, edge]` — uploaded only when the set of bodies changes. */
-        const val FLOATS_PER_MATERIAL_VERTEX = 3
+        /** `[u, v, edge, corner]` — uploaded only when the set of bodies changes. */
+        const val FLOATS_PER_MATERIAL_VERTEX = 4
         const val MATERIAL_STRIDE_BYTES = FLOATS_PER_MATERIAL_VERTEX * Float.SIZE_BYTES
     }
 }

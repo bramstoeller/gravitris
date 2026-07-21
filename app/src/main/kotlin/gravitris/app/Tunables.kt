@@ -157,11 +157,23 @@ object Tunables {
      *
      * Not 1.0: at full strength the centre of every piece reaches the deep tone
      * exactly, and since that tone is both darker and more saturated the piece
-     * reads as a ring of hue around a dark middle — a tube, not a solid. 0.55
-     * leaves the core recognisably the piece's own colour while still putting a
-     * visible gradient across it, which is what sells thickness.
+     * reads as a ring of hue around a dark middle — a tube, not a solid.
+     *
+     * Round 3 (`visual-direction.md` §14) leaned on this term harder and raised
+     * it to 0.80, but in the wrong direction: it mixed the deep tone toward the
+     * piece CENTRE, darkening the middle and leaving the silhouette bright — the
+     * "tube" read, backwards from real candy.
+     *
+     * **Round 4 (§14.2) flips and quiets it.** The shader now concentrates the
+     * deep tone at the true silhouette EDGE (a free square of `1 - depth`), so
+     * this is the plump-jelly-bean rim cue — flat/bright body, a richer/darker
+     * rim right at the outline — not a body-wide translucency wash. Concentrated
+     * at the edge it needs far less gain to read without turning into a heavy
+     * dark ring: 0.80 → 0.40 (§14.2's 0.35–0.45 band). Still on body-wide UV
+     * (§15), so the rim follows the whole tetromino silhouette, not each cell.
+     * First-pass value; tune on-device.
      */
-    const val SUBSURFACE_GAIN = 0.55f
+    const val SUBSURFACE_GAIN = 0.40f
 
     /**
      * Saturation of the deep tone, as a multiplier away from the colour's own
@@ -205,8 +217,13 @@ object Tunables {
      * [COMPRESSION_MAX_DARKEN] exists at the other end: hue is the identity
      * cue, and a blown-out rim erases it exactly at the silhouette, which is
      * where the eye goes first.
+     *
+     * Round 3 (§14) nudges it up from 0.30 → 0.38 and warms the rim colour
+     * (see `RIM_COLOR` in `Shaders.kt`) so the silhouette also reads as the
+     * glassy edge-catch of a wet candy, its second dual-purpose role. Still
+     * short of white. First-pass value; tune on-device.
      */
-    const val RIM_GAIN = 0.30f
+    const val RIM_GAIN = 0.38f
 
     /**
      * Amplitude of the grain, as a fraction of the material colour.
@@ -215,12 +232,39 @@ object Tunables {
      * a pattern — at a strength where you notice it as a pattern it competes
      * with the compression darkening, which is the term the client has already
      * approved as the weight cue.
+     *
+     * Round 3 lowered it 0.09 → 0.06, but the client played that build and still
+     * called the blocks ugly: at frequency 7 the two-sine mottle aliased into a
+     * visible cross-hatch/waffle that dominated every piece — "grainy rough
+     * rubber", the round-4 correction's primary defect (§14.1).
+     *
+     * **Round 4 (§14.1) cuts it to a barely-there cloud, not a pattern:**
+     * 0.06 → 0.02, roughly a third, paired with the [GRAIN_FREQUENCY] drop
+     * below. Candy is SMOOTH — an unprimed viewer should not describe the
+     * surface as textured/grainy/patterned (§14.1's acceptance check). The
+     * per-archetype grain FREQUENCIES (`Palette.grainScales`, the CVD/monochrome
+     * tertiary identity cue) are untouched — only the global amplitude and the
+     * base frequency drop — so the backup cue survives, just quiet.
+     * First-pass value; the grain-vs-gloss balance is a client steer.
      */
-    const val GRAIN_GAIN = 0.09f
+    const val GRAIN_GAIN = 0.02f
 
-    /** Base grain frequency in cycles across a body, before the per-archetype
-     *  multiplier in [Palette.grainScales]. */
-    const val GRAIN_FREQUENCY = 7.0f
+    /**
+     * Base grain frequency in cycles across a body, before the per-archetype
+     * multiplier in [Palette.grainScales].
+     *
+     * Round 4 (§14.1): 7.0 → 2.5. At 7 (up to 14 for the highest-scaled
+     * archetypes) the `mottle()` interference pattern aliased into a countable
+     * waffle grid on a piece only ~150–200px across on the reference device —
+     * the dominant "ugly" defect the client reported. At 2.5 (per-archetype
+     * range ~2.0–5.0) the mottle reads as a soft, barely-there tone rather than
+     * a grid. Note `grain`'s raw value is reused in tier 3 for the ember-shimmer
+     * phase and the dissolve break-up threshold, so this coarsens both — a look
+     * to confirm against `feel-feedback.md` (a bigger candy-chunk dissolve reads
+     * more confectionery, not less); if it ever reads wrong the fix is a
+     * separate tier-3 frequency, not reverting this (§14.1). First-pass value.
+     */
+    const val GRAIN_FREQUENCY = 2.5f
 
     /**
      * Dither amplitude, in units of the 0..1 colour channel.
@@ -238,6 +282,161 @@ object Tunables {
      * why this is on regardless of what the surface turns out to be.
      */
     const val DITHER_GAIN = 1.4f / 255f
+
+    // --- Stage 3C glossy jelly candy (docs/ux/visual-direction.md §14/§16) ---
+
+    /**
+     * Peak strength of the gloss highlight streak, added in near-white
+     * (`color-specular`). §14's reference is ONE hard, high-contrast highlight —
+     * so this is deliberately strong, not a subtle sheen: the streak is small
+     * and sharp-edged, and its punch is what makes the body read as wet glass
+     * rather than matte gel. 0.70 is a first-pass value the client will steer;
+     * the real tune is on-device, where the highlight's contrast against the
+     * saturated base is what actually decides "glossy" vs "washed out".
+     */
+    const val SPECULAR_GAIN = 0.85f
+
+    /**
+     * Half-width of the gloss streak's feather ACROSS its short axis, in body-UV
+     * units (the UV spans ~0..1 across the whole piece, §15). Small keeps the
+     * streak a sharp bright line that feathers, not a soft lobe.
+     *
+     * Round 4 (§14.3): 0.14 → 0.12. The streak now also tapers ALONG its length
+     * ([SPECULAR_LENGTH]) and carries a tight [SPECULAR_HOTSPOT_RADIUS] hotspot,
+     * so the "reads as a highlight, not a stripe" work no longer rests on the
+     * across-width alone — the across feather can come down slightly and the
+     * gleam still reads. First-pass; tune on-device jointly with the two new
+     * terms below.
+     */
+    const val SPECULAR_SHARPNESS = 0.12f
+
+    /**
+     * Half-length of the gloss streak ALONG its own long axis, in body-UV units
+     * (§14.3). This is the round-4 fix for the "hard diagonal scratch": round 3
+     * had NO falloff along the streak's run direction, so the highlight was a
+     * full-length band bounded only by the piece silhouette — an infinite band
+     * that read as a glitchy scratch, not a gleam. A perpendicular taper turns
+     * it into a soft-ended elongated patch.
+     *
+     * 0.40 (§14.3's 0.35–0.45): roughly a third to half the piece's own extent,
+     * so the gleam reads as "on this piece" rather than a dot. Raise it toward a
+     * longer streak, lower it toward a rounder spot. First-pass; tune on-device.
+     */
+    const val SPECULAR_LENGTH = 0.40f
+
+    /**
+     * Radius of the small tight WET hotspot at the streak's centre, in body-UV
+     * units (§14.3) — the "small bright hotspot" of the client's own ask, riding
+     * the same across/along distance fields as the streak (no new dot product).
+     * The hotspot is the bright wet-glint core; the streak is the softer gleam it
+     * fades into.
+     *
+     * 0.07 (§14.3's 0.06–0.08): small on purpose — it is a hotspot, not a second
+     * streak. First-pass; tune on-device.
+     */
+    const val SPECULAR_HOTSPOT_RADIUS = 0.07f
+
+    /**
+     * Strength of the [SPECULAR_HOTSPOT_RADIUS] hotspot RELATIVE to the streak,
+     * before the shared [SPECULAR_GAIN] (§14.3). The shader adds `streak +
+     * hotspot * this`, then scales the sum by [SPECULAR_GAIN], so 1.0 makes the
+     * hotspot peak match the streak peak (a ~2× brighter wet core where they
+     * overlap), which is the intended small bright glint.
+     *
+     * A dedicated uniform rather than a fixed ratio of [SPECULAR_GAIN] (the
+     * choice §14.3 left to Frontend): the hotspot-vs-streak balance is exactly a
+     * look-call the client steers on-device, and this file's whole discipline is
+     * that such numbers are named constants, not literals baked into the shader.
+     * 0.9 first-pass — a clear glint that stays short of blowing the core to a
+     * hard white disc. Tune on-device.
+     */
+    const val SPECULAR_HOTSPOT_GAIN = 0.9f
+
+    /**
+     * The `vCorner` threshold above which a true outer-silhouette corner is
+     * rounded away by MSAA alpha-to-coverage (§16).
+     *
+     * **Reworked from the earlier fade-to-tray approach.** Fading a corner toward
+     * the tray colour only reads as "rounded" where the tray is actually behind
+     * the corner; on an airborne piece against the bright sky it read as a dark
+     * corner smudge (the Product Lead flagged exactly this on the first pass).
+     * Alpha-to-coverage instead drops the fragment's coverage at the corner tip,
+     * so the square corner is eaten into a curve that shows the REAL background —
+     * sky, tray or another piece — and reads as a genuine soft round against any
+     * backdrop, with no blend and no discard.
+     *
+     * `vCorner` ramps 1 at the true corner particle to 0 one lattice spacing in.
+     * This value is where the coverage starts dropping: the rounded region is
+     * `vCorner ∈ [CORNER_ROUND, 1]`. 0.5 rounds the outer ~half of that ramp
+     * (~10–15% of a cell, the `radius-piece-corner` target). Higher = a tighter,
+     * subtler round; lower = a bigger, more obviously rounded corner. First-pass;
+     * the client steers "how rounded". Needs MSAA (falls back to square without).
+     */
+    const val CORNER_ROUND = 0.5f
+
+    // --- soft contact shadow (docs/ux/visual-direction.md §18) --------------
+
+    /**
+     * The piece contact shadow's colour: `color-shadow`, a darkened `color-tray`.
+     * NOT black — a black shadow on a saturated candy world reads as a hole; a
+     * darkened-tray tone reads as the tray in shade (§18).
+     *
+     * `color-tray` #7C93A6 × 0.45. The token names a 35% darken (×0.65), but the
+     * Product Lead couldn't see the shadow at all against the light tray — a
+     * shadow only a little darker than the surface it falls on vanishes on a
+     * bright scene. Darkened harder (×0.45) so it clearly reads as a shadow while
+     * staying a tray tone, not black. First-pass; tune on the real panel.
+     */
+    const val SHADOW_R = 0.486f * 0.45f
+    const val SHADOW_G = 0.576f * 0.45f
+    const val SHADOW_B = 0.651f * 0.45f
+
+    /** Opacity of the contact shadow. Raised to 0.55 (from the token's 40%) for
+     *  the same reason the colour is darker: it has to read against a light tray
+     *  and light sky, where a faint shadow disappears. First-pass. */
+    const val SHADOW_ALPHA = 0.55f
+
+    /**
+     * Shadow offset in world units, down and slightly right (`shadow-offset-
+     * piece`, §18). World units so it scales with the piece rather than the
+     * screen. Positive Y is up in world space, so "down" is negative Y.
+     *
+     * The token names 0.08; this uses more so the shadow peeks out below the
+     * piece as a visible soft band rather than a hairline the piece almost fully
+     * covers — the offset is the main thing that makes the shadow read at all
+     * when a piece rests directly on the tray. First-pass value.
+     */
+    const val SHADOW_OFFSET_X = 0.08f
+    const val SHADOW_OFFSET_Y = -0.18f
+
+    // --- antialiasing (docs/ux/visual-direction.md §17) --------------------
+
+    /**
+     * MSAA sample count requested on the EGL surface config (§17): hardware
+     * multisampling, resolved by the driver, smoothing the opaque silhouette
+     * edges of the pieces, the §16 rounded corners and the well frame all at
+     * once — with NO shader change and no violation of the "no blend, no
+     * discard" rules (`Shaders.kt`), because it lives entirely at the
+     * rasteriser/resolve stage.
+     *
+     * This is a build-time dial, NOT the runtime `shadeLevel` ladder: the sample
+     * count is fixed when the EGL surface is created and cannot change per
+     * frame, so §17's "fold it into uShadeTier" is honoured in spirit — one
+     * cuttable dial ordered with the rest — but implemented as a single constant
+     * here (set to 0 to disable) rather than a runtime step. `GameView`'s config
+     * chooser falls back to no-MSAA if the driver offers no matching config, so
+     * a device (or the software emulator) without 4× MSAA still runs.
+     *
+     * COST, named plainly (§17): 4× MSAA roughly quadruples colour/depth
+     * attachment bandwidth and adds a resolve pass, on a Fairphone 6 already
+     * measured at 15.0ms mean against 16.67ms with a nearly-flat shader. Stacked
+     * on the §18 shadow pass and the §19 full-screen background, this is a real
+     * frame-budget risk, not decoration — it is the single most expensive item
+     * this round adds and the first to cut (lower to 2, then 0) if the on-device
+     * budget disagrees. Only the client's phone can price it; the emulator
+     * cannot.
+     */
+    const val MSAA_SAMPLES = 4
 
     // --- band glow (docs/ux/band-glow.md) ----------------------------------
 

@@ -163,12 +163,16 @@ class WellFrame {
      * | contact | 0 | walls uniformly darkened by the AO seam term |
      * | edge | 0 | the whole wall rim-lit cool white, since the rim term has no geometry to concentrate it on |
      * | body UV | (0, 0) | at (0,0) the subsurface depth is 0 and `mottle` is `sin(0)*sin(0)` = 0, so both terms vanish; at the centre (0.5, 0.5) the walls would instead take the full deep-tone tint |
+     * | corner | 0 | the walls have no silhouette corner and would otherwise round toward the tray colour at their (0,0)-UV generic; a wall is not a piece (backend handoff 0036) |
      *
      * Band glow is the one term this cannot reach, because it is driven by
      * world height rather than by a vertex attribute. It is suppressed in the
      * shader instead, by testing `vArchetype` against the piece count — a wall
      * glowing on its own would read as a horizontal HUD line rather than as
      * material warming from within, which is exactly what the client rejected.
+     * The §14 gloss streak is suppressed the same way (its geometry does not
+     * vanish at UV (0,0)), by the same `vArchetype < PIECE_COUNT` gate — so a
+     * wall never picks up a glossy candy highlight.
      *
      * The dither still applies, which is intentional: `color-surface` #1B1E29
      * is dark enough to band against a true-black background on its own.
@@ -179,6 +183,7 @@ class WellFrame {
         GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_CONTACT, 0f)
         GLES30.glVertexAttrib2f(BodyMesh.ATTRIB_BODY_UV, 0f, 0f)
         GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_EDGE, 0f)
+        GLES30.glVertexAttrib1f(BodyMesh.ATTRIB_CORNER, 0f)
         GLES30.glDrawElements(GLES30.GL_TRIANGLES, QUADS * 6, GLES30.GL_UNSIGNED_SHORT, 0)
         GLES30.glBindVertexArray(0)
     }

@@ -86,6 +86,16 @@ preserves the approved feel by construction.
 
 ## Rendering contract
 
+> **B1 adopted by [ADR 0018](0018-seamless-per-archetype-render-topology.md)
+> (2026-07-21).** The B2 default below shipped, but its per-cell mesh reads as
+> "four squares" split by a "+" (the Frontend's extrusion closes the 2r seam
+> only by collapsing the facing columns coincident, which stamps a UV
+> discontinuity on the join — handoff 0038). ADR 0018 switches to the B1
+> alternative recorded here: per-archetype triangle patterns that bridge the
+> seams with real geometry (`bodyTriangleIndices`), plus a per-direction
+> free-edge mask (`particleFreeEdges`) so the extrusion pushes only true
+> silhouette. The physics below is unchanged.
+
 The default exposure (**B2**) keeps `SimState.triangleIndices` as the single
 per-cell pattern the renderer already consumes (a cell == today's body, so the
 array is unchanged); the renderer reuses it for `4 · bodyCount` cells at offset

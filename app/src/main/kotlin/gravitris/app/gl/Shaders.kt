@@ -91,6 +91,7 @@ layout(location = 2) in float aCompression;
 layout(location = 3) in float aContact;
 layout(location = 4) in vec2 aBodyUv;
 layout(location = 5) in float aEdge;
+layout(location = 6) in float aCorner;
 
 uniform vec2 uScale;
 uniform vec2 uOffset;
@@ -101,6 +102,7 @@ out float vContact;
 out float vEdge;
 out vec2 vBodyUv;
 out vec2 vWorldPos;
+out float vCorner;
 
 void main() {
     vArchetype = aArchetype;
@@ -109,6 +111,10 @@ void main() {
     vEdge = aEdge;
     vBodyUv = aBodyUv;
     vWorldPos = aPosition;
+    // Interpolated the same cheap way vEdge is: 1 at a true outer-silhouette
+    // corner (backend handoff 0036 / SimState.particleCorner), ramping to 0
+    // over one lattice spacing, so §16's rounding needs no new geometry.
+    vCorner = aCorner;
     gl_Position = vec4(aPosition * uScale + uOffset, 0.0, 1.0);
 }
 """
@@ -134,6 +140,7 @@ in float vContact;
 in float vEdge;
 in vec2 vBodyUv;
 in vec2 vWorldPos;
+in float vCorner;
 
 uniform vec3 uPalette[PALETTE_SIZE];
 
@@ -165,6 +172,23 @@ uniform float uGrainGain;
 uniform float uGrainFrequency;
 uniform float uDitherGain;
 
+// --- Stage 3C glossy jelly candy terms (docs/ux/visual-direction.md §14/§16) -
+// Gloss streak: one hard, near-white highlight; sharpness is the half-width of
+// its feather in body-UV units, gain its peak. Corner: how hard the true
+// silhouette corners fade toward the tray colour (§16 rounded corners).
+uniform float uSpecularGain;
+uniform float uSpecularSharpness;
+// §14.3 round-4 gleam reshape: the streak now tapers along its OWN length
+// (uSpecularLength) and carries a tight bright hotspot (uSpecularHotspotRadius,
+// scaled by uSpecularHotspotGain) at its centre, so it reads as one soft wet
+// gleam instead of the hard full-length diagonal scratch round 3 shipped.
+uniform float uSpecularLength;
+uniform float uSpecularHotspotRadius;
+uniform float uSpecularHotspotGain;
+// §16: the vCorner threshold above which a true corner is rounded away via MSAA
+// alpha-to-coverage. Higher = a smaller (tighter) rounded region.
+uniform float uCornerRound;
+
 // --- band glow (docs/ux/band-glow.md) ------------------------------------
 uniform float uBandFill[BAND_COUNT];
 // -1 = not clearing, else 0..1 progress through the clear envelope. Separate
@@ -188,11 +212,28 @@ out vec4 fragColor;
 // glow; it is not a colour-space conversion and nothing here is gamma-correct.
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
 
-// docs/ux/piece-identity.md: the rim is a FIXED neutral cool white, never
-// tinted per piece. A coloured rim would shift the apparent hue at exactly the
-// edges where players read piece boundaries, and hue is the primary identity
-// cue.
-const vec3 RIM_COLOR = vec3(0.82, 0.88, 1.0);
+// docs/ux/piece-identity.md: the rim is a FIXED neutral white, never tinted
+// per piece. A coloured rim would shift the apparent hue at exactly the edges
+// where players read piece boundaries, and hue is the primary identity cue.
+// Round 3 (§14) retunes it warmer/brighter toward color-specular so it also
+// reads as the glassy edge-catch of a wet candy surface, not only a cool rim.
+const vec3 RIM_COLOR = vec3(0.96, 0.97, 1.0);
+
+// color-specular #FFFFFF @92%, warm-neutral (docs/ux/tokens.md Material). Fixed,
+// never per piece — same reason as RIM_COLOR: a tinted highlight would shift the
+// hue exactly where the player reads the piece.
+const vec3 SPEC_COLOR = vec3(1.0, 0.99, 0.96);
+
+// Fixed gloss geometry (§14): a bright band biased through the upper-left,
+// running along the piece's long axis. SPEC_DIR is the across-streak normal
+// (≈ up-and-left in body UV); the streak itself runs perpendicular to it and,
+// because vBodyUv is now body-wide (§15), sweeps the WHOLE piece as one streak
+// rather than repeating per cell. SPEC_CENTER is the point it passes through.
+// Both are on-device look-calls like every other constant here — if the
+// highlight lands lower-left instead of upper-left the body-UV v axis is
+// flipped from the assumption here; negate SPEC_DIR.y and mirror SPEC_CENTER.y.
+const vec2 SPEC_CENTER = vec2(0.32, 0.66);
+const vec2 SPEC_DIR = vec2(-0.5527708, 0.8333025); // normalize(vec2(-0.55, 0.83))
 
 // color-glow #FFB347. Reserved — never a piece hue (docs/ux/tokens.md).
 const vec3 GLOW_COLOR = vec3(1.0, 0.702, 0.278);
@@ -344,7 +385,17 @@ void main() {
         // rather than converting to HSV keeps this to three ops and cannot
         // rotate the hue, which an HSV round-trip at mediump can.
         vec3 deep = mix(vec3(baseLuma), base, uSubsurfaceSaturate) * uSubsurfaceDarken;
-        color = mix(color, deep, depth * uSubsurfaceGain);
+        // Round-4 correction (§14.2): darken toward the true silhouette EDGE,
+        // not the core. `depth` is 0 at the edge and 1 at the core, so round 3's
+        // `mix(color, deep, depth * gain)` darkened the middle and left the rim
+        // bright — the "tube" read, backwards from real candy. Flip it with
+        // `1 - depth` (1 at edge, 0 at core) and square it — a free multiply that
+        // concentrates the darkening in a thin band right at the outline rather
+        // than spreading it across half the body — so the piece reads as a
+        // flat/bright candy with a plump richer rim, the jelly-bean volume cue.
+        float edgeCloseness = 1.0 - depth;
+        float edgeBand = edgeCloseness * edgeCloseness;
+        color = mix(color, deep, edgeBand * uSubsurfaceGain);
 
         // Contact seam / ambient occlusion. piece-identity.md ranks this the
         // PRIMARY small-screen boundary cue, above the lightness ladder,
@@ -360,6 +411,39 @@ void main() {
         // just drew.
         float rim = vEdge * vEdge * vEdge * (1.0 - vContact);
         color += RIM_COLOR * (rim * uRimGain);
+
+        // Gloss highlight (§14, reshaped in round 4 §14.3 into ONE soft wet
+        // gleam). `across` is the signed distance across the streak's short
+        // axis; `along` (a free perpendicular, no second dot with a new const)
+        // is the distance along its LONG axis. Round 3 tapered only across, so
+        // the highlight ran the full silhouette in the light direction — a hard
+        // diagonal band that read as a glitchy scratch. Tapering ALONG as well
+        // (uSpecularLength) closes the ends into a soft elongated patch, and a
+        // tight bright hotspot at the centre (uSpecularHotspotRadius, on the same
+        // across/along fields) is the wet glint the streak fades out from. Still
+        // cheap: one extra dot, two smoothsteps and a couple of multiplies over
+        // round 3 — nowhere near a Phong lobe.
+        //
+        // Gated to pieces (pieceMask): the well frame draws this program with
+        // its material attributes disabled, so vBodyUv reads the generic (0,0)
+        // — where the subsurface and grain terms already vanish, but the streak
+        // would not, so a wall would otherwise pick up a flat gloss band.
+        // Suppressed where vContact is high for the same reason the rim is: a
+        // face pressed against a neighbour or the tray is not a free glossy
+        // surface.
+        float pieceMask = vArchetype < PIECE_COUNT ? 1.0 : 0.0;
+        vec2 alongDir = vec2(-SPEC_DIR.y, SPEC_DIR.x);
+        float across = dot(vBodyUv - SPEC_CENTER, SPEC_DIR);
+        float along = dot(vBodyUv - SPEC_CENTER, alongDir);
+        float acrossFall = 1.0 - smoothstep(0.0, uSpecularSharpness, abs(across));
+        float alongFall = 1.0 - smoothstep(0.0, uSpecularLength, abs(along));
+        float streak = acrossFall * acrossFall * alongFall;
+        // Tight hotspot at the streak's own centre, reusing the two distances.
+        float r2 = across * across + along * along;
+        float hotspot = 1.0 - smoothstep(0.0, uSpecularHotspotRadius * uSpecularHotspotRadius, r2);
+        hotspot *= hotspot;
+        float spec = (streak + hotspot * uSpecularHotspotGain) * pieceMask * (1.0 - vContact);
+        color += SPEC_COLOR * (spec * uSpecularGain);
     }
 
     // --- tier 2: identity grain ------------------------------------------
@@ -383,6 +467,26 @@ void main() {
     float compression = max(0.0, 1.0 - vCompression);
     float darken = min(compression * uCompressionGain, uCompressionMax);
     color *= 1.0 - darken;
+
+    // --- rounded corners (§16), tier 1+, via MSAA alpha-to-coverage --------
+    // Round ONLY true outer-silhouette corners, by dropping the fragment's
+    // ALPHA near the corner tip. With MSAA enabled the driver's alpha-to-
+    // coverage converts that alpha into reduced sample coverage, so the square
+    // corner is eaten into a soft curve that shows the TRUE background behind it
+    // — sky, tray, or another piece — and therefore reads as rounded against
+    // ANY backdrop, with NO blend and NO discard (the shader's rules hold).
+    //
+    // vCorner is 1 only at a real convex corner of the whole piece (an L stays
+    // sharp at its elbow, an O rounds all four — backend handoff 0036) and ramps
+    // to 0 over one lattice spacing; internal seam corners carry 0, and the walls
+    // carry the generic 0, so neither rounds. The rounded region is vCorner in
+    // [uCornerRound, 1]; below uCornerRound the piece is fully opaque. If MSAA is
+    // unavailable the alpha is simply ignored (no blend) and corners stay square
+    // — graceful, not a black screen.
+    float cornerCoverage = 1.0;
+    if (uShadeTier >= 1) {
+        cornerCoverage = 1.0 - smoothstep(uCornerRound, 1.0, vCorner);
+    }
 
     // --- tier 3: band glow -------------------------------------------------
     // Gated on the archetype so the well frame never glows. The glow must read
@@ -501,7 +605,9 @@ void main() {
         color += dither() * uDitherGain;
     }
 
-    fragColor = vec4(color, 1.0);
+    // Alpha carries the §16 corner coverage for MSAA alpha-to-coverage; 1.0
+    // (fully opaque) everywhere except the rounded corner tips.
+    fragColor = vec4(color, cornerCoverage);
 }
 """
 

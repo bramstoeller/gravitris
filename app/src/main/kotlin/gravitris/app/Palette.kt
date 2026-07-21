@@ -50,11 +50,14 @@ object Palette {
         //   is 47 clear of the reserved 15-65 glow band and continues the dark
         //   rung of the lightness alternation at L40%.
         0x3B / 255f, 0xA1 / 255f, 0x2B / 255f,
-        // 7 color-surface #1B1E29 — well walls and floor (docs/ux/tokens.md).
-        //   Deliberately NOT #000000: tokens.md notes that if the background
-        //   and the walls were both true black, the well would have no legible
-        //   boundary on this device's OLED panel.
-        0x1B / 255f, 0x1E / 255f, 0x29 / 255f,
+        // 7 color-tray #7C93A6 — well walls and floor (docs/ux/tokens.md, round-3
+        //   light candy world, §19). A muted slate-blue, calmer and less
+        //   saturated than every piece hue and the sky, so the pieces are the
+        //   only saturated thing in the frame — the Candy Crush "quiet tray"
+        //   lesson. Was color-surface #1B1E29 (the dark-canvas theme, now
+        //   superseded). Deliberately not light-neutral/white: against the
+        //   cream sky bottom a white tray would vanish.
+        0x7C / 255f, 0x93 / 255f, 0xA6 / 255f,
     )
 
     /**

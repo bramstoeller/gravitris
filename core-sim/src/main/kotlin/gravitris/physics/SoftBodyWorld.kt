@@ -102,6 +102,25 @@ internal class SoftBodyWorld(val config: SimConfig) {
     private val seamDistance: Int = lattice + 2 * (lattice - 1)
     private val seamArea: Int = 2 * (lattice - 1)
 
+    // A junction is the single 2r x 2r square where FOUR cells meet at a point —
+    // the O alone has one (ADR 0018). The seam model is strictly edge-to-edge, so
+    // four pairwise seams clip its corners and leave the render mesh open there: a
+    // hole straight through the O's centre (handoff 0040). It is closed by two
+    // RENDER triangles and NO solver constraint. Two facts make that the right
+    // fix, both measured, not assumed:
+    //  - The square's four edges are already welded by the four seams' structural
+    //    constraints, so the hole cannot reopen and the centre cannot tear open.
+    //  - Backing the fill with the obvious near-rigid AREA constraint destabilises
+    //    a heavy pile: a mass-8 O-bearing pile that used to settle rings at KE ~0.4
+    //    and never falls below the 0.05 quiet line over 6000 ticks, because the
+    //    single global areaCompliance makes the extra centre constraint a stiff
+    //    mode XPBD cannot damp in 8 substeps. The O settled fine before; the defect
+    //    was render-only, so the fix is render-only. particleCompression is
+    //    per-particle (accumulated from surrounding constraints), so the fill
+    //    triangle shades correctly by interpolating its corners without one of its
+    //    own. See ADR 0018's centre-junction section.
+    private val junctionTriangles: Int = 2
+
     private val distancePerBody: Int = cellsPerBody * cellDistance + MAX_SEAMS * seamDistance
     private val areaPerBody: Int = cellsPerBody * cellArea + MAX_SEAMS * seamArea
 
@@ -117,6 +136,23 @@ internal class SoftBodyWorld(val config: SimConfig) {
 
     /** Free-surface flag per particle: 1 on the shape's true outline, 0 inside (incl. seams). */
     private val shapeEdge = Array(PieceShapes.COUNT) { FloatArray(particlesPerBody) }
+
+    /**
+     * Per-direction free-surface mask per particle (§17, D11): a bitwise OR of
+     * [FREE_LEFT]/[FREE_RIGHT]/[FREE_DOWN]/[FREE_UP], set on the side a particle
+     * has free surface on and clear on a side facing a neighbouring cell (a
+     * seam). It is the per-direction detail behind [shapeEdge], which is only its
+     * OR — `shapeEdge == 1 ⇔ mask != 0`.
+     *
+     * `:app` needs the direction, not just the fact, of the free surface: the
+     * ADR 0011 silhouette extrusion must push a boundary particle out ONLY along
+     * the sides that are true outline and leave the seam-facing sides where they
+     * are, so the per-archetype bridge geometry ([bodyTriangleIndices]) fills the
+     * 2r seam at its natural width rather than the extrusion collapsing the two
+     * facing columns coincident (which is what put the UV discontinuity — the
+     * visible "+" — right at the join). See handoff 0038 and ADR 0018.
+     */
+    private val shapeFreeEdges = Array(PieceShapes.COUNT) { IntArray(particlesPerBody) }
 
     /**
      * Body-local surface UV per particle, precomputed per shape (§15, D10).
@@ -169,6 +205,11 @@ internal class SoftBodyWorld(val config: SimConfig) {
     private val shapeSeamAreaA = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
     private val shapeSeamAreaB = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
     private val shapeSeamAreaC = Array(PieceShapes.COUNT) { IntArray(MAX_SEAMS * seamArea) }
+
+    /** Junction RENDER-triangle index triples (body-local), padded inert to [MAX_JUNCTIONS]. */
+    private val shapeJunctionTriA = Array(PieceShapes.COUNT) { IntArray(MAX_JUNCTIONS * junctionTriangles) }
+    private val shapeJunctionTriB = Array(PieceShapes.COUNT) { IntArray(MAX_JUNCTIONS * junctionTriangles) }
+    private val shapeJunctionTriC = Array(PieceShapes.COUNT) { IntArray(MAX_JUNCTIONS * junctionTriangles) }
 
     /** Per-shape bounding half-extents, for the placement bbox reject. */
     private val shapeHalfW = FloatArray(PieceShapes.COUNT)
@@ -250,6 +291,16 @@ internal class SoftBodyWorld(val config: SimConfig) {
                         val freeDown = row == 0 && !hasDown
                         val freeUp = row == lattice - 1 && !hasUp
                         shapeEdge[arch][local] = if (freeLeft || freeRight || freeDown || freeUp) 1f else 0f
+                        // Per-direction detail behind shapeEdge, for the app's
+                        // silhouette extrusion (see shapeFreeEdges). LEFT/RIGHT
+                        // and DOWN/UP are mutually exclusive per particle, so this
+                        // OR never double-counts an axis.
+                        var mask = 0
+                        if (freeLeft) mask = mask or FREE_LEFT
+                        if (freeRight) mask = mask or FREE_RIGHT
+                        if (freeDown) mask = mask or FREE_DOWN
+                        if (freeUp) mask = mask or FREE_UP
+                        shapeFreeEdges[arch][local] = mask
                         // A convex outer corner: a lattice corner particle whose
                         // cell has a free surface on BOTH the meeting sides. An
                         // internal cell corner has a neighbour on at least one
@@ -267,6 +318,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
             if (shapeHalfH[arch] > pieceMaxHalfHeight) pieceMaxHalfHeight = shapeHalfH[arch]
             if (shapeHalfW[arch] > pieceMaxHalfWidth) pieceMaxHalfWidth = shapeHalfW[arch]
             buildSeams(arch)
+            buildJunctions(arch)
         }
     }
 
@@ -331,6 +383,46 @@ internal class SoftBodyWorld(val config: SimConfig) {
         }
     }
 
+    /**
+     * Closes the four-cell junction of shape [arch] — the 2r x 2r square at the
+     * point where four cells meet (only the O has one, ADR 0018). A junction is
+     * detected at a cell that has a right, an up AND an up-right neighbour: those
+     * four cells form a 2x2 block, and the square is bounded by their four inner
+     * corners. The square's four edges are already welded by the four seams; this
+     * only triangulates the open middle for the RENDER mesh (no solver constraint,
+     * see the [junctionTriangles] note). Unused slots are padded inert like
+     * [buildSeams], and the padding is filtered out of [bodyTriangleIndices].
+     */
+    private fun buildJunctions(arch: Int) {
+        var a = 0
+        val L = lattice
+        for (cell in 0 until PieceShapes.CELLS) {
+            val right = PieceShapes.neighbour(arch, cell, 1, 0)
+            val up = PieceShapes.neighbour(arch, cell, 0, 1)
+            val upRight = PieceShapes.neighbour(arch, cell, 1, 1)
+            if (right < 0 || up < 0 || upRight < 0) continue
+
+            // The square's four inner corners, in the same grid orientation as a
+            // lattice cell: p00 bottom-left, p10 bottom-right, p01 top-left, p11
+            // top-right — so the winding below matches every other render triangle.
+            val p00 = bodyLocal(cell, L - 1, L - 1)   // this cell, top-right
+            val p10 = bodyLocal(right, L - 1, 0)      // right cell, top-left
+            val p01 = bodyLocal(up, 0, L - 1)         // up cell, bottom-right
+            val p11 = bodyLocal(upRight, 0, 0)        // up-right cell, bottom-left
+
+            // Two CCW triangles, split on the p00-p11 diagonal like a cell.
+            shapeJunctionTriA[arch][a] = p00; shapeJunctionTriB[arch][a] = p10
+            shapeJunctionTriC[arch][a] = p11; a++
+            shapeJunctionTriA[arch][a] = p00; shapeJunctionTriB[arch][a] = p11
+            shapeJunctionTriC[arch][a] = p01; a++
+        }
+        // Inert padding: a == b == c, dropped by the realTriples filter.
+        while (a < shapeJunctionTriA[arch].size) {
+            shapeJunctionTriA[arch][a] = 0; shapeJunctionTriB[arch][a] = 0
+            shapeJunctionTriC[arch][a] = 0; a++
+        }
+    }
+
     // --- particle state -----------------------------------------------------
 
     val posX = FloatArray(particleCapacity)
@@ -365,6 +457,13 @@ internal class SoftBodyWorld(val config: SimConfig) {
     val particleU = FloatArray(particleCapacity)
     val particleV = FloatArray(particleCapacity)
     val particleEdge = FloatArray(particleCapacity)
+
+    /**
+     * Per-direction free-surface mask (§17, D11), set once at spawn from
+     * [shapeFreeEdges] and never touched per frame. Drives `:app`'s silhouette
+     * extrusion so only true-outline sides are pushed out; see [shapeFreeEdges].
+     */
+    val particleFreeEdges = IntArray(particleCapacity)
 
     /**
      * True-outer-silhouette corner flag (§16), 1 at a convex corner of the whole
@@ -436,6 +535,82 @@ internal class SoftBodyWorld(val config: SimConfig) {
         return out
     }
 
+    /**
+     * Per-archetype full-footprint render topology (§17, D11 / ADR 0018): the
+     * body-local triangle indices for a WHOLE tetromino of each shape — the four
+     * cells' own triangles PLUS the seam-bridge triangles that weld them into one
+     * continuous mesh, so an internal seam is an interior mesh line rather than
+     * the boundary between two abutting cell meshes. Built once at construction,
+     * constant for the run.
+     *
+     * This is the render form of the solver's area constraints: interior cells
+     * use the same `p00,p10,p11 / p00,p11,p01` split as [triangleIndices] (and as
+     * the cell area constraints), and the seam bridges are exactly the real seam
+     * area triples in [shapeSeamAreaA]/[shapeSeamAreaB]/[shapeSeamAreaC] (the
+     * inert padding of ADR 0015 dropped). So every render triangle across the
+     * whole piece — seams included — is one area constraint, which is what makes
+     * both the body-wide UV (§15) and [particleCompression] continuous across a
+     * seam instead of stepping by one grid unit at it (the "+" of handoff 0038).
+     *
+     * Values are in `[0, particlesPerBody)`; `:app` draws body `b` at vertex
+     * offset `b * particlesPerBody`. Length varies by shape: an O bridges four
+     * seams, the other six three, so this is a jagged array, not a fixed stride.
+     */
+    val bodyTriangleIndices: Array<IntArray> =
+        Array(PieceShapes.COUNT) { buildBodyTriangleIndices(it) }
+
+    private fun buildBodyTriangleIndices(arch: Int): IntArray {
+        val trianglesPerCell = 2 * (lattice - 1) * (lattice - 1)
+
+        // Bridge and junction triangles are the real (non-inert) area triples.
+        // The inert padding is a == b == c (a degenerate point), so a triple with
+        // any two indices differing is real — an exact filter.
+        val bridgeTriangles = realTriples(shapeSeamAreaA[arch], shapeSeamAreaB[arch], shapeSeamAreaC[arch]) +
+            realTriples(shapeJunctionTriA[arch], shapeJunctionTriB[arch], shapeJunctionTriC[arch])
+
+        val out = IntArray((cellsPerBody * trianglesPerCell + bridgeTriangles) * 3)
+        var n = 0
+        // Interior: each cell's own lattice, offset into the body's particle
+        // block. Identical winding to triangleIndices, so a cell renders exactly
+        // as it does today.
+        for (cell in 0 until cellsPerBody) {
+            val cellBase = cell * particlesPerCell
+            for (row in 0 until lattice - 1) {
+                for (col in 0 until lattice - 1) {
+                    val p00 = cellBase + row * lattice + col
+                    val p10 = p00 + 1
+                    val p01 = p00 + lattice
+                    val p11 = p01 + 1
+                    out[n++] = p00; out[n++] = p10; out[n++] = p11
+                    out[n++] = p00; out[n++] = p11; out[n++] = p01
+                }
+            }
+        }
+        // Seam bridges (the solver's seam area triples, so the mesh matches the
+        // constraints) then the O centre-junction fill (render-only, no constraint
+        // — see junctionTriangles). Both already body-local and wound CCW.
+        n = appendRealTriples(out, n, shapeSeamAreaA[arch], shapeSeamAreaB[arch], shapeSeamAreaC[arch])
+        appendRealTriples(out, n, shapeJunctionTriA[arch], shapeJunctionTriB[arch], shapeJunctionTriC[arch])
+        return out
+    }
+
+    /** Count of non-inert triangles in a parallel A/B/C area-triple store. */
+    private fun realTriples(a: IntArray, b: IntArray, c: IntArray): Int {
+        var count = 0
+        for (k in a.indices) if (a[k] != b[k] || b[k] != c[k]) count++
+        return count
+    }
+
+    /** Appends every non-inert triple of an area store to [out], returning the new cursor. */
+    private fun appendRealTriples(out: IntArray, start: Int, a: IntArray, b: IntArray, c: IntArray): Int {
+        var n = start
+        for (k in a.indices) {
+            if (a[k] == b[k] && b[k] == c[k]) continue
+            out[n++] = a[k]; out[n++] = b[k]; out[n++] = c[k]
+        }
+        return n
+    }
+
     // --- construction -------------------------------------------------------
 
     /**
@@ -479,6 +654,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
         val lx = shapeLocalX[archetype]
         val ly = shapeLocalY[archetype]
         val edge = shapeEdge[archetype]
+        val freeEdges = shapeFreeEdges[archetype]
         val u = shapeU[archetype]
         val v = shapeV[archetype]
         val corner = shapeCorner[archetype]
@@ -504,6 +680,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
                     particleU[i] = u[local]
                     particleV[i] = v[local]
                     particleEdge[i] = edge[local]
+                    particleFreeEdges[i] = freeEdges[local]
                     particleCorner[i] = corner[local]
                     particleCompression[i] = 1f
                     particleContact[i] = 0f
@@ -620,6 +797,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
             particleU.copyInto(particleU, dst, src, src + n)
             particleV.copyInto(particleV, dst, src, src + n)
             particleEdge.copyInto(particleEdge, dst, src, src + n)
+            particleFreeEdges.copyInto(particleFreeEdges, dst, src, src + n)
             particleCorner.copyInto(particleCorner, dst, src, src + n)
             particleCompression.copyInto(particleCompression, dst, src, src + n)
             particleContact.copyInto(particleContact, dst, src, src + n)
@@ -686,7 +864,8 @@ internal class SoftBodyWorld(val config: SimConfig) {
      * bridges that weld adjacent cells together (ADR 0015). The order — cells
      * first, seams (padded to [MAX_SEAMS]) last — is identical for every shape,
      * which is what keeps [distancePerBody]/[areaPerBody] a constant stride and
-     * lets [removeBody] swap a body with three contiguous copies.
+     * lets [removeBody] swap a body with three contiguous copies. (The O's centre
+     * junction is render-only and adds no constraint here, see [buildJunctions].)
      */
     private fun addConstraints(archetype: Int, base: Int) {
         for (cell in 0 until cellsPerBody) {
@@ -765,7 +944,7 @@ internal class SoftBodyWorld(val config: SimConfig) {
         return 0.5f * sum
     }
 
-    private companion object {
+    companion object {
         /**
          * Seam slots reserved per piece. A tetromino's four cells form a tree
          * (three adjacencies) except the O, which has a cycle (four). Reserving
@@ -773,5 +952,22 @@ internal class SoftBodyWorld(val config: SimConfig) {
          * stride constant across all seven shapes (ADR 0015).
          */
         const val MAX_SEAMS = 4
+
+        /**
+         * Four-cell render junctions reserved per piece. Only a 2x2 block of cells
+         * has one, so only the O (ADR 0018); the other six pad it inert. Sizes the
+         * per-shape junction render-triangle store, not a constraint stride — the
+         * junction fill adds no solver constraint (see [junctionTriangles]).
+         */
+        const val MAX_JUNCTIONS = 1
+
+        // Per-direction free-surface bits packed into particleFreeEdges (§17,
+        // D11 / ADR 0018). A frozen wire format: `:app` mirrors these values from
+        // the contract (docs/contracts.md §3) since it cannot see this internal
+        // class. LEFT/RIGHT and DOWN/UP are mutually exclusive per particle.
+        const val FREE_LEFT = 1
+        const val FREE_RIGHT = 2
+        const val FREE_DOWN = 4
+        const val FREE_UP = 8
     }
 }
