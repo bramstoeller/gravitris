@@ -129,6 +129,52 @@ now stale** — it still names the near-black colours at 4-8% opacity, which ren
 nothing; it needs updating to the readable tint values. Left for the UX Designer
 (their doc) — flagged to them directly.
 
+## GPU-budget fix — drift sin/cos hoisted to the CPU (commit `4c1ce61`)
+
+The Code Reviewer flagged that `Background.kt`'s fragment computed four
+`sin`/`cos` per pixel for the glow drift (was lines 212–213), but those offsets
+depend only on `uTime` — they are **frame-constant**, identical for every pixel
+in the surface. On the one sustained O(screen-pixels) pass (~2.6M px on the
+Fairphone) that is up to four wasted transcendentals per pixel if the driver
+does not hoist them, which we must not gamble on.
+
+Fix (pure cost move, no look change): the two drift `vec2`s are now computed
+once per frame on the CPU in `Background.draw()` (`kotlin.math.sin`/`cos`, the
+same `DRIFT_RATE`/`DRIFT_AMP`/phase constants, now Kotlin `const`s) and passed
+as `uDriftA`/`uDriftB` uniforms; the fragment reads them directly. The `uTime`
+uniform is gone from this program. **Zero transcendentals in the background
+fragment.** The `disc` falloff still runs on squared distance (no `sqrt`), so
+the whole full-screen pass is now transcendental-free.
+
+Verified identical: `make test` green (JVM unit + lint, debug + release); fresh
+`make screenshot` on the swangle software emulator compared against
+`0035-visual-layer/01-background-hud.png` — the indigo gradient, the warm core,
+the low-right violet glow and upper-left cool tint, the grain and dither all
+read the same. (Different falling-piece position and clock are the only
+differences, both expected.) Still software-rendered — no perf number attaches;
+the hidden frame-time readout on the client's device remains how the real cost
+is priced. The instrumentation was untouched.
+
+## Two subtle §3/§7 elements — built or cut? (for the UX Designer)
+
+Both are **built and wired**, just subtle-or-transient in a still — neither is
+cut:
+
+- **Background's two soft radial glows (§3):** built. `Background.kt` draws them
+  every frame — `GLOW_A` teal upper-left `vec2(0.28, 0.74)`, `GLOW_B` violet
+  low-right `vec2(0.74, 0.24)` (fragment `main()`, the two `color += GLOW_* *
+  disc(...)` lines). They are the elements the Post-review glow fix above made
+  actually read; visible in both `01-background-hud.png` and the fresh capture as
+  the low-right violet lift. Subtle by design (~4–5% white luminance), not absent.
+- **Screen-wide ignition luminance beat on a clear (§7.1):** built. `ClearFlash.kt`
+  is a full-screen additive warm-white quad on a 120 ms triangle envelope
+  (`clearFlashEnvelope`). It is created in `GameRenderer` (`clearFlash.create()`),
+  **armed on every real `Phase.Clearing` entry** (`clearFlashStartNanos =
+  frameStart`), and drawn each frame (`clearFlash.draw(clearFlashIntensity(...))`).
+  It is a ~120 ms transient synced to the ignition, so a still almost never
+  catches it — that is why it cannot be confirmed from the static shots — but it
+  is present and firing. Not cut.
+
 ## For the next agent / open questions
 
 - **On-device measurement of the background pass + embers is owed** before the
