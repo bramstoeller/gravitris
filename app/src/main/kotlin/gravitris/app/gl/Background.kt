@@ -3,6 +3,8 @@ package gravitris.app.gl
 import android.opengl.GLES30
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * The procedural environment: a graduated background that replaces the flat
@@ -22,8 +24,10 @@ import java.nio.ByteOrder
  * - **two fixed soft radial glows** ("distant crystal light," not
  *   representational) at the upper-left and lower-right, cool hues only —
  *   **never amber**, that is band-glow's alone — each a `smoothstep`-falloff
- *   disc at 4–8% peak opacity, drifting very slowly (`sin(uTime)`, ~100s
- *   period) so the environment breathes without ever pulling the eye.
+ *   disc at 4–8% peak opacity, drifting very slowly (~100s period) so the
+ *   environment breathes without ever pulling the eye. The drift offset is the
+ *   same for every pixel, so its `sin`/`cos` are computed once per frame on the
+ *   CPU (see [draw]) and passed in as uniforms, not evaluated per pixel.
  *
  * ## Cost
  *
@@ -32,7 +36,10 @@ import java.nio.ByteOrder
  * mobile GPU on top of everything else — rather than O(bodies) or O(1). So the
  * fragment shader is kept to a handful of ALU ops and **no `sqrt`**: the radial
  * falloff is a `smoothstep` on squared distance, which is a soft blob either
- * way and saves a transcendental per pixel. `visual-direction.md` §10 flags
+ * way and saves a transcendental per pixel; the glow-drift `sin`/`cos` are
+ * likewise kept out of the fragment (computed once per frame on the CPU), so
+ * the whole full-screen pass runs **zero transcendentals per pixel**.
+ * `visual-direction.md` §10 flags
  * this pass explicitly for on-device measurement — the shade dial's frame-time
  * readout is how its real cost gets priced on the client's device, not the
  * software emulator.
@@ -46,7 +53,8 @@ class Background {
 
     private var program = 0
     private var aspectUniform = -1
-    private var timeUniform = -1
+    private var driftAUniform = -1
+    private var driftBUniform = -1
 
     private var vao = 0
     private var vbo = 0
@@ -56,7 +64,8 @@ class Background {
     fun create() {
         program = GlProgram.build(VERTEX, FRAGMENT)
         aspectUniform = GLES30.glGetUniformLocation(program, "uAspect")
-        timeUniform = GLES30.glGetUniformLocation(program, "uTime")
+        driftAUniform = GLES30.glGetUniformLocation(program, "uDriftA")
+        driftBUniform = GLES30.glGetUniformLocation(program, "uDriftB")
 
         val buffers = IntArray(1)
         GLES30.glGenBuffers(1, buffers, 0)
@@ -112,9 +121,23 @@ class Background {
      * @param timeSeconds the renderer's wrapped shader clock, for the slow drift.
      */
     fun draw(aspect: Float, timeSeconds: Float) {
+        // The two glow-drift offsets depend only on time, so they are the same
+        // for every pixel in the frame. Computing the sin/cos here — once per
+        // frame on the CPU — instead of in the fragment shader keeps the four
+        // transcendentals out of the O(screen-pixels) full-screen pass, where
+        // they would otherwise run ~2.6M times per frame for a value that never
+        // varies across the surface. Pure cost move: the offsets, and so the
+        // rendered result, are identical to computing them per pixel.
+        val phase = timeSeconds * DRIFT_RATE
+        val driftAx = sin(phase) * DRIFT_AMP
+        val driftAy = cos(phase) * DRIFT_AMP
+        val driftBx = cos(phase + DRIFT_PHASE_B) * DRIFT_AMP
+        val driftBy = sin(phase + DRIFT_PHASE_B) * DRIFT_AMP
+
         GLES30.glUseProgram(program)
         GLES30.glUniform1f(aspectUniform, aspect)
-        GLES30.glUniform1f(timeUniform, timeSeconds)
+        GLES30.glUniform2f(driftAUniform, driftAx, driftAy)
+        GLES30.glUniform2f(driftBUniform, driftBx, driftBy)
         GLES30.glBindVertexArray(vao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
         GLES30.glBindVertexArray(0)
@@ -124,6 +147,16 @@ class Background {
         const val ATTRIB_POSITION = 0
         const val ATTRIB_UV = 1
         const val STRIDE_BYTES = 4 * Float.SIZE_BYTES
+
+        // Slow glow drift, computed CPU-side in draw() and passed as uDriftA/
+        // uDriftB. ~100s period as an angular rate, tiny amplitude — the
+        // environment breathes without ever pulling the eye. The two discs
+        // drift on opposite diagonals (B's phase offset) so the pair never
+        // reads as a single moving light. Cheap enough to keep, first to cut if
+        // the on-device budget disagrees (visual-direction.md §3).
+        const val DRIFT_RATE = 0.0628318f // 2*PI / 100s
+        const val DRIFT_AMP = 0.03f
+        const val DRIFT_PHASE_B = 1.7f
 
         private const val VERTEX = """#version 300 es
 layout(location = 0) in vec2 aPosition;
@@ -146,7 +179,8 @@ precision mediump float;
 in vec2 vUv;
 
 uniform float uAspect; // width / height, to keep the glows circular
-uniform float uTime;   // seconds, wrapped by the CPU (Tunables.SHADER_TIME_WRAP_SECONDS)
+uniform vec2 uDriftA;  // glow-A drift offset, computed once per frame on the CPU
+uniform vec2 uDriftB;  // glow-B drift offset, computed once per frame on the CPU
 
 out vec4 fragColor;
 
@@ -172,12 +206,6 @@ const vec3 GLOW_B = vec3(0.052, 0.030, 0.082); // lower-right, deep violet
 // field. A larger radius (the first pass used 0.42 ≈ 0.65 radius) covers the
 // entire screen and blends invisibly into the vertical gradient.
 const float GLOW_RADIUS2 = 0.08;
-
-// Slow drift: ~100s period as an angular rate, tiny amplitude. One sine per
-// glow — cheap enough to keep, first to cut if the budget disagrees
-// (visual-direction.md §3).
-const float DRIFT_RATE = 0.0628318; // 2*PI / 100s
-const float DRIFT_AMP = 0.03;
 
 /**
  * The same R2 low-discrepancy ordered dither the gel shader uses, and for the
@@ -208,11 +236,11 @@ void main() {
     vec3 color = mix(BG_DEEP, BG_CORE, smoothstep(0.0, 1.0, t));
 
     // Two fixed discs, drifting on opposite diagonals so the pair never reads
-    // as a single moving light.
-    vec2 driftA = vec2(sin(uTime * DRIFT_RATE), cos(uTime * DRIFT_RATE)) * DRIFT_AMP;
-    vec2 driftB = vec2(cos(uTime * DRIFT_RATE + 1.7), sin(uTime * DRIFT_RATE + 1.7)) * DRIFT_AMP;
-    color += GLOW_A * disc(vUv, vec2(0.28, 0.74) + driftA);
-    color += GLOW_B * disc(vUv, vec2(0.74, 0.24) + driftB);
+    // as a single moving light. The drift offsets are frame-constant (they
+    // depend only on time), so they are computed once per frame on the CPU and
+    // arrive as uniforms — no sin/cos in this full-screen fragment.
+    color += GLOW_A * disc(vUv, vec2(0.28, 0.74) + uDriftA);
+    color += GLOW_B * disc(vUv, vec2(0.74, 0.24) + uDriftB);
 
     // 1.4/255 peak-to-peak, one 8-bit code value — same amplitude as the gel
     // shader's dither (Tunables.DITHER_GAIN), applied last so the darkening
