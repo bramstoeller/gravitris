@@ -68,12 +68,15 @@ the sim runs real-time on the emulator**, so there is no accumulation ceiling;
 the limiter was purely my too-low threshold. A play-through at 0.70 (below) shows
 a real pile fill, glow, clear and drop.
 
-**Tuning finding for you (`MechanicTuning.clearThreshold`, live-tunable):** a few
-squashed bodies cover a low band to ~0.50, so any threshold below that clears
-constantly. The shipped default 0.90 needs a band packed almost solidly — the
-opposite risk. Neither is obviously right; this is exactly the "guess ~90%, tune
-by eye" dial ADR 0004 flagged, and now there is a number to start from (a couple
-of bodies ≈ 0.50). Your call with the client on where to set it.
+**Shipped difficulty — `clearThreshold = 0.80`** (`Tunables.CLEAR_THRESHOLD`,
+Product Lead's call 2026-07-21). Play-through data: a few squashed bodies cover a
+low band to ~0.50, so any threshold below that clears constantly; the core's 0.90
+default needs a band packed almost solid. 0.80 sits between the proven-good 0.70
+(real piles accumulate then clear) and the brief's ~0.90, so the mechanic is
+visible on first play. **Provisional and live-tunable** (ADR 0004, dev panel
+Stage 4C) — the client tunes it by eye once they feel it. Set app-side via the
+`SimConfig` the shell builds, so the core's 0.90 stays as the brief's reference
+for tests.
 
 **The 0.70 run** (`CLEAR_THRESHOLD=0.70 make playthrough`) is the realistic demo:
 **6 clears**, each at `maxFill` 0.72-0.77 with **3-5 bodies** — the well now

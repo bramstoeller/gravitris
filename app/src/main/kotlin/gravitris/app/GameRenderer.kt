@@ -570,6 +570,10 @@ class GameRenderer(
             lattice = Tunables.TOY_LATTICE,
             wellWidth = layout.widthWorld,
             wellHeight = layout.heightWorld,
+            // The app's shipped difficulty (live-tunable), which becomes the
+            // initial MechanicTuning.clearThreshold. Not the core's 0.90 default
+            // — that stays as the brief's reference for tests. See Tunables.
+            clearThreshold = Tunables.CLEAR_THRESHOLD,
         )
         // The fragment shader was compiled with BAND_COUNT baked in as an array
         // bound, before any simulation existed. If a future config changed the

@@ -350,6 +350,24 @@ object Tunables {
     const val WELL_HEIGHT_MIN_WORLD = 12f
     const val WELL_HEIGHT_MAX_WORLD = 30f
 
+    // --- mechanic tuning shipped to the client ------------------------------
+
+    /**
+     * The clear threshold the app ships with — the fraction of a coverage band
+     * that must fill before it clears, fed to `SimConfig.clearThreshold` and so
+     * to the initial `MechanicTuning.clearThreshold`. **A provisional starting
+     * point the client tunes by eye, not a fixed rule**, and live-tunable at
+     * runtime (ADR 0004); the dev panel (Stage 4C) will write to it.
+     *
+     * Set from play-through data, not a guess: a couple of squashed bodies
+     * already cover a low band to ~0.50, so any threshold below that clears
+     * constantly and the well never builds; the core's own default (0.90) needs
+     * a band packed almost solid. 0.80 sits between the proven-good 0.70 (real
+     * piles accumulate then clear) and the brief's ~0.90, so the mechanic is
+     * visible and satisfying on first play. Product Lead's call, 2026-07-21.
+     */
+    const val CLEAR_THRESHOLD = 0.80f
+
     // --- the Milestone 1 toy ------------------------------------------------
 
     /**
