@@ -1,5 +1,17 @@
 # Visual direction — 2026-07-21
 
+**Superseded by round 3, §11 onward — read this notice first.** §1–§10 below
+shipped, were code-reviewed against real screenshots, and were signed off
+(§10's "Visual sign-off" entry). Then the client field-tested that build on
+the Fairphone 6 and rejected it: *"the visuals are still mediocre... the
+little squares don't join properly... I expected much more glassy, glossy,
+transparent, candy-stick-coloured things."* That is a real miss the team
+owns, not a tuning note — a dark tactile-organic gel was the wrong material
+entirely, not an under-tuned version of the right one. **§1–§10 are kept
+verbatim below as the record of what shipped and why, not deleted and not
+silently reversed. §11 onward is the current direction — build against that,
+not against this section.**
+
 Client verdict after playing the real build on the Fairphone 6: the graphics
 are **"far below par."** Two references were named: **99 Bricks Wizard
 Academy** and **Candy Crush Saga**. This document diagnoses why, cites what
@@ -557,3 +569,631 @@ for the same frame-rate-independence reason `tokens.md` and
   `piece-identity.md`** — now for seven hues, not six. Restated, not
   re-litigated: QA runs the final rendered, lit, glowing pieces through a
   CVD simulator before the release gate.
+
+---
+
+# Part two — round 3: glossy jelly candy on a light candy world (2026-07-21)
+
+## 11. What the client actually said, and what's already decided
+
+The client field-tested the round-2 build (§1–§10 above) on the real
+Fairphone 6 and rejected the look outright — not a tuning complaint:
+
+- "The visuals are still mediocre."
+- "The little squares don't join properly — they look modelled as 4 separate
+  squares instead of tetromino pieces."
+- "I expected much more glassy, glossy, transparent, candy-stick-coloured
+  things." Candy Crush gems, named explicitly.
+
+Follow-up answers, which this document treats as decisions, not options:
+
+- **Material:** glassy jelly-candy — translucent, high-gloss, a wet specular
+  highlight, light passing slightly through.
+- **Colour/pattern:** left to us ("verzin wat leuks"), inside the standing
+  colourblind-safe constraint.
+- **Background:** lighter and candy-like, away from the dark indigo, toward
+  a bright candy world the glossy pieces can belong to.
+
+A second round of feedback landed while this document was being written,
+pointing the same direction and now folded in rather than treated as a
+separate pass:
+
+- **Corners:** "vreselijk strak" (terribly sharp/hard-edged) — slightly
+  rounded, not die/cube rounded, just softened.
+- **Antialiasing:** edges read as aliased/jaggy; smooth them.
+- **Shadows:** soft shadows under the pieces, so they sit in the world
+  rather than float.
+- And, plainly: **"do your best to design something beautiful."** The
+  client is trusting us with the creative call here, not asking for a quick
+  reskin. Rounded + antialiased + soft-shadowed + glossy-translucent + light
+  candy world is one coherent target, not five separate asks — §13 states it
+  as one thing.
+
+Two problems drive everything below: **the material and the background were
+wrong** (§14–§19 rebuild them), and **a tetromino must read as one connected
+piece, not four glued tiles** — the client's own words, and independently the
+root cause the Frontend Engineer already traced to source in §10's last
+bullet. §15 promotes that fix (backlog D10) from deferred to required and
+makes it the foundation the rounding and specular-sweep work in §16–§17
+builds on.
+
+## 12. Real Candy Crush — what was actually looked at
+
+Per the client's own instruction — "kijk even hoe candy crush eruit ziet,"
+look at the real game, don't work from memory — four current, full-resolution
+screenshots were fetched and viewed directly (not summarized from a text
+description, not recalled): APKPure's mirror of the Google Play listing for
+`com.king.candycrushsaga` (App Store's own listing page renders its
+screenshot gallery client-side and would not yield real images through a
+text-mode fetch; APKPure's `image-eo.winudf.com` CDN serves the same Play
+Store assets as static JPEGs, confirmed 1080×2340, i.e. an actual current
+phone screenshot, not a thumbnail). A fifth, older, low-resolution screenshot
+from the Wikipedia article on Candy Crush Saga (`Candy_Crush_Saga_game_setup
+_example.jpg`) was also viewed and cross-checked against the four current
+ones — included because it happens to show the HUD's pill-badge language
+particularly clearly, not as a substitute for current references.
+
+**What the material actually looks like, read directly off the screenshots:**
+
+- **One hard, near-white specular highlight per candy, biased upper-left,
+  elongated along the object's own long axis rather than a small round
+  dot.** On the round/oval candies (blue marble-like orbs, yellow drops,
+  orange ovals, red jelly-beans) it's a bright streak that follows the
+  curve of the surface, sharply bright at its brightest point and feathering
+  out — not a soft, wide Phong lobe. On the green cylindrical candies it's a
+  vertical bright band down one side. It reads as *glass/hard-candy*
+  specifically because the highlight is small, hard-edged and
+  high-contrast, not because of anything else in the material.
+- **The base body colour is flat and highly saturated** — almost no gradient
+  of its own beyond a touch of edge-darkening at the true silhouette
+  boundary. Nearly all of the "3D-ness" a candy has comes from the
+  highlight and that edge-darkening, not from a soft body-wide shading
+  gradient. This matters for cost: it means the expensive-looking part of
+  this material (looking wet, hard, glassy) is actually the *cheap* part —
+  one bright, tightly-shaped highlight term — and the parts that would be
+  expensive to fake (a true multi-bounce gloss, real refraction) are simply
+  not present even in the reference.
+- **A small number of pieces (the stippled purple flower-shaped ones, the
+  white swirl/pinwheel ones) are matte and pattern-textured instead of
+  glossy** — a stippled dot texture, a pinwheel-swirl texture, both flat and
+  soft-edged with no specular streak. This is the same "pattern variation is
+  cheap, geometry variation is not" lesson §2 already drew from Candy
+  Crush's specials, now with two additional concrete pattern references
+  rather than the abstracted "striped/wrapped/bomb" description in the
+  earlier pass.
+- **Every candy sits on a soft, dark, offset drop shadow directly beneath
+  it**, cast onto the tray or whatever is behind/below it — not a hard
+  silhouette double, a soft, low-contrast blur that reads as "resting on a
+  surface," most visible in the gutters between candies where the tray shows
+  through.
+- **The board is a muted slate-blue-grey tray** (a cooler, far less
+  saturated blue-grey than any candy on it), individual cells inset with a
+  soft rounded corner, not a sharp right angle, and the *gaps between
+  candies* reveal thin slivers of that tray colour even in a densely packed
+  grid — the tray is always the thing a candy's rounded corner reveals, not
+  the background scene beyond the board.
+- **The scene around and behind the tray is bright, saturated, and
+  atmospheric** — in the gameplay screenshot: teal/cyan cave light with
+  soft vertical light rays and heavy background blur (depth-of-field); in
+  the level-complete screen: a warm sunset gradient (blue to purple to
+  pink) with confetti and sparkle particles. Neither is a flat fill; both
+  are bright, saturated, and clearly a "world," reinforcing §2's original
+  99-Bricks-derived lesson (graduated environment, not flat colour) but now
+  at a light key instead of a dark one.
+- **Small four-point sparkle glints** sit on and near the glossiest candies
+  and HUD elements — a cheap "catching the light" accent, same juice-methodology
+  category as this document's existing ember-burst work (§7.2), not a new
+  technique to invent.
+- **HUD chrome is pink, pill-shaped, and cream/white-outlined** — a
+  light-coloured ring around every jelly-coloured badge (the star icons, the
+  level-complete "1" medallion) is a small, recurring, cheap detail that
+  reads as "candy" almost by itself.
+
+**What this direction takes, and what it deliberately does not:**
+
+We take: the hard, elongated, biased specular highlight (§14); the flat,
+highly-saturated base body with the highlight and edge-darkening doing
+almost all the shaping work, which is good news for cost (§14); the soft
+tray-ward contact shadow (§18); the muted, calmer tray the pieces sit in,
+against a bright saturated world around it (§19); small sparkle accents,
+layered onto the existing ember-burst system rather than a new one.
+
+We do not take: the literal match-3 board mechanic (not this game — obvious,
+stated for completeness); an authored, per-level bespoke background scene —
+this project's standing procedural-only constraint (ADR 0007, the brief)
+rules out the photographic, blurred, depth-of-field backgrounds in these
+references the same way §3 already ruled out 99 Bricks' authored sky art,
+and §19 specifies the honest procedural equivalent; a literal alpha-blended
+transparent body — real translucency (seeing through material to what's
+behind it) would need `GL_BLEND` and draw-order sorting this renderer
+deliberately doesn't have (§14 states the cheap proxy actually used instead
+and why it reads as translucent without paying for real transparency); the
+match-3 candies' pure-round/lozenge silhouettes — our pieces are tetromino
+lattices, and §16 specifies rounding as a corner treatment on that existing
+silhouette, not a wholesale shape replacement.
+
+Sources: [Candy Crush Saga — Google Play, mirrored by APKPure](https://apkpure.com/candy-crush-saga/com.king.candycrushsaga)
+(four screenshots fetched directly from `image-eo.winudf.com`, viewed at full
+1080×2340 resolution); [Candy Crush Saga — Wikipedia](https://en.wikipedia.org/wiki/Candy_Crush_Saga)
+(one older screenshot, `Candy_Crush_Saga_game_setup_example.jpg`, viewed for
+the HUD pill-badge cross-check only).
+
+## 13. The target look — for the client to confirm before we build it
+
+*(This section is written to be lifted into a client-facing summary
+directly — it is the "here's the vibe" version, not the implementation
+spec. The implementation is §14–§19.)*
+
+Picture the well sitting in a bright, soft candy-coloured world — a pale
+sky-blue-to-warm-cream gradient behind it, not the near-black canvas from
+before. The well's own tray (walls and floor) is a calm, muted blue-grey —
+noticeably quieter than everything else on screen, so the pieces are the
+only saturated, eye-catching thing in the frame, the same way a real Candy
+Crush board stays calm so its candies can pop.
+
+The pieces themselves: still the same seven jewel-tone hues (jade, teal,
+azure, violet, magenta, rose, emerald — unchanged, still colourblind-safe),
+but now rendered as glassy jelly candy rather than matte rubber — a single
+bright, hard highlight sweeping across each whole piece like light catching
+a wet, glassy surface, a soft inner glow that suggests light passing
+slightly through the material rather than stopping at its surface, and
+corners softened just enough that a piece reads as one solid, huggable
+jelly shape rather than a hard-edged block. Where a tetromino has more than
+one cell, the whole thing reads as **one continuous piece** — one highlight
+sweeping across all four cells, one soft glow through the whole body, no
+visible seam where the cells were joined — which is the direct fix for "the
+little squares don't join properly."
+
+Every piece casts a small, soft, tray-coloured shadow onto whatever's beneath
+it, so the stack reads as physical objects resting on and against each other,
+not flat cutouts. Every edge in the scene is smoothed rather than jagged.
+
+What we are **not** doing: turning this into a match-3 game, or authoring a
+bespoke illustrated background scene per level (procedural-only stays a hard
+constraint) — the candy-world feeling comes from colour, gradient and the
+material on the pieces themselves, done with shader maths, the same
+honest-procedural approach that already built the rest of this game.
+
+## 14. The material — glossy translucent jelly candy
+
+Every term below is additive to, or a retune of, the existing gel material
+(`Shaders.kt`) — nothing here proposes a second shader or a second draw
+path. §2's earlier rejection of "glossy hard-candy specular highlights" (*"a
+different material entirely... would fight the tactile, organic, squashable
+identity"*) is explicitly overridden by the client's own follow-up answer —
+noted here so the reversal is visible, not silently different from what §4
+already said.
+
+**Base translucency/subsurface — kept, not reinvented.** The existing
+subsurface term (`Shaders.kt` tier 1: `depth = min(vBodyUv, 1-vBodyUv)*2`,
+darkened+saturated toward the body's core, lighter toward its edge) is
+*already* the right physical story for "light passing slightly through a
+jelly body" — thin material near an edge lets more light through and reads
+brighter/less saturated; thick material at the core reads deeper and richer.
+Round 2 used it as a subtle darkening; round 3 leans on it harder (raise
+`uSubsurfaceGain`) as the primary "this is translucent" cue, since a true
+alpha-blended see-through body is explicitly rejected below on cost grounds.
+**Once §15 lands, this term runs on true body-wide UV** rather than
+per-cell UV, so the depth gradient reads across the whole tetromino's
+silhouette, not each cell's — this is the same underlying fix that also
+resolves the seam complaint, restated here because it also directly serves
+translucency.
+
+**True alpha transparency — considered and rejected.** Seeing background or
+neighbouring-piece colour literally through a piece would need `GL_BLEND`
+and per-frame depth sorting of overlapping translucent geometry — a real
+architectural change to a renderer built around one opaque draw call
+(`BodyMesh.draw()`, `Shaders.kt`'s own header: "the renderer deliberately
+keeps blending off"). The subsurface term above is the cheap, honest proxy:
+it reads as "light passing through" without ever compositing two fragments.
+Flagged, not attempted, in the same spirit §3 flagged a literal parallax
+scene as out of scope.
+
+**Specular highlight — new term, the client's explicit ask.**
+
+- **Shape and position:** a single fixed-direction highlight streak, biased
+  toward the upper-left of each piece (matching every real reference in
+  §12), computed as a smoothed threshold of `bodyUv · lightDir` where
+  `lightDir` is a fixed 2D constant (≈ pointing up-and-left in body space) —
+  the same "cheapest approximation that still reads" discipline as the
+  existing rim term (no `pow`, no `normalize`; a dot product and a
+  `smoothstep`). Width and sharpness are one gain/one sharpness uniform,
+  `uSpecularGain`/`uSpecularSharpness`, tuned on-device like every other gain
+  in this shader — not fixed here.
+- **Colour:** fixed, near-white, neutral (`color-specular`, `tokens.md`) —
+  **never tinted per piece**, for the identical reason `RIM_COLOR` is fixed:
+  a coloured highlight would shift the apparent hue exactly where players
+  read a piece, and hue is the primary identity cue (`piece-identity.md`).
+- **Suppressed where `vContact` is high** — a face pressed against a
+  neighbour or the tray is not a free glossy surface, same logic the
+  existing rim term already applies, same uniform, no new state.
+- **Runs on body-wide UV** (§15) so the highlight sweeps across an entire
+  multi-cell piece as one continuous streak — this is the literal mechanism
+  behind the brief's "the specular highlight sweeping across the entire
+  piece," not a separate feature.
+- **Cost:** one dot product, one `smoothstep`, one `mix` — the same order of
+  cost as the existing rim term it sits alongside. Not the expensive part of
+  this direction; see §17 for what actually is.
+
+**Fresnel / edge behaviour — the existing rim term, retuned and dual-purposed.**
+The existing rim light (`Shaders.kt`: cubic falloff of `vEdge`, fixed
+neutral cool-white) already is a cheap fresnel approximation (brightening at
+a free, grazing surface). It keeps its existing role as the primary
+small-screen boundary/identity cue (`piece-identity.md`) and takes on a
+second one: retuned warmer/brighter toward `color-specular`, it reads as the
+glassy edge-catch-the-light cue real glass/gel material shows at its
+silhouette. No new term, no new uniform beyond retuning `uRimGain` and the
+rim colour constant — both already exist.
+
+**Rounded glossy bevel** is specified separately in §16, because it needs
+its own data (a new per-particle corner signal) rather than being a shading
+retune — read it as part of this same material, not a separate feature.
+
+**Net shader cost of this section:** one new term (specular: dot product +
+smoothstep + mix, ~4 ops) plus retuned constants on two existing terms
+(subsurface gain, rim gain/colour) — no new uniforms beyond the two named
+above, no new transcendentals, no new draw call. This is the cheapest of
+the four round-3 asks; §16–§18 carry the real costs.
+
+## 15. Continuous whole-piece surface — D10 promoted from deferred to required
+
+**Backlog D10 is no longer deferred.** It was filed as a look-call to be
+judged on the real device rather than SwiftShader; the client's round-3
+verdict — *"they look modelled as 4 separate squares instead of tetromino
+pieces"* — is exactly that judgement, made on the real Fairphone, and it
+comes back "fix it." This is the client independently confirming the defect
+the Frontend Engineer had already traced to source in §10's last bullet.
+
+**What has to change, restated precisely against the code:**
+`SoftBodyWorld.kt:431-434` sets `particleU[i] = col / edgeSpan` and
+`particleV[i] = row / edgeSpan`, per **cell** — a fresh 0..1 range at every
+cell boundary, which is why the grain restarts at each cell and reads as
+"four tiles." `docs/contracts.md`'s own text already says `particleU`/
+`particleV` are "body-local lattice coord, 0..1" (line ~149) — the contract
+was always aspirational for the whole tetromino; the code has never matched
+it. **This document requires closing that gap: `particleU`/`particleV`
+become genuinely body-wide** — 0..1 across each tetromino's actual bounding
+footprint (four cells for every current shape per `PieceShapes.kt`), not
+per-cell.
+
+**What this fixes, all from one data-path change:** the grain/mottle term
+(the client's literal complaint), the subsurface depth term (§14 — now reads
+correctly across a whole piece's silhouette instead of resetting at cell
+seams), and the specular highlight (§14 — now sweeps continuously across a
+multi-cell piece instead of repeating per cell). Three visual fixes, one
+contract change — this is why D10 is required rather than one of three
+separate asks.
+
+**The size/frequency trade-off backlog D10 already named, and its fix.**
+Body-wide UV means the grain/pattern frequency will vary with a piece's
+footprint (an I-piece spans four cells in a line; an O-piece spans a 2×2
+square) unless compensated. Fix: fold a per-archetype **area/aspect
+compensation factor** into the existing `uGrainScale[PALETTE_SIZE]` uniform
+array (`Shaders.kt` already indexes this per-archetype for the identity
+grain-scale cue, `piece-identity.md`) — a static, precomputed constant per
+of the seven shapes, no new uniform, no new array. `PieceShapes.kt` already
+knows every shape's cell layout (`cells`, frozen and pinned by
+`PieceShapesTest`), so this compensation factor is derivable once, offline,
+from data that already exists.
+
+**This is Backend Engineer + Architect work, not Frontend or UX's to
+implement** — a core-sim data-path change (`SoftBodyWorld.kt`) and a
+`docs/contracts.md` correction (the contract text already claims body-local;
+the fix is making the code match it, plus documenting the new
+`particleCorner` field §16 needs). Flagged directly to both — see the
+message log, not just this document, per the team's "talk to each other
+directly" norm. **Recommendation, not a requirement:** do this and §16's
+`particleCorner` addition in the same PR — they are the same category of
+fix (renderer needs whole-piece awareness `PieceShapes` already has
+internally but doesn't expose) and Backend already offered to build the
+body-local UV change on a fresh branch per the existing D10 backlog entry.
+
+## 16. Rounded corners — softened, not cube-rounded, without new geometry
+
+**The client's ask is specific: "slightly rounded — not as much as a
+die/cube, just softened corners."** This has to apply to the tetromino's
+**true outer silhouette corners only** — rounding every individual cell's
+four corners independently would visibly pinch/notch at the seam between
+two same-piece cells (a rounded square fused to another rounded square
+along a flat edge shows a waist right at the join), which would *reintroduce*
+the "four separate squares" read this whole document exists to fix. So the
+mechanism must be whole-piece-aware, the same requirement §15 already
+established for grain and specular — and it piggybacks on that same data
+gap rather than opening a second one.
+
+**Mechanism: a new per-particle signal, interpolated the same cheap way
+`vEdge` already is.** A new field, `particleCorner` (0..1; 1 exactly at a
+particle that is a true convex outer corner of the whole tetromino's
+silhouette — i.e. a lattice-corner particle whose cell has no neighbouring
+cell in *either* of the two directions that would make that corner interior
+— 0 everywhere else), computed once at body spawn from `PieceShapes`'
+already-known cell layout (`PieceShapes.neighbour()` already exists and
+answers exactly this question) the same way `particleEdge`/`shapeEdge`
+already are. Uploaded once per body-set change, in the existing "static"
+material buffer (`BodyMesh`'s `materialVbo`, already carries `particleU`/
+`particleV`/`particleEdge` on exactly this update cadence) — **zero new
+per-frame cost**, one more static float per particle.
+
+Because it is vertex-interpolated across the existing triangle mesh exactly
+like `vEdge`, `vCorner` naturally ramps from 1 at a true corner to 0 over
+one lattice spacing (0.36–0.6 world units depending on quality tier,
+`SimConfig.kt:199,274`) with **no new geometry** — the existing per-cell
+vertex density (16–36 particles per cell depending on tier) already provides
+enough resolution near a corner to express a soft curve.
+
+**Shaping the fade to the client's "slightly, not cube" ask.** A full
+one-lattice-spacing linear fade is a large fraction of a 1.8-unit cell —
+likely too much rounding taken raw. Raise it to a power
+(`pow(vCorner, N)`≈`vCorner*vCorner` at `mediump`, avoiding a real `pow`
+call the same way the rest of this shader avoids one) to pull the visible
+effect in tight around the true corner while reusing the exact same
+underlying data — `tokens.md`'s `radius-piece-corner` records the *apparent*
+target (~10–15% of a cell width), not a raw geometry number, and `N` is a
+tunable gain like every other constant in this shader.
+
+**Where the fade goes: `color-tray`, never the sky background.** A piece's
+corner is physically adjacent to the tray or to another piece almost
+everywhere it appears in the well — deep in a stack, at the floor, against
+a wall — and essentially never adjacent to the outer sky gradient (§19),
+which only shows through the well's *empty* space above the stack. Fading a
+corner toward `color-sky-*` would look correct only at the very top of an
+otherwise-empty well and visibly wrong everywhere else (a light gradient
+patch appearing mid-stack). Fading toward the fixed `color-tray` constant
+(`tokens.md`'s `corner-fade-mode`) is correct everywhere in the well, at the
+cost of zero position-dependent sampling — cheaper *and* more correct than
+the alternative, which is why it was chosen over reusing §19's background
+gradient function a second time.
+
+**What this does to `WellFrame` (the walls/floor):** one more generic
+attribute to disable, exactly the pattern the existing table in
+`WellFrame.kt`'s doc comment already uses for `compression`/`contact`/
+`edge`/`bodyUv` — `particleCorner` set to a constant 0 for the frame's
+draw, so the walls never round (they aren't a piece and have no corners to
+round).
+
+**Cost: one new static per-particle float (zero per-frame cost, §above),
+one extra fragment-shader term (a power/multiply and a `mix`, same order of
+cost as the specular term in §14).** Not the expensive item in this
+document — that is §17.
+
+**Owner:** Backend Engineer for the `particleCorner` computation (rides with
+§15's body-local UV change, same PR recommended), Architect for the
+contract addition, Frontend Engineer for the shader/mesh-attribute wiring
+and the shaping-exponent tuning pass.
+
+## 17. Antialiasing — a real, named GPU cost, not a free toggle
+
+**The client explicitly named this: edges read jagged, and they want them
+smoothed.** This is a genuine, non-trivial cost on the Fairphone 6 and this
+document is not hiding that behind "just turn on AA."
+
+**Recommended mechanism: hardware MSAA on the render surface (`EGLConfig`
+with a multisample buffer, e.g. 4×), resolved by the driver, not a
+shader-side technique.** This is the right tool for exactly this problem —
+smoothing the *silhouette* edges of opaque, single-draw-call geometry — and
+it is compatible with everything else in this document without changes:
+unlike a shader-side edge-antialiasing trick (distance-field edges,
+supersampled alpha), MSAA needs **no change to `Shaders.kt`, no `discard`,
+no `GL_BLEND`** — it operates entirely at the rasteriser/resolve stage, so
+every existing "no blend, no discard" cost argument in `Shaders.kt`'s header
+stays true. This is also why it is the right general-purpose fix rather
+than something narrower: it smooths the tetromino silhouette edges *and*
+the rounded-corner treatment from §16 *and* the well frame's edges, all at
+once, for one configuration change rather than three shader-level ones.
+
+**Cost, named plainly:** 4× MSAA roughly quadruples colour/depth attachment
+memory bandwidth and adds a resolve pass, on a GPU whose entire remaining
+frame budget this project has been measuring in fractions of a millisecond
+since Stage 1 (`Shaders.kt`'s own header: 15.0ms mean against a 16.67ms
+budget, with a *nearly flat* shader). Stacked on top of the light-background
+full-screen pass (§19, itself already flagged as the single most expensive
+new thing in the round-2 direction) and the new specular/corner terms above,
+this is a real risk to the frame budget, not a decoration. **Recommend
+folding the MSAA sample count into the existing shade-tier ladder
+(`uShadeTier`) as its own dial** — e.g. 4× at the default tier, 2× or off at
+a lower one — following the exact discipline `Shaders.kt`'s own tier table
+already established: measure on the real device, cut first if the budget
+disagrees, and the tiers are already ordered cheapest-to-most-expensive for
+exactly this reason. **Not decided here which tier MSAA sits at** — that is
+an on-device measurement call for the Frontend Engineer, flagged so it
+gets made deliberately rather than shipped at a guessed default.
+
+**Alternative considered and rejected:** shader-side edge smoothing via
+per-fragment alpha + `GL_BLEND`, blending each body's edge fragments against
+whatever is behind them. Rejected for the same reason `Shaders.kt` already
+rejects blending everywhere else — it would require sorting overlapping
+translucent edges correctly, which a single flat draw call of the whole
+stack cannot do, and it would reopen exactly the architectural question
+§14 already closed for the body's main surface. MSAA sidesteps this
+entirely because it operates on opaque coverage, not alpha.
+
+## 18. Soft shadows — pieces resting in the world, not floating on it
+
+**Client: "schaduwen, etc" — soft shadows, named as a big part of why Candy
+Crush pieces feel physical.** Confirmed directly in §12's screenshots: every
+candy casts a soft, low-contrast, tray-coloured (not pure black) shadow
+directly beneath it.
+
+**Mechanism: a second, cheap draw pass of the existing body geometry**,
+before the real body draw, reusing `BodyMesh`'s exact vertex buffer with two
+changes applied in the vertex shader: an offset (`shadow-offset-piece`,
+`tokens.md` — down and slightly right, world units so it scales with the
+piece rather than the screen) and a small outward scale from each body's own
+centroid (so the shadow reads as a soft, slightly-larger blurred silhouette
+rather than a hard duplicate outline — the cheap, no-blur-kernel way to fake
+a soft-edged shadow, in the same spirit as this shader's existing "cheapest
+approximation that still reads" discipline). The shadow pass's fragment
+shader is much simpler than the gel material: a flat `color-shadow`
+(`tokens.md` — a darkened tray tone, never pure black, matching the real
+references' coloured-not-black shadow read) at low, roughly constant alpha,
+optionally softened at its own edge using the existing `vEdge` varying so
+the shadow itself fades rather than cutting off hard.
+
+**This needs `GL_BLEND` enabled, but only for this one pass** — the shadow
+is the one place in this whole document where turning blending on is the
+right trade rather than the rejected option: it is a single low-complexity
+pass, drawn once, with a trivial fragment shader, not a general-purpose
+transparency system competing with the main material every frame.
+
+**Cost, named plainly:** roughly doubles per-frame vertex throughput for the
+body geometry (two draws of the same vertex count instead of one) and adds
+one blend-enabled draw with its own state change. The *fragment* cost of the
+shadow pass itself is cheaper than the main gel material (a handful of ops
+against the gel shader's several dozen), but the vertex cost and the state
+change are real and additive to everything else in this document. **Same
+recommendation as §17: fold shadow rendering into the shade-tier ladder as
+its own cuttable step**, not a second, separate quality dial — `Shaders.kt`'s
+own tier-ordering principle (cheapest, highest-legibility terms survive
+longest) applies directly: the shadow is high legibility value (it is a
+large part of why the candy references read as physical objects) but not
+free, so it belongs in the same measured ladder as everything else, not
+assumed free by default.
+
+**Owner:** Frontend Engineer (a new small draw pass + program, following the
+exact pattern `Background`/`WellFrame` already establish for "a second
+cheap program alongside the main gel shader") — no core-sim or contract
+change needed, since the shadow pass consumes data (`SimState.positionX/Y`,
+body membership) already crossing the boundary.
+
+## 19. The light candy background — replacing §3's dark environment
+
+**§3's dark environment pass (`Background.kt`) is superseded, not
+patched.** The client's ask — "lighter and candy-like... away from the dark
+indigo" — is a reversal of the premise, not a request to lighten the same
+two-stop gradient by a few percent. `tokens.md`'s "Light candy world"
+section is the colour source of truth; this section is the shader/mechanism
+half.
+
+**Same architecture as §3, recoloured and recalibrated for a bright field,
+not rebuilt:** one full-screen quad, drawn once per frame before the well
+frame and the bodies, O(screen pixels) cost exactly as before —
+`Background.kt`'s existing structure (vertical gradient + two soft
+CPU-drifted radial patches + ordered dither) is kept; only the colour
+constants and one piece of arithmetic change.
+
+- **Vertical gradient:** `color-sky-top` (`#BFE9F7`, soft sky-blue) at the
+  top of frame to `color-sky-bottom` (`#FDEFE0`, warm pale cream) at the
+  bottom — replacing `color-bg-deep`/`color-bg-core`'s near-black-to-
+  deep-indigo sweep. Per §12's references (the sunset gradient on the
+  level-complete screen, the cave light in the gameplay screenshot): bright,
+  saturated-but-soft, never a flat single value.
+- **The two soft radial patches survive as a mechanism, recoloured and
+  re-derived from scratch, not re-tinted.** This is the one place round 2's
+  own bug (`tokens.md`'s corrected `color-bg-glow-a`/`-b` row: adding a
+  near-black tint to a near-black field is invisible regardless of opacity)
+  matters again, in the opposite direction: adding a *bright* tint
+  (`color-sky-glow-a`/`-b`, near-white/warm-white) at the same disc radius
+  and falloff will read as an even *more* washed-out, low-contrast patch
+  against an already-bright field than the old bug did against a dark one,
+  unless the peak values are pushed close to full white rather than the old
+  4–8%. **This needs the same on-device brightness measurement the
+  Frontend Engineer already did to catch the round-2 bug** — don't assume
+  the old peak-opacity numbers transfer, they were derived for the opposite
+  background regime.
+- **Well tray:** `color-surface` → `color-tray` (`#7C93A6`, muted slate-blue)
+  for the walls/floor, `color-tray-inset` for the one-line boundary
+  bevel — a **darkened** inset now, replacing round 2's emissive
+  (brightened) inset edge, since the legibility move on a light tray is a
+  soft shadow-line, not a glow-line (same logic as this section's shadow
+  reversal generally: round 2's "add light" tricks become round 3's "add
+  shade" tricks, because the base field flipped from dark to light).
+- **Scrim:** `color-overlay-scrim` moves off pure black (`tokens.md`) — a
+  black scrim over a light-key canvas reads colder and heavier than this
+  game's new tone wants.
+
+**Cost:** unchanged in kind from §3 — still the single most expensive *new*
+full-screen item, still zero transcendentals per pixel by the same
+CPU-hoisted-drift trick `Background.kt` already uses. **Stacks with §17's
+MSAA cost and §18's shadow pass** rather than replacing either — this
+section does not reduce the round-3 budget risk, it's one of three
+simultaneous new costs (§17 antialiasing, §18 shadows, this background
+recolour) that together need the same on-device measurement discipline
+`Shaders.kt`'s tier ladder already exists for. None of the three is
+individually prohibitive; stacked, they are the real open risk this
+document is flagging, not any single one of them.
+
+## 20. Consequences flagged, not resolved here
+
+- **`band-glow.md`'s glow model needs a revisit this document does not
+  make.** It is additive-only amber over the base hue, tuned for near-black
+  headroom (`band-glow.md`, `tokens.md`'s pre-correction history). Against
+  the new light sky, the same additive term will under-read for the
+  identical reason the old background glows did before they were corrected
+  (`tokens.md`'s own corrected `color-bg-glow` row is the precedent) —
+  adding warmth to an already-bright scene barely changes it. A fix likely
+  needs the emissive term to lean on saturation/hue-intensification rather
+  than pure additive brightening once a band is inside a bright well, closer
+  to how Candy Crush's own specials (§12: striped, wrapped, bomb) read as
+  bold saturated pattern changes rather than "brighter." **Not designed
+  here** — flagged to whoever next opens `band-glow.md`, so it is found
+  before a release gate rather than at one.
+- **HUD text contrast is addressed in `tokens.md` (`color-hud-chip`), not
+  here** — restated only so it isn't missed: `color-text` flipped from
+  light-on-dark to dark-on-light, and every canvas-overlaid HUD text element
+  now needs the chip backing, not only the level chip that already had one.
+- **CVD verification (§10, `piece-identity.md`) still stands, now against
+  the glossy/lit render, not the matte one** — the seven hues are unchanged,
+  but the material rendering them is not, and CVD simulation has to run
+  against what actually ships.
+
+## 21. What this changes elsewhere in `docs/ux/`
+
+- `tokens.md` — the full "Light candy world" colour section, new
+  `radius-piece-corner`, and the new "Material" token category
+  (`color-specular`, `color-shadow`, `shadow-offset-piece`,
+  `corner-fade-mode`) — done in this branch.
+- `piece-identity.md` — no change to the palette itself; a pointer belongs
+  there noting the hues are now rendered as glossy jelly rather than matte
+  gel, so a future reader isn't confused by `Shaders.kt` no longer matching
+  §4's old "gel stays, tetromino shapes need one new read" framing. Not
+  done in this pass — flagged, small, cosmetic, doesn't block Frontend.
+- `band-glow.md` — needs the §20 revisit. Not done in this pass.
+- `screens/playing.md` — background/environment description needs updating
+  to the light-sky read instead of the dark-canvas one, and every HUD text
+  element's layout note needs the chip-backing call-out. Not done in this
+  pass — flagged, same reasoning as `piece-identity.md` above: cosmetic
+  relative to what Frontend needs to start building, shouldn't block this
+  handoff.
+- `accessibility.md` — the Contrast section's worked example (`color-text`
+  on `color-bg`/`color-surface`) needs updating to the new dark-on-light
+  pair and the chip-backing requirement. Not done in this pass — same
+  reasoning.
+
+**Why the four items above are flagged rather than done in this branch:**
+this document's job was to get the material/background/rounding/AA/shadow
+direction concrete enough to build against and get it in front of the
+client before Frontend starts — per the dispatch, that's the actual
+deadline. The four flagged docs are real but don't block that; they're
+correctness/consistency cleanup that can land alongside or just after the
+first build, and saying so here is more honest than quietly doing a rushed
+version of five documents instead of a careful version of one.
+
+## 22. Sequencing and open items
+
+- **Confirm the target look with the client before Frontend builds the
+  whole thing** — §13 is written for exactly this, and the dispatch asks for
+  it explicitly. Nothing in §14–§19 should be built against until that
+  confirmation lands, per the same "don't build a third simultaneous
+  rewrite before the direction is confirmed" discipline §10 already
+  established for round 2.
+- **§15 (body-local UV) and §16 (`particleCorner`) are Backend Engineer +
+  Architect work, recommended as one PR** — flagged directly, not routed
+  through the Product Lead only (see the message log). This is the one
+  genuine data-path/contract dependency in this document; everything else
+  (§14, §17, §18, §19) is Frontend-only, against data already crossing the
+  boundary.
+- **§17 (MSAA) and §18 (shadows) both need on-device cost measurement
+  before a default tier is chosen** — recommended folding both into the
+  existing shade-tier ladder rather than adding new, separate quality
+  dials, for the same reasons `Shaders.kt`'s own tier table gives.
+  Confirmed sensible with the Frontend Engineer directly, not decided
+  unilaterally here — see the message log for what was actually agreed.
+- **§19's recoloured background glow patches need the same on-device
+  brightness check that caught the round-2 bug** — do not assume the old
+  peak-opacity numbers transfer to a light-field background.
+- **§20's flagged items** (`band-glow.md`'s additive-glow-on-light-bg
+  problem, and the four docs in §21) are real and not silently dropped —
+  they're sequenced after this document's actual deadline, not skipped.
+- **Shape-to-hue mapping remains Backend/Frontend's call** (§5, unchanged) —
+  nothing in round 3 touches which archetype gets which hue, only how each
+  hue is rendered.
