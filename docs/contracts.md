@@ -103,28 +103,87 @@ solve. Both are review-enforced.
 
 ## 2. Input — `:app` → `:core-sim`
 
+**Control model: one player-controlled descent (ADR 0017).** A piece falls under
+real, accelerating gravity from the moment it spawns, and the player steers it
+left/right **and** rotates it for the *whole* descent, until it contacts other
+material (or the floor) and settles. There is no phase where control is taken
+away — no positioning window, no release-to-drop, no hard drop. (This supersedes
+ADR 0016's two-phase POSITIONING→FALLING model and the pre-0016 hard-drop model
+this section used to document.)
+
 ```kotlin
 /**
- * One tick of player intent. The shell translates gestures into this; the core
- * decides what they mean. Reused (mutable) to avoid per-tick allocation.
+ * One tick of player intent. `:app` translates gestures into this; the core
+ * applies them to the active piece. The core never sees a touch event.
+ * Reused (mutable) to avoid per-tick allocation.
  */
 class InputFrame {
-    var dragX: Float = 0f       // horizontal drag delta this tick, well units
-    var rotate: Boolean = false // tap — consumed on the tick it is read
-    var hardDrop: Boolean = false
     /**
-     * Flick speed for the hard-drop, well units/sec. Computed by :app from a
-     * trailing ~60ms window of TIMESTAMPED touch samples (including
-     * MotionEvent historical samples), NOT from a per-frame delta — Android
-     * samples touch above the refresh rate and the core must not lose that
-     * resolution to a 60Hz tick. See docs/ux/gestures.md.
+     * Horizontal steering delta this tick, in well units. Applied to the active
+     * piece EVERY tick it is live — the whole descent — clamped to the well by
+     * the core. Kinematic: it moves the piece without injecting velocity.
      */
-    var hardDropVelocity: Float = 0f
+    var dragX: Float = 0f
+
+    /**
+     * Tap → rotate a quarter turn. Applied to the active piece EVERY tick it is
+     * live — the whole descent. A rotation that would overlap settled material
+     * is rejected outright (the piece does not turn) and injects no velocity.
+     * A one-shot: it affects exactly the tick on which it is read, and `:app`
+     * clears it (the core reads this object and never writes to it, so a
+     * recorded InputFrame sequence replays identically — ADR 0006).
+     */
+    var rotate: Boolean = false
 }
 ```
 
-Gesture recognition (drag anywhere / tap to rotate / swipe down to hard-drop,
-per the brief) lives entirely in `:app`. The core never sees a touch event.
+**Both intents apply for the entire descent** whenever `activePieceBody >= 0`.
+There is no per-piece phase, so the core does not gate input by phase: it applies
+`dragX` and `rotate` to whatever piece is active **on the tick they are read**.
+The piece locks by the core's own contact-and-settle rule (`hasSettled`, ADR
+0005/0017) — `:app` does not signal a lock or a drop.
+
+**Intent is per-tick, not buffered across pieces.** Gravity is always on, so
+there are brief windows with no active piece (between a lock and the next spawn,
+or a finger held across a spawn). Intent produced in those windows is **discarded
+when `activePieceBody < 0`**, never carried to the next piece: the recognizer is
+piece-agnostic and holds no piece identity, and `PlayerIntent` zeroes every field
+each tick as the core drains it. Do not add buffering — a slide meant for a piece
+that has already locked must not jump the next one sideways as it spawns.
+
+**`dragX` and `rotate` are requests the core clamps against collision** — this
+is the client's "move left/right and rotate *until it hits another block*." A
+slide is clamped to the well and stops against material; a rotation that would
+overlap is rejected outright. A blocked slide or rotation is **not an error**:
+the recognizer keeps emitting the raw 1:1 intent regardless, and the core
+decides how far it actually moves. `dragX` is **horizontal only — vertical
+finger movement is ignored**; there is no soft-drop and no hard-drop, so a
+downward drag or flick does nothing to the fall (which is plain accelerating
+gravity).
+
+**The gesture→intent mapping `:app` owns** (full spec in `docs/ux/gestures.md`;
+lives entirely in `:app`, JVM-testable, phase-agnostic because there is no
+phase):
+
+| gesture | intent | notes |
+| ------- | ------ | ----- |
+| horizontal drag past the platform touch-slop | accumulate into `dragX` | 1:1 mapping — 1 dp of finger travel = 1 dp of piece travel in world space (`worldPerDp`). Drag anywhere on screen; the thumb's absolute position never matters. |
+| tap (pointer-up within the touch-slop) | latch `rotate` | debounced (`ROTATE_DEBOUNCE_NANOS`) against touch-controller double-reports. |
+| pointer-up ending a drag | **nothing** | there is no release-to-drop; the steering already happened continuously. |
+
+- **`dragX` accumulates** across the sub-tick between two 60 Hz ticks; every dp
+  of a fast slide must survive to the next tick, so `:app` feeds **every
+  timestamped historical `MotionEvent` sample**, not a per-frame delta — Android
+  samples touch above the refresh rate and the core must not lose that
+  resolution to the tick. **`rotate` latches** — a tap between two ticks is not
+  dropped; it is consumed on the tick it is read. (This is the `PlayerIntent`
+  bridge between the UI thread and the GL thread.)
+- **Multi-touch:** only the first pointer down is tracked; additional pointers
+  are ignored entirely, so an accidental second finger (common one-handed)
+  cannot hijack a gesture.
+- **No hard drop and no `drop` field.** Removed with ADR 0017; a flick-down
+  hard-drop is a deliberate non-decision, reversible by adding a field
+  additively later if the client asks. Do not reintroduce it without an ADR.
 
 ---
 
