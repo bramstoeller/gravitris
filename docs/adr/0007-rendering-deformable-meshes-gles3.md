@@ -47,6 +47,17 @@ not be treated as one.
 its vertex positions do. Indices are uploaded once per lattice size (three of
 them, one per quality tier) and reused for every body forever.
 
+> **Amended by [ADR 0018](0018-seamless-per-archetype-render-topology.md)
+> (2026-07-21): index buffers are per-archetype, reassembled on body-set
+> change.** Once a piece is four bonded cells (ADR 0015), one reused pattern
+> draws each cell as a separate mesh with no triangles bridging a seam — the
+> internal "+". ADR 0018 makes the topology per-archetype (`bodyTriangleIndices`)
+> so seams are bridged, which means the index buffer now depends on
+> `bodyArchetype[b]` and is assembled when the set of bodies changes rather than
+> once up front. Still **not per frame** (zero per-frame allocation holds) and
+> still **one draw call**. "Reused for every body forever" becomes "reused for
+> every body of the same archetype, reassembled when the body set changes".
+
 **3. Draw calls.** All bodies of the same lattice size share one draw call.
 Per-body parameters (hue, glow, compression tint) live in a uniform block indexed
 by a per-vertex body index attribute. In practice this is **one or two draw calls

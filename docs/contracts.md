@@ -246,6 +246,25 @@ interface SimState {
      */
     val particleEdge: FloatArray
     /**
+     * Per-direction free-surface mask, static per particle (§17 / ADR 0018):
+     * bitwise OR of the sides on which this particle is TRUE outer silhouette —
+     * LEFT=1, RIGHT=2, DOWN=4, UP=8 in the particle's own lattice (row 0 at the
+     * bottom, so DOWN is -y). A side facing a neighbouring cell (a seam) is
+     * clear. particleEdge is exactly this collapsed to 0/1:
+     * particleEdge[i]==1 ⇔ particleFreeEdges[i]!=0.
+     *
+     * This is what the ADR 0011 silhouette extrusion needs: push a boundary
+     * particle out by particleRadius ONLY along set-bit sides (one radius per
+     * free axis, radius*√2 when both meeting sides are free), and leave a
+     * seam-facing side at its centre so the bodyTriangleIndices bridge fills the
+     * 2*particleRadius seam at its natural width. Extruding a seam edge (as the
+     * pre-0018 per-cell extrusion did, collapsing the facing columns coincident)
+     * is what stamped the UV/grain "+" onto the join. LEFT/RIGHT never both set,
+     * nor DOWN/UP. Frozen wire format — read the bit values from here, not from a
+     * copy of the core enum.
+     */
+    val particleFreeEdges: IntArray
+    /**
      * Contact occlusion: 0 = no neighbour, 1 = fully pressed against other
      * material. Derived from the contact solve (neighbour count and depth).
      * Drives the DARKENING seam/crease between touching pieces, and the
@@ -292,7 +311,29 @@ interface SimState {
     val particleRadius: Float
 
     // --- rendering topology (static per tier, ADR 0007) ---
-    val triangleIndices: IntArray   // valid for one body; reused with offsets
+    val triangleIndices: IntArray   // one cell; reused per cell. Superseded for
+                                    // rendering by bodyTriangleIndices (ADR 0018)
+    /**
+     * Per-archetype full-footprint render topology (ADR 0018) — the fix for the
+     * internal cell-seam "+". Indexed by bodyArchetype, length ARCHETYPE_COUNT.
+     * Each entry is the body-local triangle indices (values 0..particlesPerBody)
+     * for a WHOLE tetromino of that shape: the four cells' own triangles (same
+     * split as triangleIndices) PLUS the seam-bridge triangles that weld adjacent
+     * cells into ONE continuous mesh, so a seam is an interior mesh line with
+     * continuous UV and the grain/specular/compression no longer step at it.
+     *
+     * Draw body b at vertex offset b*particlesPerBody (NOT per cell — this spans
+     * all four cells). Length is not uniform: an O bridges four seams, the other
+     * six three. Because the bridges depend on the shape, ASSEMBLE the index
+     * buffer when the set of bodies changes (concatenate bodyTriangleIndices[
+     * bodyArchetype[b]] offset by b*particlesPerBody), not once in
+     * onSurfaceCreated — ADR 0007 §2 is amended by ADR 0018 accordingly (still
+     * not per-frame, still one draw call). The bridges are exactly the solver's
+     * seam area constraints, so every render triangle is one area constraint and
+     * particleCompression is continuous across a seam too, not only the UV.
+     * Additive per §5; triangleIndices stays valid until :app stops reading it.
+     */
+    val bodyTriangleIndices: Array<IntArray>
 
     // --- coverage (ADR 0004, 0007) ---
     val bandFill: FloatArray        // size bandCount, 0..1 — drives glow + clears
