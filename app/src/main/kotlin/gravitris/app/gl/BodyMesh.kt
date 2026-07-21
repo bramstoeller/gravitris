@@ -177,6 +177,16 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
             ATTRIB_EDGE, 1, GLES30.GL_FLOAT, false,
             MATERIAL_STRIDE_BYTES, 2 * Float.SIZE_BYTES,
         )
+        // §16 rounded corners: the true-silhouette-corner flag, static per
+        // particle (SimState.particleCorner), on the same slow-update buffer as
+        // UV and edge — it changes only when the set of bodies changes, so it
+        // costs nothing per frame. Interpolated across the mesh exactly like
+        // aEdge; the shader shapes the rounding from it (backend handoff 0036).
+        GLES30.glEnableVertexAttribArray(ATTRIB_CORNER)
+        GLES30.glVertexAttribPointer(
+            ATTRIB_CORNER, 1, GLES30.GL_FLOAT, false,
+            MATERIAL_STRIDE_BYTES, 3 * Float.SIZE_BYTES,
+        )
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, archetypeVbo)
         GLES30.glBufferData(
@@ -382,13 +392,14 @@ class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
         const val ATTRIB_CONTACT = 3
         const val ATTRIB_BODY_UV = 4
         const val ATTRIB_EDGE = 5
+        const val ATTRIB_CORNER = 6
 
         /** `[x, y, compression, contact]` — the dynamic, per-frame vertex. */
         const val FLOATS_PER_VERTEX = 4
         const val VERTEX_STRIDE_BYTES = FLOATS_PER_VERTEX * Float.SIZE_BYTES
 
-        /** `[u, v, edge]` — uploaded only when the set of bodies changes. */
-        const val FLOATS_PER_MATERIAL_VERTEX = 3
+        /** `[u, v, edge, corner]` — uploaded only when the set of bodies changes. */
+        const val FLOATS_PER_MATERIAL_VERTEX = 4
         const val MATERIAL_STRIDE_BYTES = FLOATS_PER_MATERIAL_VERTEX * Float.SIZE_BYTES
     }
 }

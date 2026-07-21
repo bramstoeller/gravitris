@@ -115,19 +115,26 @@ object VertexFill {
      * this particle in its body" in the shell, and the first thing that breaks
      * when a quality tier changes is the copy nobody remembered was a copy.
      *
-     * @param out interleaved `[u, v, edge]` per particle.
+     * @param out interleaved `[u, v, edge, corner]` per particle.
      * @return the number of floats written.
      */
     fun fillStatics(state: SimState, out: FloatArray): Int {
         val u = state.particleU
         val v = state.particleV
         val edge = state.particleEdge
+        // §16 rounded corners: 1 at a true outer-silhouette corner of the whole
+        // piece, 0 everywhere else — static per particle, copied straight from
+        // the core (backend handoff 0036) rather than re-derived, for the same
+        // reason as UV and edge above: a second definition of "which particle is
+        // a corner" is the copy nobody remembers is a copy.
+        val corner = state.particleCorner
 
         var cursor = 0
         for (i in 0 until state.particleCount) {
             out[cursor++] = u[i]
             out[cursor++] = v[i]
             out[cursor++] = edge[i]
+            out[cursor++] = corner[i]
         }
         return cursor
     }

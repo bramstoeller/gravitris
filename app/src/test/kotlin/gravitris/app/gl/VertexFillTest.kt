@@ -211,24 +211,39 @@ class VertexFillTest {
             assertEquals(state.particleU[i], out[at], 0f)
             assertEquals(state.particleV[i], out[at + 1], 0f)
             assertEquals(state.particleEdge[i], out[at + 2], 0f)
+            // §16 rounded corners: the corner flag rides the same static buffer,
+            // straight from the core, as the fourth channel.
+            assertEquals(state.particleCorner[i], out[at + 3], 0f)
         }
     }
 
     /**
      * The subsurface depth term reads `min(uv, 1 - uv)`, which is only a depth if
-     * the UV genuinely spans 0..1 across each cell — and the rim term is only a
-     * rim if the free-surface flag marks the piece's real outline. Both are
-     * assumptions about the core the shader cannot check.
+     * the UV genuinely reaches 0 and 1 across the piece — and the rim term is
+     * only a rim if the free-surface flag marks the piece's real outline. Both
+     * are assumptions about the core the shader cannot check.
      *
-     * A tetromino is four `L×L` cells (ADR 0015). UV is per-cell (0..1 within a
-     * cell), and the edge flag is 1 only on the tetromino's *true outline* — a
-     * cell edge that faces a neighbour cell is a welded seam, interior to the
-     * piece, and is flagged 0 so the rim light does not draw a line down the
-     * middle of the material (backend handoff 0029). So the free surface is a
-     * *subset* of the cell boundaries, never the cell interior.
+     * **Body-wide UV (§15 / backend handoff 0036).** As of the glossy-candy
+     * redirect the UV is no longer per-cell (0..1 within each cell): it spans the
+     * whole tetromino's footprint, aspect-preserving — 0..1 on the piece's longer
+     * side and 0..k (k ≤ 1) on the shorter one — continuous across cell seams.
+     * That is what makes the grain, the subsurface depth and the specular streak
+     * read across the whole piece rather than restarting at every cell. So the
+     * silhouette-to-core depth still reaches 0 (at the outline) and 1 (at the far
+     * outline of the longer axis), but the axis that reaches 1 is whichever is
+     * longer — this test checks the range is spanned across *either* axis rather
+     * than assuming U specifically.
+     *
+     * A tetromino is four `L×L` cells (ADR 0015). The edge flag is 1 only on the
+     * tetromino's *true outline* — a cell edge that faces a neighbour cell is a
+     * welded seam, interior to the piece, and is flagged 0 so the rim light does
+     * not draw a line down the middle of the material (backend handoff 0029). So
+     * the free surface is a subset of the cell boundaries, never the cell
+     * interior. The corner flag (§16) is in turn a subset of the edge flag: a
+     * particle is never a corner (1) unless it is also on the free surface.
      */
     @Test
-    fun `cell uv spans the full range and the edge flag marks the piece outline`() {
+    fun `body uv spans the full range and the edge and corner flags mark the outline`() {
         val toy = movingToy()
         val state = toy.state
         val lattice = state.bodyLattice
@@ -237,14 +252,20 @@ class VertexFillTest {
         var sawZero = false
         var sawOne = false
         var sawEdge = false
+        var sawCorner = false
         for (i in 0 until state.particleCount) {
             val row = (i % perCell) / lattice
             val column = (i % perCell) % lattice
             val onCellBoundary =
                 row == 0 || row == lattice - 1 || column == 0 || column == lattice - 1
             val edge = state.particleEdge[i]
+            val corner = state.particleCorner[i]
 
             assertTrue(edge == 0f || edge == 1f, "particle $i edge flag $edge is neither 0 nor 1")
+            assertTrue(
+                corner == 0f || corner == 1f,
+                "particle $i corner flag $corner is neither 0 nor 1",
+            )
             if (edge == 1f) {
                 assertTrue(
                     onCellBoundary,
@@ -253,18 +274,32 @@ class VertexFillTest {
                 )
                 sawEdge = true
             }
+            if (corner == 1f) {
+                assertEquals(
+                    1f, edge, 0f,
+                    "particle $i is flagged a corner but not a free surface; the corner flag " +
+                        "must be a subset of the edge flag, or §16 would round an interior point",
+                )
+                sawCorner = true
+            }
             if (!onCellBoundary) {
                 assertEquals(
                     0f, edge, 0f,
                     "particle $i is interior to its cell yet flagged as free surface",
                 )
             }
-            if (state.particleU[i] == 0f) sawZero = true
-            if (state.particleU[i] == 1f) sawOne = true
+            // The range check is axis-agnostic: body-wide UV reaches 0 and 1 on
+            // the longer footprint side, whichever axis that is.
+            if (state.particleU[i] == 0f || state.particleV[i] == 0f) sawZero = true
+            if (state.particleU[i] == 1f || state.particleV[i] == 1f) sawOne = true
             assertTrue(state.particleU[i] in 0f..1f && state.particleV[i] in 0f..1f)
         }
         assertTrue(sawEdge, "no particle is flagged free surface, so the rim light never draws")
-        assertTrue(sawZero && sawOne, "cell uv does not span 0..1, so depth would never reach 0")
+        assertTrue(
+            sawCorner,
+            "no particle is flagged a true corner, so §16 would never round anything",
+        )
+        assertTrue(sawZero && sawOne, "body uv does not span 0..1, so depth would never reach 0")
     }
 
     /**

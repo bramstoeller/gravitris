@@ -75,6 +75,7 @@ class ShadersTest {
             BodyMesh.ATTRIB_CONTACT to "in float aContact",
             BodyMesh.ATTRIB_BODY_UV to "in vec2 aBodyUv",
             BodyMesh.ATTRIB_EDGE to "in float aEdge",
+            BodyMesh.ATTRIB_CORNER to "in float aCorner",
         )
         for ((location, declaration) in expected) {
             assertTrue(

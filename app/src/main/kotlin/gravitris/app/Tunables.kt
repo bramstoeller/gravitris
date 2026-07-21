@@ -157,11 +157,17 @@ object Tunables {
      *
      * Not 1.0: at full strength the centre of every piece reaches the deep tone
      * exactly, and since that tone is both darker and more saturated the piece
-     * reads as a ring of hue around a dark middle — a tube, not a solid. 0.55
-     * leaves the core recognisably the piece's own colour while still putting a
-     * visible gradient across it, which is what sells thickness.
+     * reads as a ring of hue around a dark middle — a tube, not a solid.
+     *
+     * Round 3 (`visual-direction.md` §14) leans on this term harder: with true
+     * alpha transparency rejected on cost grounds, the subsurface gradient is
+     * the *primary* "this is translucent jelly" cue, so it is raised from round
+     * 2's subtle 0.55 to 0.80 — still short of the tube, but now the depth
+     * gradient is a read the client can see rather than a whisper. It now runs
+     * on body-wide UV (§15), so the gradient sweeps the whole tetromino's
+     * silhouette instead of resetting per cell. First-pass value; tune on-device.
      */
-    const val SUBSURFACE_GAIN = 0.55f
+    const val SUBSURFACE_GAIN = 0.80f
 
     /**
      * Saturation of the deep tone, as a multiplier away from the colour's own
@@ -205,8 +211,13 @@ object Tunables {
      * [COMPRESSION_MAX_DARKEN] exists at the other end: hue is the identity
      * cue, and a blown-out rim erases it exactly at the silhouette, which is
      * where the eye goes first.
+     *
+     * Round 3 (§14) nudges it up from 0.30 → 0.38 and warms the rim colour
+     * (see `RIM_COLOR` in `Shaders.kt`) so the silhouette also reads as the
+     * glassy edge-catch of a wet candy, its second dual-purpose role. Still
+     * short of white. First-pass value; tune on-device.
      */
-    const val RIM_GAIN = 0.30f
+    const val RIM_GAIN = 0.38f
 
     /**
      * Amplitude of the grain, as a fraction of the material colour.
@@ -238,6 +249,95 @@ object Tunables {
      * why this is on regardless of what the surface turns out to be.
      */
     const val DITHER_GAIN = 1.4f / 255f
+
+    // --- Stage 3C glossy jelly candy (docs/ux/visual-direction.md §14/§16) ---
+
+    /**
+     * Peak strength of the gloss highlight streak, added in near-white
+     * (`color-specular`). §14's reference is ONE hard, high-contrast highlight —
+     * so this is deliberately strong, not a subtle sheen: the streak is small
+     * and sharp-edged, and its punch is what makes the body read as wet glass
+     * rather than matte gel. 0.70 is a first-pass value the client will steer;
+     * the real tune is on-device, where the highlight's contrast against the
+     * saturated base is what actually decides "glossy" vs "washed out".
+     */
+    const val SPECULAR_GAIN = 0.70f
+
+    /**
+     * Half-width of the gloss streak's feather, in body-UV units (the UV spans
+     * ~0..1 across the whole piece, §15). Small keeps the streak a sharp bright
+     * line that feathers, not a soft lobe — §14 is emphatic that the SHAPE is
+     * what sells the material. 0.16 is a thin band; raise it for a fatter,
+     * softer highlight, lower it for a harder glint. First-pass; tune on-device.
+     */
+    const val SPECULAR_SHARPNESS = 0.16f
+
+    /**
+     * How hard a true outer-silhouette corner fades toward `color-tray` (§16).
+     *
+     * The shader cubes `vCorner` (which already ramps 1→0 over one lattice
+     * spacing) before applying this, so the visible fade is pulled tight to the
+     * corner tip — the client's "slightly rounded, not a die/cube". 1.0 fades
+     * the very tip fully to the tray; below 1 leaves the tip partly the piece's
+     * own colour (a softer, less-rounded read). The apparent radius
+     * (`radius-piece-corner`, ~10–15% of a cell) is reached by tuning this and
+     * the shader's cube exponent together, on-device — not a raw geometry value.
+     */
+    const val CORNER_GAIN = 1.0f
+
+    // --- soft contact shadow (docs/ux/visual-direction.md §18) --------------
+
+    /**
+     * The piece contact shadow's colour: `color-shadow` = `color-tray` darkened
+     * 35%. NOT black — a black shadow on a saturated candy world reads as a
+     * hole; a darkened-tray tone reads as the tray in shade, which is what makes
+     * the candy look like it is resting *in* the world (§18). `color-tray`
+     * #7C93A6 × 0.65.
+     */
+    const val SHADOW_R = 0.486f * 0.65f
+    const val SHADOW_G = 0.576f * 0.65f
+    const val SHADOW_B = 0.651f * 0.65f
+
+    /** Opacity of the contact shadow (`color-shadow` @ 40%). The shadow is the
+     *  one pass in the renderer that turns `GL_BLEND` on, and only for itself. */
+    const val SHADOW_ALPHA = 0.40f
+
+    /**
+     * Shadow offset in world units, down and slightly right (`shadow-offset-
+     * piece`, §18). World units so it scales with the piece rather than the
+     * screen. Positive Y is up in world space, so "down" is negative Y.
+     */
+    const val SHADOW_OFFSET_X = 0.05f
+    const val SHADOW_OFFSET_Y = -0.08f
+
+    // --- antialiasing (docs/ux/visual-direction.md §17) --------------------
+
+    /**
+     * MSAA sample count requested on the EGL surface config (§17): hardware
+     * multisampling, resolved by the driver, smoothing the opaque silhouette
+     * edges of the pieces, the §16 rounded corners and the well frame all at
+     * once — with NO shader change and no violation of the "no blend, no
+     * discard" rules (`Shaders.kt`), because it lives entirely at the
+     * rasteriser/resolve stage.
+     *
+     * This is a build-time dial, NOT the runtime `shadeLevel` ladder: the sample
+     * count is fixed when the EGL surface is created and cannot change per
+     * frame, so §17's "fold it into uShadeTier" is honoured in spirit — one
+     * cuttable dial ordered with the rest — but implemented as a single constant
+     * here (set to 0 to disable) rather than a runtime step. `GameView`'s config
+     * chooser falls back to no-MSAA if the driver offers no matching config, so
+     * a device (or the software emulator) without 4× MSAA still runs.
+     *
+     * COST, named plainly (§17): 4× MSAA roughly quadruples colour/depth
+     * attachment bandwidth and adds a resolve pass, on a Fairphone 6 already
+     * measured at 15.0ms mean against 16.67ms with a nearly-flat shader. Stacked
+     * on the §18 shadow pass and the §19 full-screen background, this is a real
+     * frame-budget risk, not decoration — it is the single most expensive item
+     * this round adds and the first to cut (lower to 2, then 0) if the on-device
+     * budget disagrees. Only the client's phone can price it; the emulator
+     * cannot.
+     */
+    const val MSAA_SAMPLES = 4
 
     // --- band glow (docs/ux/band-glow.md) ----------------------------------
 

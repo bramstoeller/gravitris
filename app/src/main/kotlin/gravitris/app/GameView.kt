@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.ViewConfiguration
+import gravitris.app.gl.MsaaConfigChooser
 import gravitris.app.input.GestureConfig
 import gravitris.app.input.GestureRecognizer
 import gravitris.app.input.PlayerIntent
@@ -37,6 +38,14 @@ class GameView(
 
     init {
         setEGLContextClientVersion(3)
+        // §17 antialiasing: request a hardware-MSAA surface config before the
+        // renderer is attached (setEGLConfigChooser must precede setRenderer).
+        // The chooser falls back to single-sample if the driver — or the
+        // software emulator — offers no multisample config, so this never costs
+        // a black screen. MSAA_SAMPLES = 0 skips it entirely (the §17 cut dial).
+        if (Tunables.MSAA_SAMPLES >= 2) {
+            setEGLConfigChooser(MsaaConfigChooser(Tunables.MSAA_SAMPLES))
+        }
         // ADR 0010 §6: keep the context across a pause where the device allows
         // it, so returning from the home screen does not rebuild every buffer.
         preserveEGLContextOnPause = true
