@@ -24,8 +24,13 @@ warm thing on screen.
 
 ## Palette
 
-Six hues, evenly spaced (~37° apart) across the cool half of the wheel,
-chosen for CVD separation first and aesthetics second.
+**Updated 2026-07-21 (`visual-direction.md` §5): seven hues, not six.**
+`Simulation.ARCHETYPE_COUNT = 7` and the game is moving to seven tetromino
+shapes, so `Palette.kt`'s own flagged collision (archetype 6 folded onto hue
+0 via `floorMod`, `Palette.kt:96-103`) is closed by adding a seventh hue
+rather than by re-mapping the existing six. Evenly spaced (~35-37° apart)
+across the cool half of the wheel plus one new green pulled from the widest
+open arc, chosen for CVD separation first and aesthetics second.
 
 | # | Name | Hex | H° | S | L | Grain scale (tertiary cue) |
 |---|------|-----|----|---|---|------|
@@ -35,6 +40,13 @@ chosen for CVD separation first and aesthetics second.
 | 4 | Violet | `#7148E0` | 261 | 64% | 56% | 1.4× |
 | 5 | Magenta | `#B23FC7` | 298 | 52% | 42% | 1.6× |
 | 6 | Rose | `#D63C6E` | 335 | 62% | 55% | 1.8× |
+| 7 | Emerald | `#3BA12B` | 112 | 58% | 40% | 2.0× |
+
+Emerald is appended as archetype index 6 (not inserted in hue-sorted order)
+so the first six archetypes' existing indices are untouched — additive only,
+no remapping of pieces already in play. See `visual-direction.md` §5 for the
+full derivation (why 112°, why that's the only open arc wide enough to place
+a seventh hue at all, why lightness continues the dark/light alternation).
 
 Reserved (do not assign to a piece, ever): `#FFB347` amber core / `#FFF4E0`
 ignition-white — see `band-glow.md`.
@@ -167,11 +179,19 @@ hex values alone.
 
 ## Scaling the palette
 
-If gameplay ends up needing more than six piece archetypes, extend by the
-same rule: place the new hue ≥30° from every existing hue, outside the
-reserved 15°–65° band, assign it the *opposite* lightness step from its
-nearest neighbours in hue-angle, and give it its own grain scale. Re-run the
-CVD desk-check (and, ideally, the simulator check) before shipping the
-addition. Do not add a 7th hue casually just to differentiate a new shape —
-confirm with the Architect first how many piece archetypes actually exist;
-this is currently undetermined (see handoff open questions).
+**Resolved 2026-07-21 — this section's open question is closed.** Seven
+piece archetypes are confirmed (`Simulation.ARCHETYPE_COUNT = 7`, tetromino
+shapes), and the seventh hue (Emerald, above) was added by the exact rule
+this section originally specified: ≥30° from every existing hue, outside the
+reserved 15°–65° band, next lightness step in the alternation, own grain
+scale. **The CVD desk-check has not been re-run against Emerald specifically**
+— it inherits the same "not run through an actual simulator" caveat the
+original six carry (see "Verification performed, and its limits," above);
+folded into the same standing QA action item, not a new one.
+
+If gameplay ever needs an *eighth* archetype, the rule still applies, with
+one new constraint the current palette has already run into: the open arc
+65°→150° that Emerald came from now has Emerald sitting inside it, so a
+further addition there has less room; check the actual remaining gaps against
+the full seven-hue table above rather than re-deriving from the original
+six.

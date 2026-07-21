@@ -18,16 +18,17 @@ distinction below instead applies to text-on-surface and overlay-scrim
 pairs, both computed against the one canvas.
 
 **Updated for the client's confirmed device (Fairphone 6, OLED, 1400 nits,
-1 billion colours):** `color-bg` is now true black (`#000000`), not the
-near-black `#12141C` this document specified before the device was known.
-On OLED, only true black costs (near) zero power per pixel and gives the
-glow the maximum possible contrast headroom to rise out of — a dark-grey
-background wastes both the sustainability argument this device's whole
-identity rests on and the punch the glow is supposed to have. `color-surface`
-stays a lifted dark blue-grey rather than also going to black, specifically
-so the well's walls/floor read as a distinct surface against a true-black
-void — if the background and the walls were both `#000000` the well would
-have no legible boundary on an OLED panel's true blacks.
+1 billion colours):** the canvas is true black or near enough to it
+(`#000000`–`#05050C`), not the near-black `#12141C` this document specified
+before the device was known. On OLED, true black costs (near) zero power per
+pixel and gives the glow the maximum possible contrast headroom to rise out
+of — a dark-grey background wastes both the sustainability argument this
+device's whole identity rests on and the punch the glow is supposed to have.
+`color-surface` stays a lifted dark blue-grey rather than also going to
+black, specifically so the well's walls/floor read as a distinct surface
+against a true-black void — if the background and the walls were both
+`#000000` the well would have no legible boundary on an OLED panel's true
+blacks.
 
 **Banding risk this creates, and the fix:** a true-black background raises
 the odds that a smooth low-intensity gradient — specifically the band-glow
@@ -41,21 +42,36 @@ separate system. This must hold regardless of whether the render surface
 ends up 8-bit or takes advantage of the panel's 10-bit path — assume 8-bit
 as the baseline to design against.
 
+**Updated 2026-07-21 (`visual-direction.md` §3, §9): the flat `color-bg`
+fill is replaced by a procedural environment pass, split into two stops.**
+The well's own empty space now shows a graduated background instead of a
+single flat colour — `color-bg-deep` (`#05050C`) at the top/bottom of frame,
+warming very slightly to `color-bg-core` (`#0E1730`) at the vertical centre,
+plus two fixed low-opacity radial glows. This is still overwhelmingly dark
+(mean luminance barely above true black) so the OLED-power and
+glow-contrast arguments above still hold, and the same banding risk and
+dither mitigation apply to the gradient's own slow sweep through near-black
+values, not only to the glow ramp and AO darkening named above.
+
 | Token | Value | Use |
 |---|---|---|
-| `color-bg` | `#000000` | Well background |
+| `color-bg-deep` | `#05050C` | Environment gradient — top/bottom of frame (was `color-bg` `#000000`) |
+| `color-bg-core` | `#0E1730` | Environment gradient — vertical centre of frame |
+| `color-bg-glow-a` / `color-bg-glow-b` | `#0E1730` / `#241B3D` @ 4-8% peak, radial falloff | The two fixed "distant crystal light" discs, `visual-direction.md` §3. Cool hues only — never amber, that's `color-glow`'s alone. |
 | `color-surface` | `#1B1E29` | Well walls/floor, HUD chip backgrounds |
 | `color-overlay-scrim` | `#000000` @ 82% | Dims the game canvas behind Paused/Settings/Game Over sheets |
 | `color-text` | `#F2F1EC` | Primary text |
 | `color-text-muted` | `#F2F1EC` @ 65% | Secondary/caption text |
-| `color-glow` | `#FFB347` | Band-glow core, amber. Reserved — never a piece hue. |
-| `color-glow-hot` | `#FFF4E0` | Band ignition flash |
-| `color-warn` | `#FF5A5A` | Reserved for a possible top-out warning zone — **not yet spec'd as a screen element**; the losing condition is an open architecture question (see brief). Do not build a UI around this token until that's resolved. |
+| `color-glow` | `#FFB347` | Band-glow core, amber. Reserved — never a piece hue. Also the clear-juice ember colour (`visual-direction.md` §7). |
+| `color-glow-hot` | `#FFF4E0` | Band ignition flash, and the screen-wide luminance beat that now syncs to it (`visual-direction.md` §7.1) |
+| `color-warn` | `#FF5A5A` | **Now spec'd**: the D6 overflow-warning pulse on the spawn band, `visual-direction.md` §9 / `feel-feedback.md`. Red, never amber — must never be confused with band-glow. |
 
-Piece hues: six values, specified in full in `piece-identity.md` (reproduced
-here for convenience only — that document is the source of truth):
+Piece hues: **seven** values as of 2026-07-21 (`visual-direction.md` §5
+closes the six-hues-for-seven-archetypes collision `Palette.kt` flagged),
+specified in full in `piece-identity.md` (reproduced here for convenience
+only — that document is the source of truth):
 
-`#1FB37A` `#1B9FC0` `#3162E0` `#7148E0` `#B23FC7` `#D63C6E`
+`#1FB37A` `#1B9FC0` `#3162E0` `#7148E0` `#B23FC7` `#D63C6E` `#3BA12B`
 
 ## Type
 
@@ -103,11 +119,20 @@ drop shadows on in-game material, that job belongs entirely to the shader.
 | `motion-fast` | 100ms | `cubic-bezier(0.2,0,0,1)` (ease-out) | Micro feedback (toggle flip) |
 | `motion-base` | 200ms | same | Modal fade/slide-in |
 | `motion-slow` | 400ms | `cubic-bezier(0.4,0,0.2,1)` (ease-in-out) | Screen transitions (Title → Playing fade) |
+| `motion-pop` | 160ms | `cubic-bezier(0.34,1.56,0.64,1)` (back-out, ~12% overshoot) | **New, `visual-direction.md` §8.** Small celebratory arrivals: score-pop label, next-piece preview swap-in, Game Over's "NEW BEST" badge. |
+| `motion-celebrate` | 280ms | `motion-pop`'s curve, larger scale delta (1.0→1.15→1.0) | **New, `visual-direction.md` §8.** Reserved for the single biggest moment per session — the "NEW BEST" reveal on Game Over. Not for routine feedback; using it there would cheapen the one moment it marks. |
+
+Under Reduced Motion, `motion-pop` and `motion-celebrate` both collapse to a
+plain `motion-fast` cross-fade — no scale, no overshoot — the same category
+of change `accessibility.md` already specifies for screen shake and jiggle;
+the content they animate in still appears immediately.
 
 Gameplay timings (glow ramps and pulses, ignition flash, dissolve, minimum
 watch window, haptic duration/amplitude, screen-shake amplitude/duration) are
 specified in `band-glow.md` and `feel-feedback.md` and referenced from here
 rather than repeated, to avoid the two copies drifting apart during tuning.
+The band-clear juice upgrade (screen-wide luminance beat, ember particles,
+score pop) is specified in `visual-direction.md` §7 for the same reason.
 
 **Every duration in this document and in `band-glow.md`/`feel-feedback.md`
 is wall-clock milliseconds, deliberately, not a frame count.** The confirmed

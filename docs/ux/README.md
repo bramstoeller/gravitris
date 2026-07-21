@@ -1,5 +1,14 @@
 # UX specs — index
 
+**Start with `visual-direction.md`** (added 2026-07-21) if you're building
+against the current visual-direction pass specifically — it's the
+client-facing "why the graphics changed" document (diagnosis, cited
+references, the seven-hue palette decision, the background/environment,
+the band-clear juice upgrade, motion tokens) and the shortest path to
+understanding what's new versus what's unchanged from the list below. It
+doesn't replace anything here; it points at exactly what each document below
+gained.
+
 Read in this order if you're implementing from scratch:
 
 1. `flows.md` — the three journeys that matter, entry to outcome, with
@@ -8,7 +17,7 @@ Read in this order if you're implementing from scratch:
 3. `band-glow.md` — **the core visual language.** How fill% maps to glow,
    how it teaches coverage-band clearing with no tutorial. Read this before
    touching any material shader.
-4. `piece-identity.md` — the six-hue colourblind-safe piece palette, and the
+4. `piece-identity.md` — the seven-hue colourblind-safe piece palette, and the
    reserved amber band that keeps it from colliding with band-glow.
 5. `gestures.md` — concrete drag/tap/swipe thresholds.
 6. `landing-silhouette.md` — how the pre-drop projection stays honest about
