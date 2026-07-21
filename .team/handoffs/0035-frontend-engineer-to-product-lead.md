@@ -116,6 +116,19 @@ default). This is the one open on-device action, per §10.
 See PR description / attached. Background+HUD, multi-hue stack, a clear
 (ignition/embers/dissolve), and the game-over screen.
 
+## Post-review fix (glows)
+
+The UX Designer's screenshot review caught that the §3 radial glows did not
+read. Measured it: glow centre vs same-height background differed by 0.0003 —
+invisible. Two causes, both fixed: I was adding the near-black token colours
+`#0E1730`/`#241B3D` (adding a near-black colour cannot brighten), and the disc
+radius covered the whole screen (a broad wash, not a disc). Now cool teal/violet
+tints at ~4-5% white luminance with a localized radius; re-measured +0.015 at the
+centre and verified on the emulator. **`tokens.md`'s `color-bg-glow-a/-b` row is
+now stale** — it still names the near-black colours at 4-8% opacity, which render
+nothing; it needs updating to the readable tint values. Left for the UX Designer
+(their doc) — flagged to them directly.
+
 ## For the next agent / open questions
 
 - **On-device measurement of the background pass + embers is owed** before the
@@ -123,6 +136,15 @@ See PR description / attached. Background+HUD, multi-hue stack, a clear
 - **Next-piece preview** is blocked on an Architect/Backend contract addition.
 - **Well-frame emissive edge** and **D6 overflow cue** are the two spec items I
   deliberately left; both are small, isolated follow-ups.
+- **`tokens.md` glow-colour row** is stale after the glow fix (see Post-review
+  fix) — the UX Designer owns the canonical values.
+- **Grain repeats per tetromino cell** (UX Designer's observation): the gel
+  material samples `vBodyUv`, and a tetromino is one body of four cells, so if
+  grain restarts per cell then `particleU/V` is populated cell-local despite the
+  contract naming it "body-local" — a core contract-vs-implementation gap for the
+  Backend Engineer to confirm. Not my code (I did not touch the gel shader); not
+  blocking (grain is the tertiary identity cue; hue and the seam are continuous
+  and correct).
 - Sign-off: the UX Designer reviews the screenshots against the spec and the
   "commercial modern game" bar before this lands; the Product Lead verifies the
   look. Do not merge until both sign — I have not merged.
