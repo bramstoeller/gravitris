@@ -74,16 +74,30 @@ Commit range: `2964a9f` (single commit on the branch). Docs only — no code.
    wants an owner (renumber `chore/architecture`'s 0011→0012+ and merge, or
    decide otherwise). Not blocking PR #22.
 
+**3. Reviewed the two Backend ADRs — both APPROVED.** They landed on
+`origin/feat/tetromino-pieces` @ `90d7c2a`, numbered 0015 (tetromino geometry /
+bonded cells) and 0016 (lifecycle + rotation, folded together). Signed verdict:
+`.team/reviews/review-tetromino-adrs-0015-0016.md`. I checked the
+determinism-critical claims against the pushed code, not the prose:
+
+- Phase gating is real and leaks no phase into `:app` (`Simulation.kt:627-636`).
+- The positioning window is tick-counted (`:208-211`, cites ADR 0013); the freeze
+  reuses the existing `invMass==0` short-circuit (`XpbdSolver.kt:208`).
+- Rotation is exact `(x,y)→(y,-x)` (ADR 0006), overlap rejected outright, and the
+  fall velocity survives a rotate — verified: `applyRotate` leaves `velX/velY`
+  untouched and the solver carries velocity there (`integrate` line 210).
+- Numbering 0015/0016 dodges the 0012/0013 collision and `decisions.md` is
+  updated for both. 0014 is now a gap (flagged so nobody hunts for it).
+
 ## Open / pending
 
-- **The two Backend ADRs (rotation, lifecycle) are NOT yet reviewed** because
-  they are not yet pushed — `origin/feat/tetromino-pieces` does not exist and the
-  branch has no `.kt`/new-ADR files yet. I have coordinated with the Backend
-  (agent `a8725061881b6f102`) and asked them to confirm ADR numbers and push. My
-  pre-review of the *design* (from their conversation file) found it sound and
-  consistent with 0005/0006/0013; the signed ADR verdicts are outstanding until
-  the files land. If this subagent run ends before they push, the ADR review is
-  the one piece of the DoD still open and must be picked up.
+- **No PR for `feat/tetromino-pieces` yet** — the ADRs are on the branch, not a
+  PR. I asked the Backend to tag me when they open one so I can drop the approval
+  on the PR too. My review record stands regardless.
+- **`DeterminismTest` not re-run by me.** QA must confirm it exercises a seeded
+  replay through positioning + falling + rotation, and that it (and the 7 other
+  test files) are migrated off `hardDropVelocity`. This is the hard string on the
+  whole rework for `main` to stay green (follow-up 1 above).
 
 ## Uneasy about
 
