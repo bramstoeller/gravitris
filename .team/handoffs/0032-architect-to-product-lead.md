@@ -89,6 +89,42 @@ determinism-critical claims against the pushed code, not the prose:
 - Numbering 0015/0016 dodges the 0012/0013 collision and `decisions.md` is
   updated for both. 0014 is now a gap (flagged so nobody hunts for it).
 
+## Escalation — needs a Product Lead decision (lattice tier)
+
+The Backend asked me to confirm the tetromino shipping tier is consistent with
+ADR 0009 and record it. It is not a simple record — full analysis in
+`.team/reviews/review-lattice-tier-tetromino.md`. In short:
+
+- **Endorsed:** the corrected device benchmark (the old one under-counted
+  tetromino cost ~4×), and lattice 4 as the reference-device tier (lattice 5 is
+  over the 16.67 ms budget with tetrominoes).
+- **Cannot sign off:** shipping lattice 5 as a *runtime tier for faster devices*.
+  `SimConfig.kt:187` makes `pieceExtent` vary with lattice (2.40 at L4 vs 2.25 at
+  L5), so tiers give different phones a different game and break cross-device
+  replay. And it contradicts **ADR 0013 (already on main)**, which states the
+  particle count is pinned and rejects "three subtly different games" — while ADR
+  0009 keeps tiers live. Main holds two contradictory positions right now.
+- **My recommendation:** pin lattice 4 as the single shipping config, retire ADR
+  0009's runtime tier selection. It matches the measurement, removes the leak,
+  and makes ADR 0013 true. This changes the shipping story ("one quality tuned
+  for reference" vs "scales up on faster phones") — **your call**. I will draft
+  the ADR (the 0014 gap is free) once you decide, and it must also fix the
+  dangling references below.
+
+**Two record defects the cherry-pick created (independent of the decision):**
+ADR 0013 on main references "particle count pinned (ADR 0011)" and "ADR 0011's
+reasoning... three different games was the wrong trade" (lines 53, 103, 201-202),
+but main's ADR 0011 is the *silhouette* ADR — the pinned-lattice ADR from
+`chore/architecture` was not carried over with 0012/0013. Those three references
+dangle, and ADR 0009 (tiers) vs ADR 0013 (pinned) now openly conflict on main.
+
+## Item 2 (determinism) — verified handled
+
+The Backend's `DeterminismTest` migration is real: `slamActivePiece(9f)` replaces
+the removed `hardDropVelocity` probe, and `runPhasedGame` is a seeded replay
+through positioning + early-drop + falling-rotate asserting bit-identical output.
+The determinism string I flagged is covered in the branch.
+
 ## Open / pending
 
 - **No PR for `feat/tetromino-pieces` yet** — the ADRs are on the branch, not a
