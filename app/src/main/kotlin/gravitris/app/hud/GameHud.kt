@@ -42,9 +42,10 @@ import android.widget.TextView
  *   `playing.md` already specifies omitting the best row when no best exists.
  * - **Next-piece preview** is omitted this round: `SimState` does not publish
  *   the upcoming piece (`PieceSequence.peek()` is internal to `:core-sim`), so
- *   there is no contract data to wire. The layout reserves the top-right column
- *   beneath the pause icon for it — see [nextPieceSlot] — so it slots in with an
- *   Architect contract change later, per the UX Designer's scoping.
+ *   there is no contract data to wire. Its place in the layout is the top-right
+ *   column beneath the pause icon (`playing.md`); it slots in there as a new
+ *   child once an Architect contract change publishes the upcoming piece, per
+ *   the UX Designer's scoping. Nothing speculative is built for it now.
  * - **Pause** (top-right, 48×48dp) toggles pause via [onPause].
  *
  * The whole HUD is padded inside the safe-area insets ([applyInsets]) so nothing
@@ -103,19 +104,6 @@ class GameHud(context: Context, private val onPause: () -> Unit) {
         setOnClickListener { this@GameHud.onPause() }
     }
 
-    /**
-     * Reserved, empty top-right column beneath the pause icon for the
-     * next-piece preview once the contract publishes the upcoming piece. Kept in
-     * the tree (zero-size, no draw) so adding the preview later is a content
-     * change, not a layout change. See the class note.
-     */
-    private val nextPieceSlot: View = View(context).apply {
-        layoutParams = FrameLayout.LayoutParams(dp(40f), dp(40f), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(56f) // below the 48dp pause icon
-        }
-        visibility = View.GONE
-    }
-
     private var lastScore = Int.MIN_VALUE
     private var lastLevel = Int.MIN_VALUE
 
@@ -123,7 +111,6 @@ class GameHud(context: Context, private val onPause: () -> Unit) {
         view.addView(score)
         view.addView(levelChip)
         view.addView(pause)
-        view.addView(nextPieceSlot)
         // The HUD must not intercept the drag-anywhere gestures — only the pause
         // icon is interactive. The container passes touches through; the pause
         // button is the sole clickable child.
