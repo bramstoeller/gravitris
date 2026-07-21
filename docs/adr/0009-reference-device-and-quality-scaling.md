@@ -1,6 +1,9 @@
 # 0009. Reference device, the 2020 floor, and how quality scales
 
-Status: proposed
+Status: proposed · §3 and the particle-count half of §4 (startup quality-tier
+selection and per-tier `clearThreshold` calibration) superseded by ADR 0014,
+2026-07-21. The reference device (§1), dropped 2020 floor (§2), pinned substeps
+and render-side scaling (§4), and frame budget (§5) still stand.
 Date: 2026-07-20
 
 ## Context

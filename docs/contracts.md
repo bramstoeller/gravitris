@@ -28,8 +28,12 @@ data class SimConfig(
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
 
-    // --- quality tier (ADR 0009) ---
-    val lattice: Int = 5,               // particles per piece edge: 4 | 5 | 6
+    // --- lattice: PINNED at 4 (ADR 0014) ---
+    // Particles per cell edge. Pinned, not a runtime tier: tetrominoes put
+    // lattice 5 over the frame budget on the reference device, and a varying
+    // lattice leaks piece size/packing per device. A change is a build-time
+    // re-pin with re-tuning (ADR 0014), not a startup selection (was ADR 0009).
+    val lattice: Int = 4,
 
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
     val wellWidth: Float = 10f,
@@ -40,11 +44,11 @@ data class SimConfig(
     val bandColumns: Int = 40,          // changing resolution invalidates the
     val bandRows: Int = 4,              // tuned threshold below — see ADR 0004
     /**
-     * PER-TIER. Coarser lattices stamp larger particle disks, so the same pile
-     * reads as a different fill percentage at each quality tier. Left as one
-     * shared constant, the startup quality tier would silently become a
-     * gameplay difference. Calibrate medium properly and derive the others.
-     * See ADR 0004 and ADR 0009.
+     * A single calibrated constant. It was per-tier under ADR 0009 (coarser
+     * lattices stamp larger disks, so the same pile read as a different fill
+     * percentage per tier), but the lattice is now pinned (ADR 0014) so there is
+     * one lattice, one disk size, one threshold — and no cross-tier equivalence
+     * test to maintain. See ADR 0004 and ADR 0014.
      */
     val clearThreshold: Float = 0.90f,
 
@@ -107,24 +111,56 @@ solve. Both are review-enforced.
 /**
  * One tick of player intent. The shell translates gestures into this; the core
  * decides what they mean. Reused (mutable) to avoid per-tick allocation.
+ *
+ * All three fields are populated by the SAME phase-agnostic recognizer. The
+ * recognizer does NOT know the piece phase — it reports gesture facts, and the
+ * core disambiguates them by `activePiecePhase` (§3). This keeps `:app` free of
+ * game state and honours "the core decides what they mean".
  */
 class InputFrame {
-    var dragX: Float = 0f       // horizontal drag delta this tick, well units
-    var rotate: Boolean = false // tap — consumed on the tick it is read
-    var hardDrop: Boolean = false
-    /**
-     * Flick speed for the hard-drop, well units/sec. Computed by :app from a
-     * trailing ~60ms window of TIMESTAMPED touch samples (including
-     * MotionEvent historical samples), NOT from a per-frame delta — Android
-     * samples touch above the refresh rate and the core must not lose that
-     * resolution to a 60Hz tick. See docs/ux/gestures.md.
-     */
-    var hardDropVelocity: Float = 0f
+    /** Horizontal drag delta this tick, in well units. Honoured in POSITIONING. */
+    var dragX: Float = 0f
+    /** Tap. One-shot, consumed on the tick read; `:app` clears it. Honoured in FALLING. */
+    var rotate: Boolean = false
+    /** Pointer-up / release. One-shot, consumed on the tick read; `:app` clears it.
+     *  Honoured in POSITIONING — release IS the commit-to-fall. */
+    var drop: Boolean = false
 }
 ```
 
-Gesture recognition (drag anywhere / tap to rotate / swipe down to hard-drop,
-per the brief) lives entirely in `:app`. The core never sees a touch event.
+**Control model (release-to-drop, rotate-while-falling).** A piece appears at
+the top in **POSITIONING** — the player slides it horizontally for a short,
+tick-counted window (§3, ADR 0013) — then on **release** (or window expiry) it
+enters **FALLING** and drops under real gravity, deforming and settling as it
+lands. Gestures map to fields as follows, and the core reads them **by phase**:
+
+| gesture (recognizer, phase-agnostic) | fields set | POSITIONING reads | FALLING reads |
+| ------------------------------------ | ---------- | ----------------- | ------------- |
+| horizontal drag | `dragX` | slides the piece | ignored |
+| pointer-up (end of any touch) | `drop` | commits to fall | ignored |
+| tap (down+up, no travel) | `rotate` **and** `drop` | commits to fall (rotate ignored) | rotates the piece (drop ignored) |
+
+The disambiguation lives entirely in the core (`applyInput`). The recognizer
+emits the same fields in both phases; it never branches on phase, so no game
+state leaks into `:app`.
+
+Gesture recognition (drag / tap / release) lives entirely in `:app`. The core
+never sees a touch event.
+
+**Removed at the tetromino rework (was `hardDrop` + `hardDropVelocity`).** The
+old "swipe-down hard-drop with flick velocity" is gone: **release now IS the
+drop**, and the fall is plain gravity, so a flick-velocity boost is redundant.
+The app-side `VelocityWindow` (the trailing timestamped-sample machinery that
+computed `hardDropVelocity`) is deleted with it. Signed off as a
+boundary-crossing change — see §6 and `/work/.team/reviews/review-inputframe-contract.md`.
+
+**One-shot discipline is unchanged and still load-bearing for replay.** As
+before, `step` never writes to `InputFrame`; `:app` owns clearing the one-shot
+flags (`rotate`, `drop`). If the core cleared them, replaying a *recorded*
+`InputFrame` sequence would consume the flags in place and diverge on the second
+pass — the exact determinism ADR 0006 exists to protect. A frontend that forgets
+to clear `drop` re-commits every tick: loud and obvious, the failure mode to
+prefer.
 
 ---
 
@@ -224,6 +260,28 @@ interface SimState {
     val score: Int
     val level: Int
     val activePieceBody: Int        // -1 when none (during overflow / clear)
+    /**
+     * Per-piece control phase, orthogonal to game `phase` above (tetromino
+     * rework). POSITIONING = parked at the spawn row, gravity suppressed,
+     * horizontal slide only. FALLING = released, gravity on, rotate enabled.
+     * Defaults to FALLING when there is no active piece, so a stray `dragX`
+     * cannot slide a non-positioning piece.
+     * Guarantee: `activePiecePhase == POSITIONING ⇒ activePieceBody >= 0`.
+     */
+    val activePiecePhase: PiecePhase
+    /** Ticks left in the POSITIONING window (0 outside it). Tick-counted, never
+     *  wall-clock (ADR 0013). */
+    val positioningTicksRemaining: Int
+    /** Full length of the POSITIONING window in ticks, so `:app` can draw a
+     *  0..1 countdown as `remaining / window` without re-deriving it. */
+    val positioningWindowTicks: Int
+    /**
+     * Particles per body — `lattice²` today, `4·lattice²` once pieces are
+     * tetrominoes. Exposed so `:app` computes vertex/particle base offsets as
+     * `body * particlesPerBody`; do NOT re-derive it from `bodyLattice`, which
+     * is why it is supplied here rather than left implicit.
+     */
+    val particlesPerBody: Int
     val landing: LandingEstimate
 
     // --- feedback, drained by the shell each frame ---
@@ -239,6 +297,12 @@ sealed interface Phase {
     data class Clearing(val bands: IntArray, val remainingTicks: Int) : Phase
     object GameOver : Phase
 }
+
+/**
+ * Per-piece control phase (tetromino rework). Orthogonal to `Phase`: a piece is
+ * POSITIONING or FALLING only while `activePieceBody >= 0`, within `Playing`.
+ */
+enum class PiecePhase { POSITIONING, FALLING }
 
 /**
  * Projected settle position for the active piece. A single Y is not enough:
@@ -357,7 +421,7 @@ earlier position and it matters twice over:
 
 | Contract | Owner | Consumers |
 | -------- | ----- | --------- |
-| `SimConfig`, `Simulation`, `SimState`, `Phase`, `LandingEstimate` | backend-engineer | frontend, QA |
+| `SimConfig`, `Simulation`, `SimState`, `Phase`, `PiecePhase`, `LandingEstimate` | backend-engineer | frontend, QA |
 | Palette contents (hue/sat/light/grain per archetype) | ux-designer | frontend |
 | `InputFrame` | backend-engineer (shape), frontend (population) | both |
 | Varyings + uniforms | frontend-engineer | UX Designer |
@@ -365,3 +429,15 @@ earlier position and it matters twice over:
 
 **Changing any signature here crosses a module boundary and needs the Architect.**
 Adding a field to `SimState` is additive and does not.
+
+---
+
+## 6. Change log — signed boundary changes
+
+| Date | Change | Boundary | Signed |
+| ---- | ------ | -------- | ------ |
+| 2026-07-21 | `InputFrame` becomes `{ dragX, rotate, drop }`; `hardDrop` + `hardDropVelocity` removed (§2). Additive `SimState.activePiecePhase`, `positioningTicksRemaining`, `positioningWindowTicks`, `particlesPerBody` (§3). | `:app` ↔ `:core-sim` | **Architect** — see `/work/.team/reviews/review-inputframe-contract.md` |
+
+The `SimState` additions in that row are additive and did not require a
+signature; they are recorded here only because they landed in the same change as
+the `InputFrame` signature edit, which did.
