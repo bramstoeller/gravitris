@@ -1,57 +1,56 @@
 # Glossy jelly candy render layer — money shots for the client
 
 Frontend Engineer, 2026-07-21. Branch `feat/candy-material-render` (from
-`feat/candy-material-datapath`, PR #30). These are for the Product Lead to view
-and show the client — the round-3 glossy-candy look the client is waiting to
-judge (`visual-direction.md` §13–§19).
+`feat/candy-material-datapath`, PR #31). Refreshed after the Product Lead's
+review of the first pass. For the Product Lead to view and show the client.
 
 **Correctness only — NOT an appearance or performance claim about the real
-device.** Captured on the software emulator (`-gpu swangle`, ANGLE-over-
-SwiftShader). Colour, gloss contrast, MSAA edge quality and the glow-patch and
-shadow brightness will all read differently on the client's Fairphone 6 OLED —
-several values below are explicitly first-pass and owed an on-device tune. What
-these frames DO prove: it launches, it renders, and the four asks read.
+device.** Captured on the software emulator (`-gpu swangle`). Colour, gloss
+contrast, MSAA/rounding quality and shadow/glow brightness all read differently
+on the client's Fairphone 6 OLED — several values are first-pass, owed a tune.
+
+## What changed since the first review (the PL's three asks)
+
+1. **Rounded corners — now visible.** Replaced the fade-to-tray (which read as a
+   dark corner smudge against the sky) with MSAA alpha-to-coverage: true
+   silhouette corners are softly rounded against ANY background — sky, tray, or
+   another piece. Verify on the O (all four corners round) and the L (rounds the
+   outline, stays sharp at the inner elbow). No blend, no discard.
+2. **Soft shadow — now reads.** Darkened the tray-toned shadow and enlarged the
+   offset so it's clearly visible under a piece against the light tray and sky.
+3. **Gloss on all pieces — widened.** The specular streak is broader so large
+   pieces (I, L) get a visible glint, not just the compact/blue ones.
 
 ## The frames
 
 | File | What it shows |
 |---|---|
-| `01-light-candy-world-empty.png` | The light candy world (§19): soft sky-blue → warm cream gradient, calm slate tray. Replaces the old dark-indigo canvas. |
-| `02-falling-piece-glossy-glint.png` | A falling rose J — one hard near-white specular glint sweeping the whole piece, translucent body, smooth surface (§14). Reads as one connected candy, not four tiles. |
-| `03-stack-cyan-on-green.png` | A cyan O resting on a green I — gloss glint on the O, both read as single connected candies, contact between them. |
-| `04-spawn-with-soft-shadow.png` | An azure piece with a soft tray-coloured shadow band beneath it (§18). |
-| `05-connected-L-and-I.png` | A green L: one continuous grain/highlight across all cells (the "four separate squares" complaint is fixed, §15), softened outer corners (§16). |
-| `06-settled-candy-on-tray.png` | A settled cyan candy sitting on the tray — glossy, translucent, grounded. |
+| `01-light-candy-world-empty.png` | The light candy world (§19). |
+| `02-L-rounded-corners-sharp-elbow-shadow.png` | Green L: outer corners rounded, **inner elbow stays sharp**, soft shadow beneath. |
+| `03-O-rounded-corners-shadow-and-remaining-seam.png` | Cyan O falling: four rounded corners + shadow. **Also shows the one thing still broken** — the internal "+" seam (see below). |
+| `04-settled-rounded-with-shadows.png` | Settled pieces: rounded, translucent, grounded by shadows. |
 
-## Does it hit the definition of done?
+## The one remaining defect — and why it's not mine to fix
 
-- **Glossy** — yes: a hard, high-contrast near-white specular streak (§14).
-- **Connected candy, not four tiles** — yes: body-wide UV means one continuous
-  grain/highlight/subsurface across the whole piece (§15, the client's literal
-  complaint).
-- **Rounded outer corners** — yes but subtle and the most tuning-dependent item;
-  see open questions.
-- **Translucent body** — yes: the raised subsurface term reads as jelly depth.
-- **Soft shadow** — yes, reads in mid-air/stacked configs; subtler for a piece
-  flush on the floor (physically correct). A softer *spread* is a flagged
-  follow-up.
-- **Light candy background** — yes.
+The internal cell seam (the dark "+" splitting the O into four) is **still
+there**. I traced it to source: it is NOT edge or contact darkening (both are
+correctly 0 on internal seams — verified at `SoftBodyWorld.kt:252` and
+`XpbdSolver.kt:449`). It is a **mesh-topology defect**: the render mesh is
+per-cell with no geometry bridging two cells, so abutting cells carry a
+one-grid-step UV discontinuity across every internal seam, and the grain/specular
+step across it.
 
-## Open questions for the client / on-device tune (see handoff 0037)
+This needs the Backend Engineer's mesh (seam-bridging geometry, or a unified
+tetromino lattice) — I can't fix it in the shader, and doing the topology change
+solo the day of a client demo is the wrong risk. Full diagnosis with line
+numbers is in **handoff 0038** (frontend → backend). The rounded outer corners
+do soften the overall "four squares" gestalt, but the internal cross is honest
+in frame 03 so you can judge whether to show the client now or hold for the mesh
+fix.
 
-1. **Corner rounding vs. the sky.** Corners fade toward the tray colour
-   (`corner-fade-mode`, §16's chosen compromise). Against the tray/other pieces
-   this softens the corner; on an *airborne* piece against the bright sky the
-   same fade reads as a faint dark corner fringe. Gain dialed back to keep it
-   gentle — but "how rounded" is the top client steer.
-2. **Glow-patch brightness (§19).** The two sky glow patches are sane first-pass
-   values, NOT measured on the panel — a bright additive patch on a bright field
-   under-reads the opposite way the old dark-on-dark discs did.
-3. **Shadow spread (§18).** Offset + edge-feather only; no per-body-centroid
-   outward scale (the mesh carries no centroid). A soft blurred spread is the
-   follow-up if the client wants more.
-4. **MSAA cost (§17).** 4× requested with graceful fallback. Its real bandwidth
-   cost, stacked with the shadow pass and the full-screen background, is only
-   measurable on the phone via the frame-time readout.
-5. **Palette is a first pass** — hues unchanged from `piece-identity.md`; the
-   client steers colours next.
+## Still first-pass / owed on-device (handoff 0037)
+
+- Sky glow-patch brightness (§19) — not measured on the panel.
+- Specular is still somewhat shape/position-dependent (single fixed streak).
+- MSAA + shadow + full-screen background frame cost — only the phone can price it.
+- Palette hues unchanged; the client steers colours next.
