@@ -142,6 +142,15 @@ the emulator depends on the run topping out rather than clearing first.
   session; it changes *when*, never *how*.
 - **Game-over is unproven on hardware** here — only the client's phone can fill a
   well and exercise the real overflow→grace→game-over→restart loop end to end.
+- **Cosmetic (Code-Reviewer-confirmed benign):** at launch the spawn counter
+  logs `spawn #1` twice. GLSurfaceView recreates its GL thread as the surface/
+  insets settle; each incarnation runs `buildSession` once (pre- and post-inset
+  well configs genuinely differ), and `buildSession` resets the spawn tracker,
+  so the first piece of each logs `spawn #1`. Strictly sequential on non-
+  overlapping threads (GLSurfaceView joins the old thread before starting the
+  new), so no race — the clean sequential *clear* counts confirm one session is
+  ever driven. Left ungated to avoid another CI cycle; a one-line
+  "first-layout-settled" guard removes the noise if wanted.
 
 ---
 *— **Frontend Engineer***
