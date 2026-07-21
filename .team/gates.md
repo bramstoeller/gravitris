@@ -37,3 +37,29 @@ Repository artifacts stay in English.
 **Standing client constraints:**
 - Keep iteration one simple. Prefer the simple solution, defer optional complexity.
 - Store-ready is the release target; a playable prototype is milestone one.
+
+## Round 2 — "commercial modern game" (client autonomy grant, 2026-07-21)
+
+The client played the wired game and asked for a full redesign, granting the
+team full autonomy on structure: *"Bedenk zelf maar hoe jullie het doen... Gebruik
+PR's en peer reviews en laat het mij weten als jullie als team achter de nieuwe
+versie staan. Die moet er echt al uitzien als een commercieel modern spel. Mag
+nog zonder menu en highscores."*
+
+**A team-consensus quality gate now precedes the client demo.** Do NOT surface
+this round to the client until ALL of these hold, verified not asserted:
+- **Shape:** seven tetromino pieces, rotatable (backend `feat/tetromino-pieces`).
+- **Controls:** slide L/R (short window) → release-to-fall-with-gravity →
+  rotate-while-falling (frontend `feat/drop-controls`, backend phase lifecycle).
+- **Look:** a full modern visual layer per the UX direction (99 Bricks + Candy
+  Crush references) — real background, band-clear juice, a game HUD replacing the
+  debug readout, a designed game-over screen. Bar: **looks like a commercial 2026
+  mobile game, not a tech demo.**
+- **Team endorsement:** UX signs the look meets the bar; QA confirms it plays;
+  Code Reviewer approves the code; the Product Lead verifies the build in the
+  emulator. Only then does it go to the client.
+
+Not required this round: menu, high scores, score persistence.
+
+Sequence: design/foundation (UX spec + tetromino + controls) → integrate the
+visual layer on the shaped+controlled game → team validation → client demo.
