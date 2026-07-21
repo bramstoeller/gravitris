@@ -62,7 +62,7 @@ make build
 
 ### Installing on a phone (sideload)
 
-**The client-facing instructions are `docs/install-milestone-1.md`** — send them
+**The client-facing instructions are `docs/install.md`** — send them
 that, not this file. It covers the "install from unknown sources" warning in
 plain language, states the permission posture accurately, and says what to
 report back.
