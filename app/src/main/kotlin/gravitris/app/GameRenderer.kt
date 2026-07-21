@@ -94,6 +94,21 @@ class GameRenderer(
      *  when a session is (re)built. */
     private var wasGameOver = false
 
+    // --- mechanic instrumentation -------------------------------------------
+    // Counters that turn "watch gel blobs on a software renderer" into a
+    // definite yes/no: a clear is unambiguously a [Phase.Clearing] entry, a
+    // spawn an activePieceBody going from -1 to a real index. Surfaced in the
+    // readout and logged (with bodies + the fill that triggered the clear) so a
+    // play-through can prove a band actually ignites and dissolves rather than
+    // the well quietly emptying for some other reason.
+    private var clearsSeen = 0
+    private var spawnsSeen = 0
+    private var wasClearing = false
+    private var prevActivePiece = -1
+
+    fun clearCount(): Int = clearsSeen
+    fun spawnCount(): Int = spawnsSeen
+
     /**
      * The per-tick input drain handed to [GameSession.advance]. Field-held so
      * the per-frame render path allocates nothing (ADR 0007). [FrameDriver]
@@ -403,15 +418,39 @@ class GameRenderer(
 
         val alpha = advanceSimulation(session, frameStart)
 
+        val st = session.state
+
+        // Instrument the mechanic. A clear is exactly a [Phase.Clearing] entry;
+        // counting the *transition* (not the frames it holds) and logging the
+        // body count and the fill that triggered it is the unambiguous "a band
+        // ignited and dissolved" signal. A spawn is activePieceBody leaving -1.
+        val clearing = st.phase is Phase.Clearing
+        if (clearing && !wasClearing) {
+            clearsSeen++
+            android.util.Log.i(
+                LOG_TAG,
+                "clear #$clearsSeen tick=${st.tick} bodies=${st.bodyCount} " +
+                    "maxFill=${maxBandFill(st.bandFill)}",
+            )
+        }
+        wasClearing = clearing
+        val active = st.activePieceBody
+        if (prevActivePiece < 0 && active >= 0) {
+            spawnsSeen++
+            android.util.Log.i(LOG_TAG, "spawn #$spawnsSeen tick=${st.tick} bodies=${st.bodyCount}")
+        }
+        prevActivePiece = active
+
         // Game over is terminal until a restart, so raise the overlay once
         // rather than every frame the phase holds. Read-don't-retain: the phase
         // is read fresh here and never captured (Phase.Overflow is a reused,
         // mutated instance — see its contract). Overflow itself needs no handling
         // — the stack simply renders while its grace counts down, then either
         // settles back to Playing or crosses into GameOver here.
-        if (session.state.phase is Phase.GameOver) {
+        if (st.phase is Phase.GameOver) {
             if (!wasGameOver) {
                 wasGameOver = true
+                android.util.Log.i(LOG_TAG, "game over tick=${st.tick} after $clearsSeen clears, $spawnsSeen spawns")
                 onGameOver()
             }
         }
@@ -579,6 +618,10 @@ class GameRenderer(
         sessionConfig = config
         lastTick = 0
         wasGameOver = false
+        // Transition trackers reset with the session; the cumulative clear/spawn
+        // counters do not — they are a lifetime instrument across a restart.
+        wasClearing = false
+        prevActivePiece = -1
         mesh.invalidateArchetypes()
         session.resetAccumulator()
         lastFrameNanos = 0L
@@ -610,7 +653,18 @@ class GameRenderer(
     fun dynamicBytesPerFrame(): Int =
         (session?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
 
+    /** The fullest band right now, two decimals, for the clear log. Hand-rolled
+     *  rather than `.max()` to avoid an allocation and a nullable on the array. */
+    private fun maxBandFill(fill: FloatArray): String {
+        var m = 0f
+        for (f in fill) if (f > m) m = f
+        return String.format(java.util.Locale.US, "%.2f", m)
+    }
+
     companion object {
+        /** logcat tag for the mechanic instrumentation (clear/spawn/game-over). */
+        private const val LOG_TAG = "GravitrisPlay"
+
         /** ~4Hz. Fast enough to watch a number move, slow enough not to
          *  pollute the measurement. */
         private const val STATS_PUBLISH_INTERVAL_NANOS = 250_000_000L

@@ -211,6 +211,12 @@ if echo "$install_output" | grep -q "^Failure"; then
   exit 1
 fi
 
+# Clear the log buffer right before launch so the mechanic events captured at
+# the end belong to this session only. GravitrisPlay is GameRenderer's tag for
+# clear / spawn / game-over events — the unambiguous "a band ignited" signal.
+LOG_TAG="GravitrisPlay"
+adb -s "$SERIAL" logcat -c 2>/dev/null || true
+
 # Pass the debug clear-threshold as a float extra when one is set. `--ef` is an
 # am float extra; MainActivity ignores it on a non-debuggable build.
 THRESHOLD_ARGS=()
@@ -330,6 +336,16 @@ done
 # Let the last clear-and-re-settle finish, then capture the final state.
 sleep 4
 shot 999 after-settle
+
+# Dump the mechanic event log — the definitive record of what actually happened:
+# every clear (with the body count and the fill that triggered it), every spawn,
+# and any game over. This is what turns the screenshots from "gel blobs on a
+# software renderer" into a yes/no.
+MECHANIC_LOG="$OUT_DIR/mechanic.log"
+adb -s "$SERIAL" logcat -d -s "$LOG_TAG:I" > "$MECHANIC_LOG" 2>/dev/null || true
+clears_logged=$(grep -c "^.*clear #" "$MECHANIC_LOG" 2>/dev/null || echo 0)
+spawns_logged=$(grep -c "^.*spawn #" "$MECHANIC_LOG" 2>/dev/null || echo 0)
+echo "==> Mechanic log: $MECHANIC_LOG ($clears_logged clears, $spawns_logged spawns)"
 
 cat <<EOF
 

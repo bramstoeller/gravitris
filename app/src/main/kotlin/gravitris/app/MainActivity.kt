@@ -89,6 +89,8 @@ class MainActivity : Activity() {
                 renderContext.masterVibrateOn = haptics.masterVibrateOn
                 renderContext.touchFeedbackOn = haptics.touchFeedbackOn
                 renderContext.shadeLevel = renderer.shadeLevel
+                renderContext.clears = renderer.clearCount()
+                renderContext.spawns = renderer.spawnCount()
                 readout.view.post { readout.update(snapshot, renderContext) }
             },
             onLayout = { worldPerDp ->

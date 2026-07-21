@@ -101,6 +101,7 @@ class FrameTimeReadout(context: Context) {
                 "%5.1fms cpu  %5.1fms max%n" +
                 "%5.1f fps   %5d jank/s%n" +
                 "%5d tri   %5d bodies%n" +
+                "%5d clr   %5d spn%n" +
                 "%5.1f KB/f  %s%n" +
                 "%s%n" +
                 "  imp:%d puls:%d e:%.2f%n" +
@@ -110,6 +111,7 @@ class FrameTimeReadout(context: Context) {
             snapshot.meanCpuMs, snapshot.maxMs,
             snapshot.fps, snapshot.jankPerSecond,
             context.triangles, context.bodies,
+            context.clears, context.spawns,
             context.dynamicBytesPerFrame / 1024f,
             shadeLabel(context.shadeLevel),
             context.hapticsMode.readout,
@@ -228,6 +230,17 @@ class FrameTimeReadout(context: Context) {
          * tier is self-evidently a reduced tier.
          */
         var shadeLevel = 0
+
+        /**
+         * Cumulative band clears and piece spawns since launch. Not a frame-time
+         * figure — they exist so a play-through screenshot proves the mechanic
+         * *runs*: `clr` climbing means bands are actually igniting and
+         * dissolving (not the well emptying for some other reason), and `spn`
+         * climbing means pieces keep being dealt. `GameRenderer` counts them off
+         * the phase and the active-piece index.
+         */
+        var clears = 0
+        var spawns = 0
     }
 
     /**
