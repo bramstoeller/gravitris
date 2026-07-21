@@ -50,7 +50,8 @@ class DeformationTest {
         val config = config()
         val sim = Simulation(config)
         val body = sim.addPiece(archetype = 0, centerX = 5f, centerY = 15f)
-        sim.step(InputFrame().apply { hardDrop = true; hardDropVelocity = 30f })
+        sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016)
+        sim.step(InputFrame())
 
         var flattest = Float.MAX_VALUE
         var widest = 0f
@@ -121,7 +122,8 @@ class DeformationTest {
         val config = config()
         val sim = Simulation(config)
         val body = sim.addPiece(archetype = 0, centerX = 5f, centerY = 15f)
-        sim.step(InputFrame().apply { hardDrop = true; hardDropVelocity = 30f })
+        sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016)
+        sim.step(InputFrame())
 
         var lowest = Float.MAX_VALUE
         val input = InputFrame()

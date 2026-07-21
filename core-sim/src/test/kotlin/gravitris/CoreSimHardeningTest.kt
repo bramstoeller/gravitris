@@ -197,10 +197,7 @@ class CoreSimHardeningTest {
         when {
             tick % 53 == 0 -> input.rotate = true
             tick % 11 == 0 -> input.dragX = if ((tick / 11) % 2 == 0) 0.9f else -0.9f
-            tick % 97 == 0 -> {
-                input.hardDrop = true
-                input.hardDropVelocity = 30f
-            }
+            tick % 97 == 0 -> sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016)
         }
         sim.step(input)
     }

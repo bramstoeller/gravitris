@@ -119,8 +119,21 @@ class MechanicTuning(config: SimConfig) {
      */
     var graceTicks: Int = config.graceTicks
 
+    /**
+     * Ticks a new piece may be slid left/right before it drops on its own
+     * (ADR 0016). The positioning window — the client's "much less long able to
+     * move" — and the time pressure that is half the difficulty fix.
+     *
+     * A **tick** count, not wall-clock (ADR 0013), so the window is the same
+     * duration on a device that drops frames. Live because "short" and "urgent"
+     * are a feel the client sets by playing, not by argument — the Product Lead
+     * turns this in front of them. 50 ticks ≈ 0.83 s is a starting guess.
+     */
+    var positioningTicks: Int = 50
+
     init {
         require(clearEnvelopeTicks >= 1) { "clearEnvelopeTicks must be >= 1" }
+        require(positioningTicks >= 1) { "positioningTicks must be >= 1, was $positioningTicks" }
         require(graceTicks >= 1) { "graceTicks must be >= 1, was $graceTicks" }
         require(clearMinTicks >= clearEnvelopeTicks) {
             "clearMinTicks ($clearMinTicks) must be >= clearEnvelopeTicks ($clearEnvelopeTicks); " +

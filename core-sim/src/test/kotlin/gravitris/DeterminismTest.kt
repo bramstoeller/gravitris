@@ -1,6 +1,7 @@
 package gravitris
 
 import gravitris.game.InputFrame
+import gravitris.game.PiecePhase
 import gravitris.game.SimConfig
 import gravitris.game.Simulation
 import org.junit.jupiter.api.Assertions.assertArrayEquals
@@ -32,10 +33,7 @@ class DeterminismTest {
         when {
             tick % 47 == 0 -> input.rotate = true
             tick % 13 == 0 -> input.dragX = if ((tick / 13) % 2 == 0) 0.22f else -0.17f
-            tick % 101 == 0 -> {
-                input.hardDrop = true
-                input.hardDropVelocity = 9f
-            }
+            tick % 101 == 0 -> sim.slamActivePiece(9f) // impact-velocity probe (ADR 0016)
         }
         sim.step(input)
     }
@@ -150,6 +148,42 @@ class DeterminismTest {
             whole,
             TestScenes.fingerprint(sim.state),
             "1300 + 1300 must equal 2600 for a running game too",
+        )
+    }
+
+    /**
+     * The new control lifecycle (ADR 0016) adds two input paths that only fire
+     * in specific phases — a slide while positioning, a rotate while falling —
+     * plus an early drop and the gravity suppress/restore around it. None of the
+     * other determinism tests exercise input through a *running* game (they use
+     * a harness piece or empty input), so this one drives phase-appropriate
+     * intent against the dealer and asserts the whole thing still replays bit
+     * for bit. If the weightless toggle, the positioning countdown or the phase
+     * gate ever depended on anything outside (state, input), it shows here.
+     */
+    private fun runPhasedGame(frames: Int, seed: Long): IntArray {
+        val sim = Simulation(config().copy(seed = seed))
+        sim.start()
+        val input = InputFrame()
+        for (tick in 0 until frames) {
+            input.clear()
+            if (sim.state.activePiecePhase == PiecePhase.POSITIONING) {
+                input.dragX = if ((tick / 8) % 2 == 0) 0.18f else -0.14f
+                if (tick % 37 == 0) input.drop = true
+            } else if (tick % 17 == 0) {
+                input.rotate = true
+            }
+            sim.step(input)
+        }
+        return TestScenes.fingerprint(sim.state)
+    }
+
+    @Test
+    fun `a running game with phased slide-and-rotate input is bit-identical across runs`() {
+        assertArrayEquals(
+            runPhasedGame(1500, seed = 424242L),
+            runPhasedGame(1500, seed = 424242L),
+            "positioning-slide + falling-rotate + early-drop must replay bit-identically",
         )
     }
 
