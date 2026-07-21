@@ -124,6 +124,51 @@ from `SimState`.
   ships additively and independently green; `:app` (index assembly move,
   `extrudeBoundary` gated on `particleFreeEdges`, re-render) is handoff 0039.
 
+## Follow-up: the O centre junction (2026-07-21)
+
+The `:app` half (handoff 0040) shipped and the "+" is gone on I/T/S/Z/J/L — but
+the O showed a small square hole at its dead centre. The O is the only shape
+where four cells meet at a *point* (a 2×2 block), and the seam model above is
+strictly edge-to-edge: the four pairwise seam bridges each clip one corner of the
+central 2r×2r square and leave the middle untriangulated. The old per-cell
+extrusion had masked it by collapsing the four inner corners over the centre; the
+correct silhouette extrusion (gated on `particleFreeEdges`) exposed it.
+
+**Fix: fill the junction square with two render triangles on its four inner
+corners, and add NO solver constraint.** `bodyTriangleIndices[O]` gains the two
+triangles; nothing else changes. Two measured facts drove the render-only choice:
+
+- **The obvious near-rigid area constraint destabilises heavy piles.** Backing
+  the fill with a cell-style area constraint (the natural way to keep "every
+  render triangle is an area constraint") turns the O centre into a stiff mode the
+  solver cannot damp in 8 substeps against the single global `areaCompliance`
+  (there is no per-constraint compliance). Measured: a mass-8 O-bearing pile that
+  used to settle rings at kinetic energy ~0.08–0.41 and never falls below the 0.05
+  quiet line across 6000 ticks — a direct regression of ADR 0003's stability
+  guarantee. Adding shear diagonals instead of, or alongside, area did not rescue
+  it. So no junction constraint is added.
+- **It is safe without one.** The junction square's four edges are already welded
+  by the four seams' structural constraints, so the hole cannot reopen and the
+  centre cannot tear. And `particleCompression` is per-*particle* (accumulated
+  from the constraints touching each particle, `XpbdSolver` compression pass), so
+  the fill triangle shades correctly by interpolating its four corners — each of
+  which is already constrained by its cell and the seams. The O settled fine
+  before this change; the defect was render-only, so the fix is render-only.
+
+This is the single documented exception to "every render triangle is a solver area
+constraint": `SeamlessTopologyTest` now asserts every area constraint is drawn and
+that the *only* render triangles beyond them are the O's two junction fills (a
+triangle spanning three distinct cells, which nothing else produces). `:app` needs
+zero changes — it concatenates `bodyTriangleIndices` by length regardless of how
+many triangles a shape carries.
+
+Rejected: a per-constraint area-compliance field so the junction could be a soft
+area constraint. It is the "correct" physical answer, but it adds an array read to
+the area-solve hot loop on every constraint every substep — a per-frame cost on
+the Fairphone budget (ADR 0009/0014) for a tear the welded perimeter already
+prevents. Revisit only if the O centre visibly deforms wrongly in play; it is a
+look-call for the Frontend's re-render, not a data defect.
+
 ## Alternatives considered
 
 **Stay on B2 and tune the shader to hide the step** — rejected. The step is a
