@@ -47,6 +47,19 @@ object VertexFill {
     private const val MIN_DIRECTION_LENGTH = 1e-7f
 
     /**
+     * The per-direction free-surface bits of [SimState.particleFreeEdges], a
+     * frozen wire format (ADR 0018 / `docs/contracts.md` §3): a set bit means the
+     * particle presents TRUE outer silhouette on that side; a seam-facing side is
+     * clear. Mirrored here as literals rather than imported from the core enum —
+     * `:app` cannot see the internal `SoftBodyWorld` constant, and the contract
+     * names these values precisely so it need not.
+     */
+    private const val FREE_LEFT = 1
+    private const val FREE_RIGHT = 2
+    private const val FREE_DOWN = 4
+    private const val FREE_UP = 8
+
+    /**
      * The ADR 0006 render interpolation, fused into the buffer fill.
      *
      * The ADR notes this is where interpolation becomes almost free: the vertex
@@ -93,7 +106,7 @@ object VertexFill {
             out[cursor++] = contact[i]
         }
 
-        extrudeBoundary(out, particles, state.bodyLattice, state.particleRadius)
+        extrudeBoundary(out, particles, state.bodyLattice, state.particleRadius, state.particleFreeEdges)
         return cursor
     }
 
@@ -178,6 +191,21 @@ object VertexFill {
      * scratch buffer and no per-frame allocation. Ordering cannot matter if
      * nothing read is ever written.
      *
+     * ## Only TRUE silhouette edges, not every cell's ring (ADR 0018)
+     *
+     * A tetromino is four cells, and the old version of this pass extruded
+     * *every* cell's outer ring — including the columns where two cells abut.
+     * Those seam-facing columns sit `2 * radius` apart (a particle centre in
+     * each cell), and pushing both toward each other collapsed them coincident,
+     * stamping a hard `+` seam across the piece. The fix moves the decision off
+     * "is this particle on its cell's edge" and onto [SimState.particleFreeEdges],
+     * which is set only on sides that face empty space: a seam-facing side has
+     * its bit clear, so it is left at its centre and the per-archetype bridge
+     * geometry ([SimState.bodyTriangleIndices], assembled in [BodyMesh]) fills
+     * the `2 * radius` seam with real interpolated triangles instead. The result
+     * is one continuous silhouette extruded by a radius, with the interior seams
+     * welded rather than collapsed.
+     *
      * ## What it does not do
      *
      * The true surface of a union of disks is *rounded* at a body's corners.
@@ -186,10 +214,17 @@ object VertexFill {
      * adding a rounding fan would cost vertices, bandwidth and a second index
      * layout for no gain the client can see at this size. Squaring the corner
      * instead overshoots the true arc by `radius * (sqrt(2) - 1)`, about
-     * 0.09 world units at lattice 5, at four points per body. Blocks with
-     * sharp corners is also what the piece is supposed to look like.
+     * 0.09 world units at lattice 5, at four points per body. The §16 corner
+     * rounding rounds only the true outer corners in-shader; sharp inner elbows
+     * (an L) are supposed to stay sharp.
      */
-    private fun extrudeBoundary(out: FloatArray, particles: Int, lattice: Int, radius: Float) {
+    private fun extrudeBoundary(
+        out: FloatArray,
+        particles: Int,
+        lattice: Int,
+        radius: Float,
+        freeEdges: IntArray,
+    ) {
         // A lattice of 2 is all corners and has no interior to measure an
         // outward direction against. SimConfig only ever produces 4, 5 or 6
         // (ADR 0009), so this is a guard against a future tier, not a case
@@ -197,38 +232,49 @@ object VertexFill {
         // failure than drawing a NaN one.
         if (lattice < 3 || radius <= 0f) return
 
-        val particlesPerBody = lattice * lattice
-        val last = lattice - 1
-        val bodies = particles / particlesPerBody
+        val particlesPerCell = lattice * lattice
 
-        for (body in 0 until bodies) {
-            val base = body * particlesPerBody
-            for (row in 0..last) {
-                // Which way is inward on each axis. Zero means this particle is
-                // not on that pair of edges; a corner gets both, and the two
-                // together make the diagonal step.
-                val rowStep = if (row == 0) 1 else if (row == last) -1 else 0
-                for (column in 0..last) {
-                    val columnStep = if (column == 0) 1 else if (column == last) -1 else 0
-                    if (rowStep == 0 && columnStep == 0) continue // interior
+        for (i in 0 until particles) {
+            val mask = freeEdges[i]
+            if (mask == 0) continue // interior OR seam-facing: left for the bridge
 
-                    val vertex = (base + row * lattice + column) * BodyMesh.FLOATS_PER_VERTEX
-                    val reference = (base + (row + rowStep) * lattice + (column + columnStep)) *
-                        BodyMesh.FLOATS_PER_VERTEX
-
-                    val dx = out[vertex] - out[reference]
-                    val dy = out[vertex + 1] - out[reference + 1]
-                    val length = kotlin.math.sqrt(dx * dx + dy * dy)
-                    if (length < MIN_DIRECTION_LENGTH) continue
-
-                    // One radius per axis the particle is on an edge of, so the
-                    // two offset edges of a corner meet squarely.
-                    val reach = if (rowStep != 0 && columnStep != 0) radius * SQRT_2 else radius
-                    val scale = reach / length
-                    out[vertex] += dx * scale
-                    out[vertex + 1] += dy * scale
-                }
+            // Inward step along each free axis. A free LEFT side means empty
+            // space to -x, so the interior is to +x; and so on. LEFT/RIGHT are
+            // never both set, nor DOWN/UP (contract), so this is unambiguous.
+            val columnStep = when {
+                mask and FREE_LEFT != 0 -> 1
+                mask and FREE_RIGHT != 0 -> -1
+                else -> 0
             }
+            val rowStep = when {
+                mask and FREE_DOWN != 0 -> 1
+                mask and FREE_UP != 0 -> -1
+                else -> 0
+            }
+            if (rowStep == 0 && columnStep == 0) continue
+
+            // The inward reference is one step along each free axis, within this
+            // particle's OWN cell — a free side is always on that cell's edge, so
+            // the step lands strictly interior for any lattice >= 3.
+            val cellBase = (i / particlesPerCell) * particlesPerCell
+            val local = i - cellBase
+            val row = local / lattice
+            val column = local % lattice
+            val reference = (cellBase + (row + rowStep) * lattice + (column + columnStep)) *
+                BodyMesh.FLOATS_PER_VERTEX
+            val vertex = i * BodyMesh.FLOATS_PER_VERTEX
+
+            val dx = out[vertex] - out[reference]
+            val dy = out[vertex + 1] - out[reference + 1]
+            val length = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (length < MIN_DIRECTION_LENGTH) continue
+
+            // One radius per free axis, so the two offset edges of a true corner
+            // meet squarely; a single-axis edge moves one radius straight out.
+            val reach = if (rowStep != 0 && columnStep != 0) radius * SQRT_2 else radius
+            val scale = reach / length
+            out[vertex] += dx * scale
+            out[vertex + 1] += dy * scale
         }
     }
 }
