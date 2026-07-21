@@ -1,7 +1,13 @@
 # Review: feat/tetromino-pieces (PR #24)
 
 Verdict: approve-with-comments
-Range: `origin/main` `3ec22aa` .. `origin/feat/tetromino-pieces`
+Range: `origin/main` `3ec22aa` .. `origin/feat/tetromino-pieces` `dce2c7d`
+
+**Commit-3 delta (`dce2c7d`, reviewed after the initial verdict).** Two of my
+non-blocking comments are addressed and one is only partly addressed — details in
+"Commit 3 delta" below. `:core-sim` re-verified on a cold merge: 84 tests, 0
+failures, 0 skipped, with the new lattice-4 default. Verdict unchanged: clear to
+land as the geometry half.
 
 The tetromino geometry (ADR 0015) and the positioning→falling control lifecycle
 (ADR 0016): seven shapes as four bonded `L×L` soft-body cells, spawning, sliding,
@@ -66,18 +72,42 @@ None.
   enum — all additive, with the guarantee `activePiecePhase == POSITIONING ⇒
   activePieceBody >= 0` so a stray drag can never move a non-positioning piece.
 
+## Commit 3 delta (`dce2c7d`)
+
+- **Lattice-4 pin — clean.** `SimConfig.lattice` default `5 → 4`, well defaults
+  `10×20 → 20×40`, with docs deferring the pin story to ADR 0014 ("accepts 4|5|6,
+  shipping tier pinned at 4, no runtime tier selection"). It is a **value-only**
+  default change — the geometry stays fully parametric, no tier logic is
+  hardcoded. Re-verified: `:core-sim` 84 tests, 0 failures, 0 skipped on a full
+  `--rerun-tasks` (test configs are explicit, so only the game default moved).
+- **`triangleIndices` doc → per-cell — correct.** Now documents cell-local reuse:
+  a body is `particlesPerBody / bodyLattice²` cells, draw the index set per cell
+  at vertex offset `k · bodyLattice²`; values unchanged ("a cell *is* the old
+  block"). Matches the per-cell extrusion and the B2 seam-not-triangulated /
+  `particleEdge`-0-on-seams rendering. Aligns the contract with what the Frontend
+  consumes.
+- **`slamActivePiece` — doc hardened, but the annotation was NOT added.** The doc
+  is now emphatic ("Test/probe only — MUST NOT be called from game or production
+  code"), which strengthens the structural guarantee. But commit 3 did **not**
+  add any `@VisibleForTesting`; it explicitly declines it, reasoning that the
+  annotation "lives in `androidx.annotation`" which `:core-sim` cannot depend on.
+  That reasoning overlooks the pure-JVM `org.jetbrains.annotations.VisibleForTesting`,
+  which needs no Android dependency and is the correct lever. So the annotation
+  half of the Architect's nit remains open — see below. This does not change the
+  verdict: the hard-drop control path is closed structurally (no `hardDrop` on
+  `InputFrame`, `applyInput` never calls `slam`) and the doc now says so
+  forcefully.
+
 ## Should fix (non-blocking)
 
-- **`slamActivePiece` is doc-gated but not annotation-gated.** The Architect's nit
-  (as relayed) was "`@VisibleForTesting` + doc"; only the doc is present — there is
-  no `@VisibleForTesting` anywhere in `:core-sim`. It is a plain `public fun`
-  (necessarily so: `:app` tests call `slamActivePiece(30f)`). In practice the
-  hard-drop control path is already closed structurally — `InputFrame` has no
-  `hardDrop` and `applyInput` never calls `slam`, so it cannot return through a
-  gesture — which is the substantive guarantee. But to actually satisfy the nit,
-  add a pure-JVM `org.jetbrains.annotations.VisibleForTesting` (**not** the
-  `androidx` one — that would pull an Android dependency into `:core-sim` and trip
-  `CheckNoAndroidDependency` / ADR 0002). Minor; not a merge blocker.
+- **`slamActivePiece`: the `@VisibleForTesting` annotation is still absent after
+  commit 3.** The doc is now strong (commit 3), and the control path is closed
+  structurally, so this is genuinely optional — but if the Architect wants the
+  compiler-level guard their nit asked for, it *is* achievable: add pure-JVM
+  `org.jetbrains.annotations.VisibleForTesting`. Commit 3 declined the annotation
+  on the mistaken grounds that it only exists in `androidx.annotation` (which
+  would indeed trip `CheckNoAndroidDependency` / ADR 0002); the JetBrains one does
+  not. Not a merge blocker either way.
 - **Consumer sign-off on the `InputFrame`/`SimState` contract isn't separately
   recorded.** The ADRs 0015/0016 are Architect-approved and PR #23 (the Frontend's
   consumer) is green combined, which is strong evidence the shell builds against
