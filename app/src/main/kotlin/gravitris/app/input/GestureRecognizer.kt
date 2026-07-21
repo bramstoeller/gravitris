@@ -26,14 +26,37 @@ data class GestureConfig(
 )
 
 /**
- * The drag / tap / hard-drop state machine from `docs/ux/gestures.md`.
+ * The gesture state machine for the **slide → release → rotate** control model
+ * (client redesign, 2026-07-21).
  *
- * Pure Kotlin on purpose — it takes coordinates and timestamps, not
- * `MotionEvent`. That keeps the whole of gesture recognition testable on the
- * JVM with no device and no Robolectric, which matters because this is the
- * component whose failure modes (a tap read as a micro-drag, a drag read as a
- * hard drop) are the ones gestures.md exists to prevent and the ones a human
- * would have to feel to notice.
+ * The scheme: a piece is parked at the top (POSITIONING); the player slides it
+ * left/right to aim; releasing the finger drops it; while it falls (FALLING) a
+ * tap rotates it. The urgency comes from a short, tick-counted positioning
+ * window owned by `:core-sim`, not from anything here.
+ *
+ * ## This recogniser is deliberately phase-agnostic
+ *
+ * The conflict at the heart of the scheme is that "release = drop" and "tap =
+ * rotate" are **both a pointer-up**. Rather than teach this recogniser which
+ * phase the piece is in — which would mean marshalling the simulation phase
+ * onto the UI thread and binding it per gesture — the recogniser emits *both*
+ * intents and lets the core decide which one applies this tick:
+ *
+ * - every pointer-up emits **drop**;
+ * - a pointer-up whose gesture never left the touch slop (a tap) *also* emits
+ *   **rotate**;
+ * - horizontal travel past the slop emits **dragX**.
+ *
+ * `:core-sim` applies `dragX`/`drop` only in POSITIONING and `rotate` only in
+ * FALLING (docs/contracts.md §2: "the core decides what they mean"). So a tap
+ * while positioning drops the piece and a tap while falling rotates it, from
+ * the identical intent stream — and this class stays pure Kotlin, tested on the
+ * JVM with no device and no phase plumbing.
+ *
+ * It takes coordinates and timestamps, not `MotionEvent`, for the same reason:
+ * the failure modes that matter here (a tap read as a micro-drag, a decisive
+ * drag swallowing its own release) are the ones a human has to *feel*, so they
+ * are pinned down in `GestureRecognizerTest` instead.
  *
  * Coordinates arrive in **pixels**, screen convention: +y is downward.
  *
@@ -50,22 +73,13 @@ class GestureRecognizer(
     private val intent: PlayerIntent,
 ) {
 
-    private enum class Mode {
-        /** Pointer is down but has committed to nothing yet. */
-        UNDECIDED,
-
-        /** Horizontal drag; piece x follows the finger 1:1. */
-        DRAGGING,
-
-        /** Hard drop already fired for this gesture; ignore the rest of it. */
-        SPENT,
-    }
-
-    private val velocity = VelocityWindow()
-    private val velocityOut = FloatArray(2)
-
     private var activePointerId = INVALID_POINTER
-    private var mode = Mode.UNDECIDED
+
+    /** True once horizontal travel has passed the slop and drag is committed. */
+    private var dragging = false
+
+    /** True once the gesture has been cancelled; it then emits nothing on up. */
+    private var cancelled = false
 
     private var downXDp = 0f
     private var downYDp = 0f
@@ -75,7 +89,15 @@ class GestureRecognizer(
     private var maxDisplacementDp = 0f
 
     /**
-     * Timestamp of the last committed tap, for [Tunables.ROTATE_DEBOUNCE_NANOS].
+     * Timestamp of the last committed **tap** (rotate), for
+     * [Tunables.ROTATE_DEBOUNCE_NANOS].
+     *
+     * Only a tap arms this, never a drag-release: the debounce exists to
+     * absorb a touch-controller bounce double-reporting a tap as two rotates,
+     * which is the one duplicated intent that matters. A drag-release (aiming
+     * then dropping) does not arm it, so the common aim → drop → rotate flow
+     * has no debounce delay on its first rotate; only tap → drop → rotate does,
+     * and 60 ms there is imperceptible.
      *
      * [NO_ROTATE_YET] rather than [Long.MIN_VALUE], and tested for explicitly
      * below. `tNanos - Long.MIN_VALUE` overflows for every realistic timestamp,
@@ -94,7 +116,8 @@ class GestureRecognizer(
         // rotateDebounce: absorb touch-controller bounce / double-report by
         // ignoring a touch-down that lands within the debounce window of a
         // committed tap. The whole gesture is dropped, not just the tap, so a
-        // bounced down/up pair cannot produce a stray drag either.
+        // bounced down/up pair cannot produce a stray drag or a stray drop
+        // either.
         if (lastRotateNanos != NO_ROTATE_YET &&
             tNanos - lastRotateNanos < Tunables.ROTATE_DEBOUNCE_NANOS
         ) {
@@ -102,7 +125,8 @@ class GestureRecognizer(
         }
 
         activePointerId = pointerId
-        mode = Mode.UNDECIDED
+        dragging = false
+        cancelled = false
 
         val xDp = xPx / config.pxPerDp
         val yDp = yPx / config.pxPerDp
@@ -110,44 +134,27 @@ class GestureRecognizer(
         downYDp = yDp
         lastXDp = xDp
         maxDisplacementDp = 0f
-
-        velocity.clear()
-        velocity.addSample(tNanos, xDp, yDp)
     }
 
     /**
      * Feed one movement sample. Call this for every historical sample in a
-     * `MotionEvent` as well as its current position — see [VelocityWindow].
+     * `MotionEvent` as well as its current position, so a batched fast drag
+     * keeps every dp of travel (docs/contracts.md §2).
      */
     fun onPointerMove(pointerId: Int, xPx: Float, yPx: Float, tNanos: Long) {
-        if (pointerId != activePointerId) return
+        if (pointerId != activePointerId || cancelled) return
 
         val xDp = xPx / config.pxPerDp
         val yDp = yPx / config.pxPerDp
-        velocity.addSample(tNanos, xDp, yDp)
 
         val dxFromDown = xDp - downXDp
         val dyFromDown = yDp - downYDp
         val displacement = sqrt(dxFromDown * dxFromDown + dyFromDown * dyFromDown)
         if (displacement > maxDisplacementDp) maxDisplacementDp = displacement
 
-        if (mode == Mode.SPENT) {
-            lastXDp = xDp
-            return
-        }
-
-        // 1. Hard-drop check runs first and continuously, and can fire before
-        //    release — gestures.md: "this is the one gesture that should feel
-        //    instant." Checking it ahead of drag is what stops a fast downward
-        //    flick that drifts a little sideways from being eaten as a drag.
-        if (checkHardDrop(dyFromDown)) {
-            lastXDp = xDp
-            return
-        }
-
-        // 2. Drag. Enter drag mode once horizontal displacement passes slop.
-        if (mode == Mode.UNDECIDED && abs(dxFromDown) > config.touchSlopDp) {
-            mode = Mode.DRAGGING
+        // Enter drag mode once horizontal displacement passes the slop.
+        if (!dragging && abs(dxFromDown) > config.touchSlopDp) {
+            dragging = true
             // Start measuring from the point where slop was crossed, not from
             // touch-down, so the slop distance itself does not move the piece.
             //
@@ -166,11 +173,11 @@ class GestureRecognizer(
             lastXDp = downXDp + if (dxFromDown > 0f) config.touchSlopDp else -config.touchSlopDp
         }
 
-        if (mode == Mode.DRAGGING) {
+        if (dragging) {
             // Delta since the LAST SAMPLE, not since touch-down. gestures.md
             // is explicit: "so the thumb's absolute position on screen never
             // matters — a drag started anywhere behaves the same." This is
-            // also what makes "drag anywhere on screen" work without the
+            // also what makes "slide anywhere on screen" work without the
             // piece teleporting to the finger.
             val deltaDp = xDp - lastXDp
             if (deltaDp != 0f) {
@@ -184,6 +191,13 @@ class GestureRecognizer(
     fun onPointerUp(pointerId: Int, xPx: Float, yPx: Float, tNanos: Long) {
         if (pointerId != activePointerId) return
 
+        // A cancel already ended the gesture and emitted nothing; the trailing
+        // up must stay silent, not resurrect it as a drop.
+        if (cancelled) {
+            reset()
+            return
+        }
+
         // Fold the release position in before resolving: a gesture whose only
         // movement arrives with the UP event must still be able to disqualify
         // itself as a tap.
@@ -194,18 +208,19 @@ class GestureRecognizer(
         val displacement = sqrt(dxFromDown * dxFromDown + dyFromDown * dyFromDown)
         if (displacement > maxDisplacementDp) maxDisplacementDp = displacement
 
-        // 3. Tap, resolved on release. Slop only, NO duration limit —
-        //    gestures.md rejects a duration gate outright: "a hesitant,
-        //    slow-but-still-small press must still register as a rotate, not
-        //    silently do nothing because it took too long."
-        if (mode == Mode.UNDECIDED && maxDisplacementDp <= config.touchSlopDp) {
+        // Release is the drop. Every pointer-up emits it; the core applies it
+        // only while POSITIONING and ignores it while FALLING, so a release
+        // that lands after the piece has already dropped (the window expired
+        // mid-hold) is harmlessly ignored rather than double-dropping.
+        intent.requestDrop()
+
+        // A tap — never left the slop — *also* rotates. In POSITIONING the core
+        // takes the drop and ignores this; in FALLING it takes this and ignores
+        // the drop. Same up-event, disambiguated by phase in the core.
+        if (maxDisplacementDp <= config.touchSlopDp) {
             intent.requestRotate()
             lastRotateNanos = tNanos
         }
-
-        // 4. Released while dragging without ever crossing the hard-drop
-        //    thresholds: nothing to emit. The piece keeps the x it was dragged
-        //    to and carries on falling, which needs no signal at all.
 
         reset()
     }
@@ -214,41 +229,21 @@ class GestureRecognizer(
      * The gesture was taken away from us — the window lost focus, a system
      * gesture won, the view was detached. Emit nothing: an interrupted gesture
      * expressed no intent, and inventing one here is how a phone call turns
-     * into a hard drop.
+     * into a dropped piece.
+     *
+     * The gesture is marked cancelled rather than fully reset so that the
+     * trailing up which usually follows a cancel cannot be read as a fresh
+     * release-drop.
      */
     fun onCancel() {
-        reset()
-    }
-
-    /**
-     * @param dyFromDown downward travel since touch-down, dp (positive = down).
-     * @return true when a hard drop was committed by this sample.
-     */
-    private fun checkHardDrop(dyFromDown: Float): Boolean {
-        // Minimum travel gate first: it is the cheapest test and it is what
-        // stops a fast micro-jitter (a thumb settling) from firing a drop.
-        if (dyFromDown < Tunables.HARD_DROP_MIN_DISPLACEMENT_DP) return false
-        if (!velocity.velocityDpPerSecond(velocityOut)) return false
-
-        val vx = velocityOut[0]
-        val vy = velocityOut[1]
-        if (vy < Tunables.HARD_DROP_MIN_VELOCITY_DP_PER_S) return false
-
-        // Angle cone, as a dot product against straight-down (0, 1) rather
-        // than an atan2 — same test, no trigonometry per touch sample.
-        val speed = sqrt(vx * vx + vy * vy)
-        if (speed <= 0f) return false
-        if (vy / speed < Tunables.HARD_DROP_ANGLE_COS) return false
-
-        intent.requestHardDrop(vy * config.worldPerDp)
-        mode = Mode.SPENT
-        return true
+        cancelled = true
+        dragging = false
     }
 
     private fun reset() {
         activePointerId = INVALID_POINTER
-        mode = Mode.UNDECIDED
-        velocity.clear()
+        dragging = false
+        cancelled = false
     }
 
     private companion object {

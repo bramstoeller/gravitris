@@ -31,9 +31,13 @@ import gravitris.game.Simulation
  *
  * [Simulation.buildBenchmarkScene] is shared with the JVM benchmark
  * specifically so the two cannot drift and produce a ratio that compares
- * different scenes. It reproduces ADR 0001's measured workload exactly: 60
- * bodies at lattice 4, 960 particles, 3 600 constraints, 8 substeps,
- * compliance 1e-6.
+ * different scenes. It is the reference workload for the pinned tier
+ * (ADR 0014/0015): `Simulation.BENCHMARK_BODIES` = 24 tetrominoes at lattice 4,
+ * **1 536 particles, 7 296 constraints**, 8 substeps. This replaced ADR 0001's
+ * single-block scene (60 bodies / 960 particles / 3 600 constraints) when pieces
+ * became four-cell tetrominoes — a tetromino is ~4x the material, so the
+ * constraint count roughly doubled and the host figure with it (see
+ * [HOST_P50_MS]).
  *
  * ## Why the warm-up is as long as it is
  *
@@ -50,29 +54,39 @@ import gravitris.game.Simulation
 object SolverBenchmark {
 
     /**
-     * Median frame time for this exact benchmark on the build host, measured
-     * 2026-07-20 by running the shipped protocol three times: 0.4443, 0.4443,
-     * 0.4443 ms — repeatable to within 0.1%.
+     * Median frame time for this exact benchmark on the build host, on the
+     * pinned-tier tetromino scene (see [HOST_REF_PARTICLES]), measured 2026-07-21
+     * by the Backend Engineer running the shipped protocol three times: 0.860,
+     * 0.908, 0.863 ms. Taken as 0.86; the ~5% spread is container noise, wider
+     * than the old single-block scene's 0.1% but small against the 3–7x derating
+     * band this divides into.
      *
-     * **This is the divisor, and it is deliberately not the spike's 0.497 ms.**
-     * ADR 0009 and `.team/blockers.md` both say to divide by the figure in
-     * `/work/spike/solver-budget/results-host.txt`, and that instruction was
-     * written before `:core-sim` existed. That 0.497 ms was measured on the
-     * *spike's* solver — a different implementation, with different friction
-     * and contact ordering. The production solver runs the same scene about 11%
-     * faster on the same host.
+     * **This is the divisor, and it belongs to the current scene.** It rose from
+     * the old single-block 0.4443 ms by ~1.94x when pieces became four-cell
+     * tetrominoes and the constraint count roughly doubled (ADR 0015) — the two
+     * must move together, which is why [HOST_REF_PARTICLES] pins the scene this
+     * number was measured on and a test fails if the scene drifts from it.
      *
-     * Dividing a device figure by 0.497 would therefore fold an 11%
-     * implementation difference into what is supposed to be a pure
-     * hardware-derating number, and would understate the derating by that much.
-     * Same code, different hardware is the only comparison that means anything,
-     * so the divisor is this solver's own host figure. [SPIKE_HOST_P50_MS] is
-     * kept so anyone holding ADR 0009 can still reconcile the two.
+     * The reference host is the *build* host (this is where the "1x" baseline is
+     * established); the client's device time divides by it to get the ADR 0009
+     * derating factor. [SPIKE_HOST_P50_MS] is the old single-block spike figure,
+     * kept only for continuity with ADR 0009's text and **not comparable** to
+     * this tetromino number.
      */
-    const val HOST_P50_MS: Float = 0.4443f
+    const val HOST_P50_MS: Float = 0.86f
 
-    /** The spike's figure for the same scene on a different solver, kept for
-     *  continuity with ADR 0009's text. Not the divisor — see [HOST_P50_MS]. */
+    /**
+     * The particle count of the scene [HOST_P50_MS] was measured on. A divisor is
+     * only meaningful for the workload it was timed on, and nothing in the code
+     * links the two — so this records the pairing and `SolverBenchmarkTest` fails
+     * if [Simulation.buildBenchmarkScene] ever diverges from it, forcing whoever
+     * changes the scene to re-measure the divisor sitting right above.
+     */
+    const val HOST_REF_PARTICLES: Int = 1536
+
+    /** The spike's figure for the OLD single-block scene on a different solver,
+     *  kept only for continuity with ADR 0009's text. **Not the divisor and not
+     *  comparable to [HOST_P50_MS]** — it predates the tetromino scene. */
     const val SPIKE_HOST_P50_MS: Float = 0.497f
 
     /** Settle plus JIT warm-up, matching the host protocol's 900 frames. */

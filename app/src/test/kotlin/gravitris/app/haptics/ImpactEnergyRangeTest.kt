@@ -40,11 +40,8 @@ class ImpactEnergyRangeTest {
 
         toy.step(input)
         if (hardDrop) {
-            input.hardDrop = true
-            input.hardDropVelocity = 30f
+            toy.slamActivePiece(30f)
             toy.step(input)
-            input.hardDrop = false
-            input.hardDropVelocity = 0f
         }
 
         repeat(frames) {

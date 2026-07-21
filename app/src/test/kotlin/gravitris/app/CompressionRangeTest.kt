@@ -35,11 +35,8 @@ class CompressionRangeTest {
         val input = InputFrame()
 
         toy.step(input)
-        input.hardDrop = true
-        input.hardDropVelocity = 30f
+        toy.slamActivePiece(30f)
         toy.step(input)
-        input.hardDrop = false
-        input.hardDropVelocity = 0f
 
         var deepest = Float.MAX_VALUE
         repeat(300) {

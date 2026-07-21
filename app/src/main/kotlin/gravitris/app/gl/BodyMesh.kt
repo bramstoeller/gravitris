@@ -55,11 +55,23 @@ import java.nio.IntBuffer
  * construction so a future quality tier that breaks it fails loudly here
  * rather than rendering garbage.
  */
-class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
+class BodyMesh(private val maxParticles: Int, private val lattice: Int) {
 
-    private val particlesPerBody = lattice * lattice
-    private val maxParticles = maxBodies * particlesPerBody
-    private val indicesPerBody = LatticeTopology.indicesPerBody(lattice)
+    /**
+     * Particles in one `lattice x lattice` cell. **The renderer's unit is the
+     * cell, not the body** (ADR 0015): a tetromino body is four such cells laid
+     * out as four consecutive `particlesPerCell` blocks in the particle arrays,
+     * and the reused index pattern, the boundary extrusion and the per-instance
+     * stride all work in cell units. A single-block piece was one cell; a
+     * tetromino is four, at the same stride.
+     */
+    private val particlesPerCell = lattice * lattice
+
+    /** Cells the buffers are sized for — the worst-case particle capacity in cells. */
+    private val maxCells = maxParticles / particlesPerCell
+
+    /** Indices for one cell; the index buffer repeats this pattern per cell. */
+    private val indicesPerCell = LatticeTopology.indicesPerBody(lattice)
 
     private var vao = 0
     private var dynamicVbo = 0
@@ -100,10 +112,15 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     private var indexCount = 0
 
     init {
+        require(maxParticles % particlesPerCell == 0) {
+            "maxParticles ($maxParticles) is not a whole number of $particlesPerCell-particle " +
+                "cells; capacity must come from SimState.particleCapacity, which is always a " +
+                "whole number of bodies and therefore of cells"
+        }
         require(maxParticles <= 65_536) {
             "BodyMesh uses GL_UNSIGNED_SHORT indices, which cap at 65536 vertices; " +
-                "$maxBodies bodies x $particlesPerBody particles = $maxParticles. " +
-                "Either lower maxBodies or switch the IBO to GL_UNSIGNED_INT."
+                "$maxCells cells x $particlesPerCell particles = $maxParticles. " +
+                "Either lower the capacity or switch the IBO to GL_UNSIGNED_INT."
         }
     }
 
@@ -182,14 +199,14 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
     }
 
     /**
-     * Build the index buffer once. ADR 0007 §2: a body's lattice topology never
+     * Build the index buffer once. ADR 0007 §2: a cell's lattice topology never
      * changes, only its vertex positions do — so this is uploaded once and
-     * reused for every body forever. The pattern for body 0 is repeated with a
-     * vertex offset for each subsequent body, which is what lets all bodies
-     * share a single draw call.
+     * reused for every cell forever. The pattern for cell 0 is repeated with a
+     * vertex offset for each subsequent cell (a tetromino is four cells,
+     * ADR 0015), which is what lets the whole stack share a single draw call.
      */
     private fun uploadIndices() {
-        val indices = LatticeTopology.buildIndices(maxBodies, lattice)
+        val indices = LatticeTopology.buildIndices(maxCells, lattice)
 
         val buffer = ByteBuffer
             .allocateDirect(indices.size * Short.SIZE_BYTES)
@@ -225,7 +242,7 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         // app down with a message that says nothing about the actual cause.
         check(particles <= maxParticles) {
             "the simulation has $particles particles but the mesh was sized for " +
-                "$maxParticles ($maxBodies bodies x $particlesPerBody); the shell's body cap " +
+                "$maxParticles ($maxCells cells x $particlesPerCell); the shell's capacity " +
                 "and the buffer sizing have diverged"
         }
 
@@ -268,7 +285,10 @@ class BodyMesh(private val maxBodies: Int, private val lattice: Int) {
         }
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
-        indexCount = state.bodyCount * indicesPerBody
+        // Draw by CELL, not by body: a tetromino is four cells and the index
+        // pattern is per-cell (ADR 0015). particleCount is always a whole number
+        // of cells, so this is exact.
+        indexCount = (particles / particlesPerCell) * indicesPerCell
         return particles
     }
 

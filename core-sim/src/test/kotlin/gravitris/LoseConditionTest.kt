@@ -28,7 +28,7 @@ class LoseConditionTest {
         const val BUDGET = 15000
     }
 
-    private fun config(w: Float = 6f, h: Float = 12f) =
+    private fun config(w: Float = 14f, h: Float = 20f) =
         SimConfig(lattice = 5, wellWidth = w, wellHeight = h)
 
     /** A modest, quiet pile with room left at the spawn region. */
@@ -163,7 +163,7 @@ class LoseConditionTest {
         // A well wide enough that bands can fill horizontally and clear; the
         // narrow default never clears before it tops out, which is a fine
         // baseline but no contrast.
-        val wide = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f, seed = 7L)
+        val wide = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f, seed = 7L)
         fun ticksToGameOver(clearThreshold: Float): Int {
             val sim = Simulation(wide)
             sim.tuning.clearThreshold = clearThreshold

@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test
  */
 class CoreSimHardeningTest {
 
-    private fun config() = SimConfig(lattice = 5, wellWidth = 10f, wellHeight = 20f)
+    private fun config() = SimConfig(lattice = 5, wellWidth = 18f, wellHeight = 30f)
 
     private fun contactingParticles(sim: Simulation): Int {
         val s = sim.state
@@ -69,16 +69,19 @@ class CoreSimHardeningTest {
         val config = config()
         val sim = Simulation(config)
         val pitch = TestScenes.pitchFor(config)
-        val perRow = ((config.wellWidth - pitch) / pitch).toInt() + 1
+        val cx = config.wellWidth * 0.5f
 
         var placed = 0
         val overflow = assertThrows(IllegalStateException::class.java) {
             var b = 0
             while (true) {
+                // Stack straight up — the well top is open — at a pitch no two
+                // pieces can overlap at, so the throw is the capacity ceiling
+                // (ADR 0015 tetrominoes are too wide to grid-pack a narrow well).
                 sim.addPiece(
                     archetype = b % Simulation.ARCHETYPE_COUNT,
-                    centerX = pitch * 0.5f + (b % perRow) * pitch,
-                    centerY = pitch * 0.5f + (b / perRow) * pitch,
+                    centerX = cx,
+                    centerY = pitch * 0.5f + b * pitch,
                 )
                 placed++
                 b++
@@ -124,7 +127,7 @@ class CoreSimHardeningTest {
         // three orders below the quiet threshold, so this asserts stability, not
         // a lucky settling time.
         val config = config()
-        val sim = TestScenes.pile(config, bodies = 16)
+        val sim = TestScenes.pile(config, bodies = 6)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val settledContacts = contactingParticles(sim)
@@ -171,7 +174,7 @@ class CoreSimHardeningTest {
         // diverge. This is that check at the reference scale.
         val whole = runStressed(STRESS_FRAMES)
 
-        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 12f, wellHeight = 44f), bodies = 40)
+        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 20f, wellHeight = 44f), bodies = 12)
         val input = InputFrame()
         val half = STRESS_FRAMES / 2
         for (t in 0 until half) driveStress(sim, input, t)
@@ -185,7 +188,7 @@ class CoreSimHardeningTest {
     }
 
     private fun runStressed(frames: Int): IntArray {
-        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 12f, wellHeight = 44f), bodies = 40)
+        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 20f, wellHeight = 44f), bodies = 12)
         val input = InputFrame()
         for (t in 0 until frames) driveStress(sim, input, t)
         return TestScenes.fingerprint(sim.state)
@@ -197,10 +200,7 @@ class CoreSimHardeningTest {
         when {
             tick % 53 == 0 -> input.rotate = true
             tick % 11 == 0 -> input.dragX = if ((tick / 11) % 2 == 0) 0.9f else -0.9f
-            tick % 97 == 0 -> {
-                input.hardDrop = true
-                input.hardDropVelocity = 30f
-            }
+            tick % 97 == 0 -> sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016)
         }
         sim.step(input)
     }
@@ -235,8 +235,8 @@ class CoreSimHardeningTest {
         // visible inter-penetration and no residual energy.
         val config = config()
         val sim = Simulation(config)
-        sim.addPiece(archetype = 0, centerX = 5f, centerY = 1.2f)
-        sim.addPiece(archetype = 1, centerX = 5f, centerY = 4f)
+        sim.addPiece(archetype = 0, centerX = 9f, centerY = 1.4f)
+        sim.addPiece(archetype = 1, centerX = 9f, centerY = 6f)
         sim.clearActivePiece()
         TestScenes.run(sim, 900)
 
@@ -269,7 +269,7 @@ class CoreSimHardeningTest {
         // core must not depend on its identity or mutate it.
         val reused = runStressed(600)
 
-        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 12f, wellHeight = 44f), bodies = 40)
+        val sim = TestScenes.pile(SimConfig(lattice = 5, wellWidth = 20f, wellHeight = 44f), bodies = 12)
         for (t in 0 until 600) driveStress(sim, InputFrame(), t)
 
         assertFalse(

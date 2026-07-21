@@ -11,21 +11,21 @@ import gravitris.game.InputFrame
  * the display refresh rate. The simulation consumes exactly one [InputFrame]
  * per fixed 60Hz tick on the GL thread. Those two rates are unrelated, so the
  * bridge between them has to say what happens to intent produced between
- * ticks. It is not the same answer for all four fields:
+ * ticks. It is not the same answer for all three fields:
  *
  * - **dragX accumulates.** Every dp of finger travel must survive to the next
- *   tick or fast drags would silently lose distance and the 1:1 mapping
+ *   tick or fast slides would silently lose distance and the 1:1 mapping
  *   gestures.md specifies would quietly become "1:1 unless you move quickly".
  * - **rotate latches.** A tap between two ticks must not be dropped. It is
  *   consumed on the tick it is read, per docs/contracts.md §2.
- * - **hardDrop latches**, and the *largest* velocity seen wins. A hard drop is
- *   a single committed event; if two arrived in one tick (not physically
- *   plausible, but cheap to define) the more decisive one is the one meant.
+ * - **drop latches.** A release between two ticks must not be lost. Like
+ *   rotate it is a single committed event; latching means the tick it is read
+ *   sees it exactly once.
  *
  * Synchronisation is a plain lock rather than atomics. It is taken at most a
  * few hundred times a second for a handful of field writes, it is never
- * contended for more than nanoseconds, and the alternative — four separate
- * atomics — would not give a consistent snapshot across the four fields, which
+ * contended for more than nanoseconds, and the alternative — three separate
+ * atomics — would not give a consistent snapshot across the three fields, which
  * is exactly what [drainInto] needs.
  */
 class PlayerIntent {
@@ -34,8 +34,7 @@ class PlayerIntent {
 
     private var dragX = 0f
     private var rotate = false
-    private var hardDrop = false
-    private var hardDropVelocity = 0f
+    private var drop = false
 
     fun addDrag(deltaWorldUnits: Float) = synchronized(lock) {
         dragX += deltaWorldUnits
@@ -45,11 +44,13 @@ class PlayerIntent {
         rotate = true
     }
 
-    fun requestHardDrop(velocityWorldUnitsPerSecond: Float) = synchronized(lock) {
-        hardDrop = true
-        if (velocityWorldUnitsPerSecond > hardDropVelocity) {
-            hardDropVelocity = velocityWorldUnitsPerSecond
-        }
+    /**
+     * The player released the piece. The core turns this into "end positioning,
+     * begin the fall" while POSITIONING, and ignores it while FALLING — a piece
+     * already falling cannot be dropped again. See docs/contracts.md §2.
+     */
+    fun requestDrop() = synchronized(lock) {
+        drop = true
     }
 
     /**
@@ -60,12 +61,10 @@ class PlayerIntent {
     fun drainInto(frame: InputFrame) = synchronized(lock) {
         frame.dragX = dragX
         frame.rotate = rotate
-        frame.hardDrop = hardDrop
-        frame.hardDropVelocity = hardDropVelocity
+        frame.drop = drop
 
         dragX = 0f
         rotate = false
-        hardDrop = false
-        hardDropVelocity = 0f
+        drop = false
     }
 }

@@ -55,8 +55,8 @@ import org.junit.jupiter.api.Test
  * "inspection passed, execution failed" pattern the Architect recorded
  * (handoff 0008).
  *
- * `MAX_SPEED` (30) is reachable directly: `hardDropVelocity` is clamped up to
- * it, so this is the ordinary hard drop, not a contrived speed.
+ * `MAX_SPEED` (30) is reachable directly: `slamActivePiece` clamps up to it
+ * (ADR 0016), so this is a full-speed drop, not a contrived speed.
  */
 class BroadphaseMarginTest {
 
@@ -92,7 +92,7 @@ class BroadphaseMarginTest {
         // tier changes only render detail, the contact behaviour — how far one
         // body sinks into another — must be the same at all three.
         for (lattice in intArrayOf(4, 5, 6)) {
-            val config = SimConfig(lattice = lattice, wellWidth = 6f, wellHeight = 30f)
+            val config = SimConfig(lattice = lattice, wellWidth = 16f, wellHeight = 30f)
             val radius = particleRadius(lattice)
 
             val sim = TestScenes.pile(config, bodies = 6)
@@ -101,10 +101,8 @@ class BroadphaseMarginTest {
             val top = TestScenes.stackHeight(sim.state)
             sim.addPiece(archetype = 1, centerX = 3f, centerY = top + 6f)
             val input = InputFrame()
-            input.hardDrop = true
-            input.hardDropVelocity = 30f
+            sim.slamActivePiece(30f) // impact-velocity probe (ADR 0016), replaces the old hard drop
             sim.step(input)
-            input.clear()
 
             var worst = 0f
             repeat(120) {

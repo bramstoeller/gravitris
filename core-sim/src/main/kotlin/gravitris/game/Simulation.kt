@@ -50,7 +50,7 @@ class Simulation(private val config: SimConfig) {
      * state would read a zero and publish the floor band, not the spawn band.
      */
     private val spawnCenterY: Float =
-        config.wellHeight - 0.5f * world.pieceWidth - world.particleRadius
+        config.wellHeight - world.pieceMaxHalfHeight - world.particleRadius
 
     private val stateImpl = State(config)
 
@@ -83,6 +83,16 @@ class Simulation(private val config: SimConfig) {
 
     /** Whether the game is dealing pieces. See [start]. */
     private var running: Boolean = false
+
+    /**
+     * Whether the active piece is in its positioning window (ADR 0016): parked
+     * at the spawn row, gravity suppressed (the body is weightless), sliding
+     * horizontally under the player's finger. Cleared the moment it drops.
+     */
+    private var positioning: Boolean = false
+
+    /** Ticks left in the positioning window; only meaningful while [positioning]. */
+    private var positioningRemaining: Int = 0
 
     /** Consecutive ticks the active piece has been still and touching something. */
     private var stillTicks: Int = 0
@@ -181,7 +191,38 @@ class Simulation(private val config: SimConfig) {
             spawnNext()
             return
         }
+        if (positioning) {
+            advancePositioning()
+            return
+        }
         if (hasSettled(stateImpl.activePieceBody)) lockActivePiece()
+    }
+
+    /**
+     * Runs one tick of the positioning window (ADR 0016). The piece is frozen at
+     * the spawn row and does not settle or lock — it only counts down. When the
+     * window expires it drops on its own, the same transition a player [drop]
+     * triggers early. Counted in ticks, so the window is the same duration on a
+     * device that drops frames (ADR 0013).
+     */
+    private fun advancePositioning() {
+        positioningRemaining--
+        if (positioningRemaining <= 0) releaseToFall()
+    }
+
+    /**
+     * Commits the positioning piece to its fall: thaw it so gravity takes over,
+     * and reset the lock counters so the debounce measures the fall, not the
+     * hover. Idempotent-safe against being reached from both the input path
+     * (an early [drop]) and the timer path.
+     */
+    private fun releaseToFall() {
+        if (!positioning) return
+        positioning = false
+        positioningRemaining = 0
+        world.setBodyWeightless(stateImpl.activePieceBody, weightless = false)
+        stillTicks = 0
+        touchedTicks = -1
     }
 
     /**
@@ -475,13 +516,27 @@ class Simulation(private val config: SimConfig) {
      */
     private fun canSpawn(): Boolean =
         bands.fill[stateImpl.spawnBandIndex] <= tuning.overflowThreshold &&
-            world.canPlace(spawnX, spawnCenterY)
+            world.canPlace(sequence.peek(), spawnX, spawnCenterY)
 
     private fun doSpawn() {
-        stateImpl.activePieceBody = world.addBody(sequence.next(), spawnX, spawnCenterY)
+        val body = world.addBody(sequence.next(), spawnX, spawnCenterY)
+        stateImpl.activePieceBody = body
+        overflowTicks = -1
+        enterPositioning(body)
+    }
+
+    /**
+     * Puts [body] into its positioning window (ADR 0016): parked where it is,
+     * gravity suppressed (weightless), sliding under the finger until the player
+     * drops it or the window expires. Shared by [doSpawn] and the
+     * [addPositioningPiece] harness so the two cannot drift.
+     */
+    private fun enterPositioning(body: Int) {
         stillTicks = 0
         touchedTicks = -1
-        overflowTicks = -1
+        positioning = true
+        positioningRemaining = tuning.positioningTicks.coerceAtLeast(1)
+        world.setBodyWeightless(body, weightless = true)
     }
 
     /**
@@ -538,19 +593,47 @@ class Simulation(private val config: SimConfig) {
         return body
     }
 
+    /**
+     * Harness affordance: places a piece with [addPiece] and enters its
+     * positioning window (ADR 0016), the exact state a real spawn produces —
+     * frozen, sliding under drag, rotate ignored — but at a caller-chosen
+     * position and without running the dealer. Sits alongside [addPiece] and
+     * [clearActivePiece] so a test can drive slide input against a controlled
+     * scene. Returns the new body index.
+     */
+    fun addPositioningPiece(archetype: Int, centerX: Float, centerY: Float): Int {
+        val body = addPiece(archetype, centerX, centerY)
+        enterPositioning(body)
+        return body
+    }
+
     /** Releases player control without removing the piece. */
     fun clearActivePiece() {
         stateImpl.activePieceBody = -1
+        positioning = false
+        positioningRemaining = 0
     }
 
     // --- input --------------------------------------------------------------
 
+    /**
+     * Gates the tick's raw intents by the active piece's phase (ADR 0016). The
+     * recognizer in `:app` stays phase-agnostic; the meaning of a tap is decided
+     * here — it drops while positioning, rotates while falling.
+     */
     private fun applyInput(input: InputFrame) {
         val body = stateImpl.activePieceBody
         if (body < 0 || body >= world.bodyCount) return
-        if (input.rotate) applyRotate(body)
-        if (input.dragX != 0f) applyDrag(body, input.dragX)
-        if (input.hardDrop) applyHardDrop(body, input.hardDropVelocity)
+        if (positioning) {
+            // Slide to aim, then release to drop. Rotate is ignored so a tap
+            // (which `:app` delivers as drop+rotate together) drops, not turns.
+            if (input.dragX != 0f) applyDrag(body, input.dragX)
+            if (input.drop) releaseToFall()
+        } else {
+            // Falling: rotate only. Drag and drop are ignored — the fall is real
+            // gravity and is neither steered nor hastened.
+            if (input.rotate) applyRotate(body)
+        }
     }
 
     /**
@@ -687,17 +770,34 @@ class Simulation(private val config: SimConfig) {
     }
 
     /**
-     * Adds downward velocity to the active piece. Additive rather than
-     * absolute, so a hard drop is a shove on top of whatever the piece was
-     * already doing. The flick speed from `:app` is clamped into a usable
-     * band: a slow flick still commits the piece, and a fast one cannot exceed
-     * the solver's terminal velocity.
+     * Harness/probe affordance: shoves the active piece downward at [speed],
+     * additively, clamped into a usable band up to the solver's terminal
+     * velocity.
+     *
+     * **Test/probe only — MUST NOT be called from game or production code.** The
+     * old hard-drop gesture is gone (ADR 0016): release is the drop and the fall
+     * is plain gravity, and reintroducing a velocity-injecting control here would
+     * quietly bring hard-drop back as a control path the design removed. This
+     * exists solely so the solver-probe tests (`:core-sim`) and `:app`'s
+     * compression/haptic range tests can put a piece at [XpbdSolver] terminal
+     * speed to exercise broadphase margin, rigidity and impact/compression — the
+     * impact-velocity path the removed input used to provide. It sits alongside
+     * [addPiece]/[clearActivePiece] as a scene affordance, not the game loop.
+     * (A `@VisibleForTesting` annotation would say this to the compiler, but that
+     * lives in `androidx.annotation`, which `:core-sim` deliberately cannot
+     * depend on — ADR 0002/0008 — so it is stated here and held in review.)
+     *
+     * The [SLAM_MIN_SPEED]/[SLAM_MAX_SPEED] clamp is a fixed contract: `:app`'s
+     * range tests pin their measured constants against a 30-unit slam, so the
+     * bounds must not move without telling the Frontend.
      */
-    private fun applyHardDrop(body: Int, flickVelocity: Float) {
-        val speed = flickVelocity.coerceIn(HARD_DROP_MIN_SPEED, HARD_DROP_MAX_SPEED)
+    fun slamActivePiece(speed: Float) {
+        val body = stateImpl.activePieceBody
+        if (body < 0 || body >= world.bodyCount) return
+        val v = speed.coerceIn(SLAM_MIN_SPEED, SLAM_MAX_SPEED)
         val base = body * world.particlesPerBody
         for (k in 0 until world.particlesPerBody) {
-            world.velY[base + k] -= speed
+            world.velY[base + k] -= v
         }
     }
 
@@ -719,6 +819,7 @@ class Simulation(private val config: SimConfig) {
         override val bodyCount: Int get() = world.bodyCount
         override val bodyArchetype: IntArray get() = world.bodyArchetype
         override val bodyLattice: Int = config.lattice
+        override val particlesPerBody: Int = world.particlesPerBody
         override val particleRadius: Float = world.particleRadius
         override val particleCapacity: Int = world.particleCapacity
         override val triangleIndices: IntArray get() = world.triangleIndices
@@ -749,6 +850,15 @@ class Simulation(private val config: SimConfig) {
 
         override var activePieceBody: Int = -1
 
+        override val activePiecePhase: PiecePhase
+            get() = if (positioning && activePieceBody >= 0) PiecePhase.POSITIONING else PiecePhase.FALLING
+
+        override val positioningTicksRemaining: Int
+            get() = if (positioning) positioningRemaining else 0
+
+        override val positioningWindowTicks: Int
+            get() = tuning.positioningTicks
+
         override val landing: LandingEstimate = NoLandingEstimate
         override val impacts: ImpactList = Impacts()
         override val kineticEnergy: Float get() = solver.kineticEnergy
@@ -775,72 +885,78 @@ class Simulation(private val config: SimConfig) {
         /** The fixed simulation tick, in seconds. */
         const val TICK: Float = XpbdSolver.TICK
 
-        private const val HARD_DROP_MIN_SPEED: Float = 6f
-        private const val HARD_DROP_MAX_SPEED: Float = 30f
-
-        /** Bodies in the reference scene, matching ADR 0001's measured row. */
-        const val BENCHMARK_BODIES: Int = 60
+        private const val SLAM_MIN_SPEED: Float = 6f
+        private const val SLAM_MAX_SPEED: Float = 30f
 
         /**
-         * The configuration to re-run on a real device to close the
-         * host-to-device derating blocker (ADR 0009, `.team/blockers.md`).
+         * Tetrominoes in the reference scene: enough to nearly fill the
+         * reference well (ADR 0015). Measured: a 20x44 well tops out around
+         * 26 (lattice 4) to 31 (lattice 5) tetrominoes, so this fills it without
+         * hitting the overflow.
+         */
+        const val BENCHMARK_BODIES: Int = 24
+
+        /**
+         * The calibration reference for the pinned lattice (ADR 0014), and the
+         * scene to re-run on a real device to close the host-to-device derating
+         * blocker (`.team/blockers.md`).
          *
-         * Lattice 4 with [BENCHMARK_BODIES] bodies reproduces ADR 0001's
-         * measured workload exactly: 960 particles and 3 600 constraints, at 8
-         * substeps and compliance 1e-6. Host p50 was 0.497 ms/frame.
-         *
-         * The well is deliberately **wide** rather than the tall narrow tower
-         * the spike happened to seed. ADR 0003 flags that its stability and
-         * contact numbers came from a pile ~4 units wide and ~46 tall, that "a
-         * wide well produces more simultaneous contacts per body than a narrow
-         * tower, and that specific configuration has not been measured", and
-         * that it should be checked at Milestone 1. Particle and constraint
-         * counts — which is what the cost model is built on — are identical
-         * either way; contact count is the part that differs, and this is the
-         * shape the real game has.
+         * **Lattice 4, the pinned shipping tier.** A tetromino is four cells
+         * (ADR 0015), so the material is ~4x denser per unit area than the single
+         * blocks ADR 0001 measured. The measurement, on the host, near-full
+         * 20x44 well: lattice 4 is ~1 700 particles at ~0.78 ms/frame (≈9 ms at
+         * the 12x device derating, inside the 16.67 ms budget); lattice 5 is
+         * ~3 100 particles at ~1.56 ms (≈19 ms, *over* budget). That measurement
+         * is why ADR 0014 pins the lattice at 4 and retires ADR 0009's runtime
+         * tier selection — the pin story lives in that ADR, not here; this scene
+         * is only the number behind it and the revisit-trigger for a future
+         * faster reference device.
          */
         fun benchmarkReferenceConfig(): SimConfig = SimConfig(
             lattice = 4,
             substeps = 8,
-            wellWidth = 12f,
+            wellWidth = 20f,
             wellHeight = 44f,
         )
 
         /**
-         * Seeding pitch as a multiple of a body's full extent. See
-         * [buildBenchmarkScene].
-         */
-        const val PLACEMENT_GAP: Float = 1.05f
-
-        /**
-         * Builds the reference scene: [BENCHMARK_BODIES] bodies packed from
-         * the floor up, settled by the caller.
+         * Builds the reference scene: [BENCHMARK_BODIES] tetrominoes dropped in
+         * from the top and settled into a pile, ready for the caller to measure.
          *
-         * Shared by the JVM benchmark test and `:app`'s hidden one-tap device
-         * benchmark so the two cannot drift apart and produce a derating ratio
-         * that compares different scenes.
+         * Pieces are dropped one at a time above the current pile (via
+         * [addPiece], so the dealer stays off) rather than hand-placed on a
+         * grid: a grid at a single-cell pitch would overlap the larger
+         * tetrominoes and throw (ADR 0015). Shared by the JVM benchmark test and
+         * `:app`'s hidden one-tap device benchmark so the two cannot drift apart
+         * and compare different scenes.
          */
         fun buildBenchmarkScene(config: SimConfig = benchmarkReferenceConfig()): Simulation {
+            val geom = SoftBodyWorld(config)
+            val halfExtent = geom.pieceMaxHalfExtent
+            val margin = geom.pieceExtent * 0.2f
             val sim = Simulation(config)
-            // Pitch, not extent: bodies are seeded with a deliberate gap.
-            // Placing them exactly touching would put neighbouring particles
-            // at exactly one diameter, where float rounding decides whether
-            // the seeding guard fires and whether the contact solver sees an
-            // overlap on tick one. A gap costs nothing and settles out in a
-            // few frames.
-            val pitch = sim.world.pieceExtent * PLACEMENT_GAP
-            val perRow = ((config.wellWidth - pitch) / pitch).toInt() + 1
-            check(perRow >= 1) { "benchmark well is narrower than one piece" }
+            val input = InputFrame()
+            val edgeGap = geom.pieceExtent * 0.15f
+            val leftMost = halfExtent + geom.particleRadius + edgeGap
+            val rightMost = config.wellWidth - halfExtent - geom.particleRadius - edgeGap
+            val span = (rightMost - leftMost).coerceAtLeast(0f)
+            val centre = 0.5f * config.wellWidth
             for (b in 0 until BENCHMARK_BODIES) {
-                val row = b / perRow
-                val col = b % perRow
-                sim.addPiece(
-                    archetype = b % ARCHETYPE_COUNT,
-                    centerX = pitch * 0.5f + col * pitch,
-                    centerY = pitch * 0.5f + row * pitch,
-                )
+                val frac = (b * 0.61803398875f) % 1f
+                val x = if (span <= 0f) centre else leftMost + frac * span
+                val y = sim.state.let { s ->
+                    var top = 0f
+                    for (i in 0 until s.particleCount) if (s.positionY[i] > top) top = s.positionY[i]
+                    top
+                } + halfExtent + margin
+                sim.addPiece(archetype = b % ARCHETYPE_COUNT, centerX = x, centerY = y)
+                sim.clearActivePiece()
+                var f = 0
+                while (f < 240 && sim.state.kineticEnergy > config.quietKineticEnergy) {
+                    sim.step(input)
+                    f++
+                }
             }
-            sim.clearActivePiece()
             return sim
         }
 

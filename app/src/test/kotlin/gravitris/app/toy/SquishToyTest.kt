@@ -49,9 +49,13 @@ class SquishToyTest {
 
         assertEquals(1, toy.state.bodyCount)
         assertEquals(0, toy.state.activePieceBody, "the new piece is under player control")
+        // A tetromino is four cells (ADR 0015), so one body is particlesPerBody
+        // particles, not lattice². Read the published count rather than assuming
+        // the single-cell layout the toy used to deal.
         assertEquals(
-            Tunables.TOY_LATTICE * Tunables.TOY_LATTICE,
+            toy.state.particlesPerBody,
             toy.state.particleCount,
+            "one whole piece should be exactly one body's worth of particles",
         )
     }
 
@@ -276,11 +280,8 @@ class SquishToyTest {
             val input = InputFrame()
             toy.step(input)
             if (hardDrop) {
-                input.hardDrop = true
-                input.hardDropVelocity = 30f
+                toy.slamActivePiece(30f)
                 toy.step(input)
-                input.hardDrop = false
-                input.hardDropVelocity = 0f
             }
             var peak = 0f
             repeat(300) {
@@ -298,8 +299,8 @@ class SquishToyTest {
         assertTrue(gentle > 0f, "a piece falling under gravity should register an impact")
         assertTrue(
             hard > gentle,
-            "a hard drop ($hard) should hit harder than a free fall ($gentle); if these are " +
-                "equal, hardDropVelocity is not reaching the solver and every impact will " +
+            "a slammed piece ($hard) should hit harder than a free fall ($gentle); if these are " +
+                "equal, slamActivePiece is not reaching the solver and every impact will " +
                 "feel the same in the hand",
         )
         assertNotEquals(1f, gentle, "a gentle landing should not already saturate the haptic curve")

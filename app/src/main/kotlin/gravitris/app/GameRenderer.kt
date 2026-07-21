@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import gravitris.app.gl.BodyMesh
 import gravitris.app.gl.GlProgram
 import gravitris.app.gl.Shaders
+import gravitris.app.gl.UrgencyBar
 import gravitris.app.gl.WellFrame
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
@@ -13,10 +14,10 @@ import gravitris.app.perf.FrameStats
 import gravitris.game.InputFrame
 import gravitris.game.Phase
 import gravitris.game.SimConfig
+import gravitris.game.SimState
+import gravitris.game.Simulation
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import kotlin.math.ceil
-import kotlin.math.max
 
 /**
  * The render loop: the ADR 0006 accumulator, the ADR 0007 upload, the frame
@@ -119,31 +120,33 @@ class GameRenderer(
     private val drainTick: (InputFrame) -> Unit = { intent.drainInto(it) }
 
     /**
-     * Most bodies the mesh must ever hold — the core's own derived cap for the
-     * largest well this app can produce.
+     * The largest well this app can produce, built once only to read the core's
+     * own published capacity and lattice — never stepped.
      *
-     * The toy sized this at a fixed 40 because it reset the well before then;
-     * the real game deals pieces until the spawn region is blocked, so it fills
-     * to `SoftBodyWorld.maxBodies` — `max(64, 2*ceil(wellArea/pieceExtent^2))`.
-     * The well width is fixed and its height is capped at
-     * [Tunables.WELL_HEIGHT_MAX_WORLD], so the worst case is a known config,
-     * computed here once rather than resizing GL buffers on every rotation.
+     * The real well comes from the display insets at runtime, but its width is
+     * fixed [Tunables.WELL_WIDTH_WORLD] and its height capped at
+     * [Tunables.WELL_HEIGHT_MAX_WORLD], so this session's [SimState.particleCapacity]
+     * is the most any real session can reach.
      *
-     * This mirrors the core formula; [rebuildSimulationIfWellChanged] asserts the
-     * actual session's capacity fits, so a drift in either formula fails loudly
-     * at build-a-well time instead of overflowing the vertex buffer mid-draw.
+     * **Consumed, not re-derived.** A tetromino is four cells of material
+     * (ADR 0015), so a body holds `4 * lattice²` particles; the core derives its
+     * body capacity from the well area, and a shell formula over single-cell
+     * `pieceExtent²` under-counts it four-fold and would overflow the vertex
+     * buffer on the first piece (backend handoff 0029). So the mesh is sized off
+     * [SimState.particleCapacity] and [SimState.bodyLattice] directly, and the
+     * game takes the core's pinned lattice (ADR 0014) rather than naming its own.
+     * [rebuildSimulationIfWellChanged] asserts each real session fits this bound.
      */
-    private val maxBodies: Int = run {
-        val worst = SimConfig(
-            lattice = Tunables.TOY_LATTICE,
+    private val worstCaseState: SimState = Simulation(
+        SimConfig(
             wellWidth = Tunables.WELL_WIDTH_WORLD,
             wellHeight = Tunables.WELL_HEIGHT_MAX_WORLD,
-        )
-        val ext = worst.pieceExtent
-        max(64, 2 * ceil(worst.wellWidth * worst.wellHeight / (ext * ext).toDouble()).toInt())
-    }
-    private val mesh = BodyMesh(maxBodies = maxBodies, lattice = Tunables.TOY_LATTICE)
+        ),
+    ).state
+    private val maxParticles: Int = worstCaseState.particleCapacity
+    private val mesh = BodyMesh(maxParticles = maxParticles, lattice = worstCaseState.bodyLattice)
     private val wellFrame = WellFrame()
+    private val urgencyBar = UrgencyBar()
     private val stats = FrameStats()
     private val snapshot = FrameSnapshot()
 
@@ -317,6 +320,7 @@ class GameRenderer(
 
         mesh.create()
         wellFrame.create()
+        urgencyBar.create()
 
         // color-bg #000000 (docs/ux/tokens.md). True black, not near-black:
         // on this device's OLED panel only true black costs near-zero power
@@ -499,6 +503,15 @@ class GameRenderer(
         wellFrame.draw()
         mesh.draw()
 
+        // The positioning-window countdown (ADR 0016), drawn last so it reads
+        // above the stack. Its own flat program — the next frame rebinds the gel
+        // program before anything else, so leaving it bound here is harmless.
+        // Zero fraction (the piece is falling, not positioning) is a no-op.
+        val urgency = PositioningUrgency.fraction(
+            state.positioningTicksRemaining, state.positioningWindowTicks,
+        )
+        urgencyBar.draw(urgency, layout.widthWorld, layout.heightWorld, scale, offset)
+
         haptics.flush()
 
         stats.record(frameStart, workNanos)
@@ -567,7 +580,10 @@ class GameRenderer(
      */
     private fun rebuildSimulationIfWellChanged() {
         val config = SimConfig(
-            lattice = Tunables.TOY_LATTICE,
+            // Lattice is not named here: the core pins the shipping tier (4 for
+            // tetrominoes, ADR 0014) as its own default, and the mesh sized above
+            // consumed that same default via the worst-case state. Naming it here
+            // would let the shell and the core disagree on the tier.
             wellWidth = layout.widthWorld,
             wellHeight = layout.heightWorld,
             // The app's shipped difficulty (live-tunable), which becomes the
@@ -608,15 +624,19 @@ class GameRenderer(
     private fun buildSession(config: SimConfig) {
         val session = GameSession(config, clearThresholdOverride)
         // The mesh is sized once, for the largest well; every real well is
-        // smaller, so its capacity must fit. Asserted rather than trusted: if
-        // the worst-case estimate above and SoftBodyWorld.maxBodies ever drift
-        // apart, this fails loudly here instead of overflowing the vertex buffer
-        // the first time a well fills past the mesh's size.
-        val particlesPerBody = Tunables.TOY_LATTICE * Tunables.TOY_LATTICE
-        check(session.state.particleCapacity <= maxBodies * particlesPerBody) {
-            "the mesh is sized for $maxBodies bodies ($particlesPerBody particles each) but this " +
-                "well's sim capacity is ${session.state.particleCapacity} particles; the worst-case " +
-                "body estimate has drifted from SoftBodyWorld.maxBodies"
+        // smaller, so its capacity must fit. Asserted rather than trusted: both
+        // the mesh bound and this session read SimState.particleCapacity, so this
+        // only fails if a real well is somehow larger than the worst-case one —
+        // which would mean the worst-case config above stopped being the worst
+        // case, not that a shell formula drifted from the core.
+        check(session.state.particleCapacity <= maxParticles) {
+            "the mesh is sized for $maxParticles particles but this well's sim capacity is " +
+                "${session.state.particleCapacity}; the worst-case well is no longer the largest " +
+                "(check Tunables.WELL_WIDTH_WORLD / WELL_HEIGHT_MAX_WORLD against the layout)"
+        }
+        check(session.state.bodyLattice == worstCaseState.bodyLattice) {
+            "this session's lattice ${session.state.bodyLattice} differs from the mesh's " +
+                "${worstCaseState.bodyLattice}; the index topology was built for one tier only"
         }
         this.session = session
         sessionConfig = config

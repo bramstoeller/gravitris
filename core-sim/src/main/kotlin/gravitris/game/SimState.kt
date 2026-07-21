@@ -77,8 +77,22 @@ interface SimState {
      */
     val bodyArchetype: IntArray
 
-    /** Particles per piece edge; the same for every body in a run. */
+    /** Particles per piece edge (per cell); the same for every body in a run. */
     val bodyLattice: Int
+
+    /**
+     * Particle count of one body, uniform for the whole run. Size vertex buffers
+     * and the per-body/per-cell stride against **this**, not `bodyLattice²`.
+     *
+     * A single-square piece has `bodyLattice²` particles. A tetromino
+     * (ADR 0015) is four cells, so `4·bodyLattice²`, and the renderer draws it
+     * as `particlesPerBody / bodyLattice²` cells, each reusing [triangleIndices]
+     * at a `cell·bodyLattice²` vertex offset. Constant across all seven piece
+     * types — the single reused index buffer of ADR 0007 still holds, at cell
+     * granularity. Published so `:app` need not know the cell count to size its
+     * buffers.
+     */
+    val particlesPerBody: Int
 
     /**
      * How far the material surface extends beyond a particle's centre, in
@@ -126,15 +140,26 @@ interface SimState {
 
     // --- rendering topology (static per tier, ADR 0007) ---
     /**
-     * Body-local triangle indices. Valid for one body and reused for every body
-     * with an offset of `bodyIndex * bodyLattice * bodyLattice`. Constant for
-     * the whole run.
+     * Cell-local triangle indices for **one** `bodyLattice x bodyLattice` cell,
+     * constant for the whole run.
+     *
+     * **A tetromino is four cells (ADR 0015), and this is reused per CELL, not
+     * per body.** A body owns [particlesPerBody] particles laid out as
+     * `particlesPerBody / (bodyLattice * bodyLattice)` cells (four), so iterate
+     * cells — `cellCount = particleCount / (bodyLattice * bodyLattice)` — and
+     * draw this index set for cell `k` at vertex offset `k * bodyLattice *
+     * bodyLattice`. The seam gap between cells is not triangulated; the ADR 0011
+     * silhouette closes it, and [particleEdge] is 0 on seam-facing edges so the
+     * interior seams do not rim-light (the "B2" rendering agreed with the
+     * Frontend). The values are unchanged from the old single-square piece — a
+     * cell *is* the old block — so a renderer that iterated bodies at
+     * `bodyLattice²` now iterates cells at the same stride, `4x` as many.
      *
      * **Length is `6 * (bodyLattice - 1) * (bodyLattice - 1)`** — six indices
      * per lattice cell, two triangles each. The *values* it contains run
-     * `0 until bodyLattice * bodyLattice` (the particle indices), a different
-     * and smaller number: 96 versus 25 at lattice 5. Size an index buffer from
-     * the length, never from the value range.
+     * `0 until bodyLattice * bodyLattice` (the cell-local particle indices), a
+     * different and smaller number: 96 versus 25 at lattice 5. Size an index
+     * buffer from the length, never from the value range.
      *
      * For the cell at lattice row `r`, column `c` — row 0 at the bottom, so
      * world `y` increases with `r` — name the four corners by particle index
@@ -261,6 +286,36 @@ interface SimState {
     /** The body currently under player control, or -1 when none. */
     val activePieceBody: Int
 
+    /**
+     * Which phase the active piece is in, for gating input (ADR 0016).
+     *
+     * **Defaults to [PiecePhase.FALLING] whenever [activePieceBody] < 0** — never
+     * POSITIONING — so a stray drag can never slide a piece that is not being
+     * positioned. The guarantee the shell relies on:
+     * `activePiecePhase == POSITIONING ⇒ activePieceBody >= 0`.
+     *
+     * - **POSITIONING**: parked at the spawn row, gravity suppressed; the player
+     *   slides it horizontally and releases it (or the window expires) to drop.
+     * - **FALLING**: falling under real gravity; the player rotates it. Deform,
+     *   settle and lock all happen here — there is no separate settling phase.
+     */
+    val activePiecePhase: PiecePhase
+
+    /**
+     * Ticks left in the positioning window, or **0** when not positioning
+     * (ADR 0016). Draw the urgency countdown as
+     * `positioningTicksRemaining / positioningWindowTicks`.
+     */
+    val positioningTicksRemaining: Int
+
+    /**
+     * Length of the current positioning window in ticks — the live
+     * `MechanicTuning.positioningTicks`. Published so the shell draws a 0..1
+     * countdown without re-deriving it (a re-derived copy drifts the first time
+     * the dial is turned).
+     */
+    val positioningWindowTicks: Int
+
     val landing: LandingEstimate
 
     // --- feedback, drained by the shell each frame ---
@@ -320,6 +375,19 @@ sealed interface Phase {
     }
 
     object GameOver : Phase
+}
+
+/**
+ * The phase of the active piece, for input gating (ADR 0016). Orthogonal to the
+ * game-level [Phase]: it only qualifies *how* the player's intents are read
+ * while a piece is active, and is [FALLING] whenever no piece is active.
+ */
+enum class PiecePhase {
+    /** Parked at the spawn row, gravity suppressed; the player slides and releases it. */
+    POSITIONING,
+
+    /** Falling under real gravity; the player rotates it. Deform/settle/lock happen here. */
+    FALLING,
 }
 
 /**

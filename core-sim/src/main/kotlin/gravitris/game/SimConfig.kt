@@ -71,13 +71,25 @@ data class SimConfig(
     val friction: Float = 0.55f,
     val gravity: Float = -30f,
 
-    // --- quality tier (ADR 0009) ---
-    /** Particles per piece edge: 4 | 5 | 6. A piece is a `lattice`x`lattice` grid. */
-    val lattice: Int = 5,
+    // --- quality tier ---
+    /**
+     * Particles per **cell** edge; a tetromino is four `lattice`x`lattice` cells
+     * (ADR 0015). Accepts 4 | 5 | 6, but the shipping tier is **pinned at 4**
+     * (ADR 0014): a tetromino is ~4x the material of the old single block, and a
+     * near-full well runs ~9 ms device-est at 4 versus ~19 ms at 5 (over the
+     * 16.67 ms budget). Pinning also makes `pieceExtent` a single constant, so it
+     * no longer varies by tier. 5 and 6 remain for tests and for a future
+     * build-time re-pin on a faster reference device; there is no runtime tier
+     * selection.
+     */
+    val lattice: Int = 4,
 
     // --- well geometry (ADR 0010 — derived from insets at runtime) ---
-    val wellWidth: Float = 10f,
-    val wellHeight: Float = 20f,
+    // Defaults sized for the shaped game (an I piece is ~9.6 wide at lattice 4).
+    // The real geometry comes from the display insets at runtime; these are the
+    // construction defaults and what the JVM scenes lean on.
+    val wellWidth: Float = 20f,
+    val wellHeight: Float = 40f,
 
     // --- coverage bands (ADR 0004) ---
     val bandCount: Int = 20,
