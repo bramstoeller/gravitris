@@ -68,6 +68,22 @@ whole canvas, specified in `gestures.md`.
   piece spawns. Content-description: "Next piece: {shape name}, {hue name}"
   for TalkBack, even though the canvas itself stays a single opaque element
   (see Focus order, below).
+
+  **Correction, 2026-07-21 — this needs a contract addition it doesn't have
+  yet.** I originally described this alongside the background/overflow work
+  as buildable independent of D8 (scoring). That's wrong for a different
+  reason than score is: the Frontend Engineer checked `SimState` and found
+  it exposes only the *current* active piece's archetype
+  (`activePieceBody` → `bodyArchetype`), never the upcoming one —
+  `PieceSequence.peek()` exists but the class is `internal` to `:core-sim`
+  (confirmed: `PieceSequence.kt:31`), so nothing crosses the module boundary
+  today. **Until `SimState` exposes the next piece (archetype at minimum;
+  shape too if the silhouette shows more than a coloured swatch), omit this
+  slot entirely rather than show an empty placeholder or fake data** — an
+  empty box is exactly the "tech demo" read this whole document exists to
+  fix. This is a `docs/contracts.md` change (Backend implements, Architect
+  signs off per that document's ownership table), not something the shell
+  can approximate. Flagged to Backend directly; see the handoff.
 - **Pause icon** — top-right, 48×48dp target, opens Paused. Same action as
   system back (see `ia.md`).
 - **Frame-time readout** — **demoted from default-on to a debug-only
@@ -153,12 +169,21 @@ focus stops (none are actionable) but should be in the TalkBack reading
 order as static text/labels, same treatment Title already gives its best-score
 row.
 
-## A note on score/level source data
+## A note on score/level/next-piece source data
 
 Score and level display are specified here so the HUD is ready the moment
 D8 (score/persistence, backlog) lands — **this screen does not implement
 scoring**, it only specifies how to show it once `SimState.score`/`level`
-exist (both already in `docs/contracts.md` §3's `SimState` interface). Until
-then, this section is not buildable as a whole; the background/environment,
-next-piece preview and overflow-warning parts of it are independent of
-scoring and can land first.
+exist (both already in `docs/contracts.md` §3's `SimState` interface, just
+hardwired to placeholder values pending D8). The frame itself (chip layout,
+labels) can and should be built now against those placeholder values, per
+the Frontend Engineer's plan — a static "LV 1" and "0" are honest, not fake,
+because they're the real current values of real fields, just not yet driven
+by gameplay.
+
+**Next-piece is a different, harder gap than score.** It isn't waiting on a
+value to change — the field doesn't exist on `SimState` at all yet (see the
+correction on the next-piece bullet, above). That one genuinely cannot be
+built until the contract changes; the background/environment and
+overflow-warning parts of this document are independent of both gaps and
+can land first, exactly as originally noted.

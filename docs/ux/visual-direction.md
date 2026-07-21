@@ -467,6 +467,39 @@ for the same frame-rate-independence reason `tokens.md` and
 - **Do not build against this until the controls (Frontend) and tetromino
   shapes (Backend) branches merge.** Confirmed with the Frontend Engineer
   directly (not routed through the Product Lead) — see the handoff.
+- **Two implementation gaps found by the Frontend Engineer during the build
+  (`feat/visual-layer`), agreed 2026-07-21, both confirmed against the actual
+  contract rather than assumed:**
+  - **Next-piece preview (§6, `screens/playing.md`) needs a `SimState`
+    field that doesn't exist.** `PieceSequence.peek()` is `internal` to
+    `:core-sim` (verified: `PieceSequence.kt:31`); nothing about the
+    upcoming piece crosses the module boundary today. **Agreed: omit the
+    slot entirely until the contract changes, rather than show an empty
+    placeholder or fake data.** This needs a `docs/contracts.md` addition —
+    at minimum `SimState.nextArchetype`, more if the preview should show
+    shape rather than only hue — which is Backend's to implement and the
+    Architect's to sign off (contracts.md's own ownership table). Flagged
+    directly to Backend; not decided here.
+  - **The score-pop "+N" (§7.3) has no delta to show** — `SimState.score`
+    is hardwired to `0` pending D8, so a "+0" label would read worse than
+    no label at all. **Agreed: build the ember burst and the luminance beat
+    now** (both key off `Phase.Clearing`/`bandClearProgress`, which are real
+    today) **and defer the score-pop until D8 lands.** The clear still reads
+    as a real event without it — the pop was always the smallest of the
+    three additions in §7, not the one carrying the moment.
+  - Everything else in this document is buildable now, including the
+    seven-hue palette (already on `main` in `Palette.kt` by the time this
+    was checked) and the rest of the HUD frame against the placeholder
+    score/level values (see `screens/playing.md`'s note on this — a static
+    "LV 1" is an honest current value, not a fake one, which is a different
+    situation from next-piece's missing field entirely).
+- **Game Over's secondary "Title" action (`screens/game-over.md`) has
+  nowhere to go yet** — Title (`screens/title.md`) isn't built. Agreed with
+  the Frontend Engineer: ship Play Again prominently (it's the primary
+  action per `flows.md`'s "one more try" loop regardless) and omit the
+  Title button until a Title screen exists, rather than stub a dead link.
+  Not a redesign — `game-over.md`'s focus order already lists Play Again
+  first for the same reason.
 - **Confirm on-device cost of the background pass (§3) and the ember
   particles (§7.2) before shipping them at the default quality tier.** Both
   are designed to be cheap by construction, but "designed to be cheap" is not
