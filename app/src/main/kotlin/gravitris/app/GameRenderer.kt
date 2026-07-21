@@ -2,7 +2,10 @@ package gravitris.app
 
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import gravitris.app.gl.Background
 import gravitris.app.gl.BodyMesh
+import gravitris.app.gl.ClearFlash
+import gravitris.app.gl.EmberBurst
 import gravitris.app.gl.GlProgram
 import gravitris.app.gl.Shaders
 import gravitris.app.gl.UrgencyBar
@@ -51,8 +54,11 @@ class GameRenderer(
      * Without this the app would sit frozen on a topped-out stack with no way
      * out — worse than the toy's honest reset, which is exactly why it is wired
      * the moment `Simulation.start()` makes the phase reachable.
+     *
+     * Carries the final score so the game-over screen shows the value captured on
+     * this (GL) thread rather than racing a UI-thread read of the session.
      */
-    private val onGameOver: () -> Unit,
+    private val onGameOver: (Int) -> Unit,
     /**
      * Debug-only clear-threshold override, or null for the [SimConfig] default.
      * Threaded into every [GameSession] this builds; `MainActivity` supplies it
@@ -147,6 +153,18 @@ class GameRenderer(
     private val mesh = BodyMesh(maxParticles = maxParticles, lattice = worstCaseState.bodyLattice)
     private val wellFrame = WellFrame()
     private val urgencyBar = UrgencyBar()
+
+    // --- the visual layer (docs/ux/visual-direction.md) ---------------------
+    // The procedural environment (§3), and the two GPU-side halves of the
+    // band-clear juice (§7.1 luminance beat, §7.2 ember burst). The HUD and the
+    // score pop are the Android View layer's job (§6), not this thread's.
+    private val background = Background()
+    private val clearFlash = ClearFlash()
+    private val emberBurst = EmberBurst()
+
+    /** Wall-clock start of the current luminance beat, or 0 when none is
+     *  running. Set on a clear onset, read back into an intensity envelope. */
+    private var clearFlashStartNanos = 0L
     private val stats = FrameStats()
     private val snapshot = FrameSnapshot()
 
@@ -267,6 +285,39 @@ class GameRenderer(
     }
 
     /**
+     * Draw the procedural environment for this frame.
+     *
+     * Aspect is guarded against a not-yet-sized surface (the very first frames):
+     * a zero height would divide to infinity and stretch the glows off-screen,
+     * so a degenerate surface falls back to a square aspect, which is only ever
+     * seen for a frame.
+     */
+    private fun drawBackground(frameStart: Long) {
+        val aspect = if (surfaceHeight > 0) surfaceWidth.toFloat() / surfaceHeight else 1f
+        background.draw(aspect, shaderClock(frameStart))
+    }
+
+    /**
+     * Intensity (0..1) of the screen-wide luminance beat at [nowNanos], or 0
+     * when none is running (visual-direction.md §7.1).
+     *
+     * A triangle envelope over [CLEAR_FLASH_DURATION_NANOS] — up over the first
+     * half, down over the second — so the beat rises with the ignition flash and
+     * is gone by the time the hold ends, matching the 120ms flash the shader
+     * already ramps. Wall-clock nanoseconds, frame-rate independent like every
+     * other timing in the spec set.
+     */
+    private fun clearFlashIntensity(nowNanos: Long): Float {
+        if (clearFlashStartNanos == 0L) return 0f
+        val elapsed = nowNanos - clearFlashStartNanos
+        if (elapsed < 0L || elapsed >= CLEAR_FLASH_DURATION_NANOS) {
+            clearFlashStartNanos = 0L
+            return 0f
+        }
+        return gravitris.app.gl.clearFlashEnvelope(elapsed, CLEAR_FLASH_DURATION_NANOS)
+    }
+
+    /**
      * Throw away the accumulated frame history and the pending simulated time.
      *
      * Called on the GL thread after the benchmark has blocked it for several
@@ -321,10 +372,14 @@ class GameRenderer(
         mesh.create()
         wellFrame.create()
         urgencyBar.create()
+        background.create()
+        clearFlash.create()
+        emberBurst.create()
 
-        // color-bg #000000 (docs/ux/tokens.md). True black, not near-black:
-        // on this device's OLED panel only true black costs near-zero power
-        // per pixel, and it gives the Stage 3 glow maximum contrast headroom.
+        // The environment pass (Background) now paints the frame every frame, so
+        // this clear colour is only ever seen for the one frame before the well
+        // is laid out (the session-null path). Kept true black so that frame does
+        // not flash a lighter value on the OLED panel before the gradient lands.
         GLES30.glClearColor(0f, 0f, 0f, 1f)
 
         // No depth test and no blending. The geometry is 2D, drawn painter's
@@ -414,9 +469,10 @@ class GameRenderer(
 
         val session = this.session
         if (session == null) {
-            // No well yet, so nothing to simulate or draw. Clearing keeps the
-            // surface defined rather than showing whatever the buffer held.
+            // No well yet, so nothing to simulate. Draw the environment anyway,
+            // so the very first frame the player sees is the world, not black.
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+            drawBackground(frameStart)
             return
         }
 
@@ -428,7 +484,8 @@ class GameRenderer(
         // counting the *transition* (not the frames it holds) and logging the
         // body count and the fill that triggered it is the unambiguous "a band
         // ignited and dissolved" signal. A spawn is activePieceBody leaving -1.
-        val clearing = st.phase is Phase.Clearing
+        val phase = st.phase
+        val clearing = phase is Phase.Clearing
         if (clearing && !wasClearing) {
             clearsSeen++
             android.util.Log.i(
@@ -436,6 +493,18 @@ class GameRenderer(
                 "clear #$clearsSeen tick=${st.tick} bodies=${st.bodyCount} " +
                     "maxFill=${maxBandFill(st.bandFill)}",
             )
+            // Fire the band-clear juice (visual-direction.md §7): the screen-wide
+            // luminance beat synced to the ignition flash, and an ember burst
+            // spawned across every clearing band's width. Both are one-shot
+            // events read off the same Phase.Clearing the counter above logs, so
+            // they cannot drift from "a band actually ignited". Read the bands
+            // now, do not retain the phase — Clearing is a reused, mutated
+            // instance (its contract).
+            clearFlashStartNanos = frameStart
+            for (band in phase.bands) {
+                val centerY = st.bandBottomY + (band + 0.5f) * st.bandHeight
+                emberBurst.spawn(centerY, layout.widthWorld, frameStart)
+            }
         }
         wasClearing = clearing
         val active = st.activePieceBody
@@ -455,7 +524,7 @@ class GameRenderer(
             if (!wasGameOver) {
                 wasGameOver = true
                 android.util.Log.i(LOG_TAG, "game over tick=${st.tick} after $clearsSeen clears, $spawnsSeen spawns")
-                onGameOver()
+                onGameOver(st.score)
             }
         }
 
@@ -474,6 +543,11 @@ class GameRenderer(
         val workNanos = System.nanoTime() - frameStart
 
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+
+        // The environment first, before the well frame and the bodies — the base
+        // layer everything else is painted over (visual-direction.md §3).
+        drawBackground(frameStart)
+
         GLES30.glUseProgram(program)
 
         layout.clipScale(scale)
@@ -511,6 +585,13 @@ class GameRenderer(
             state.positioningTicksRemaining, state.positioningWindowTicks,
         )
         urgencyBar.draw(urgency, layout.widthWorld, layout.heightWorld, scale, offset)
+
+        // The band-clear juice, drawn last so it sits over the stack: the
+        // screen-wide luminance beat (§7.1) and the ember burst (§7.2). Both
+        // manage their own additive blending and restore the renderer's global
+        // "blend off"; a frame with no active clear draws neither.
+        clearFlash.draw(clearFlashIntensity(frameStart))
+        emberBurst.draw(frameStart, scale, offset)
 
         haptics.flush()
 
@@ -646,6 +727,9 @@ class GameRenderer(
         // counters do not — they are a lifetime instrument across a restart.
         wasClearing = false
         prevActivePiece = -1
+        // A burst or beat from the previous well must not survive into the next.
+        emberBurst.reset()
+        clearFlashStartNanos = 0L
         mesh.invalidateArchetypes()
         session.resetAccumulator()
         lastFrameNanos = 0L
@@ -674,6 +758,13 @@ class GameRenderer(
 
     fun bodyCount(): Int = session?.state?.bodyCount ?: 0
 
+    /** Current score, for the HUD. Wired to the real field, which is 0 until
+     *  scoring (D8) lands — the HUD presents the frame, it does not fake it. */
+    fun score(): Int = session?.state?.score ?: 0
+
+    /** Current level, for the HUD. 1 until the difficulty ramp (D8) lands. */
+    fun level(): Int = session?.state?.level ?: 1
+
     fun dynamicBytesPerFrame(): Int =
         (session?.state?.particleCount ?: 0) * gravitris.app.gl.BodyMesh.VERTEX_STRIDE_BYTES
 
@@ -695,6 +786,13 @@ class GameRenderer(
 
         /** Top of the shading dial — the full art direction. See [shadeLevel]. */
         const val SHADE_LEVEL_MAX = 4
+
+        /**
+         * Lifetime of the screen-wide luminance beat, 120ms (visual-direction.md
+         * §7.1), in nanoseconds. Synced to the shader's own 120ms ignition flash
+         * so the two read as one event.
+         */
+        const val CLEAR_FLASH_DURATION_NANOS = 120_000_000L
 
         /**
          * Bands the shader is compiled for, taken from the core's own default
