@@ -39,6 +39,23 @@ class SolverBenchmarkTest {
         )
     }
 
+    /**
+     * The divisor and its scene must travel together. [SolverBenchmark.HOST_P50_MS]
+     * was measured on a scene of exactly [SolverBenchmark.HOST_REF_PARTICLES]
+     * particles; if the core's scene changes without that pairing being updated,
+     * the derating ratio silently divides a new workload by an old host time. This
+     * fails first, so the divisor gets re-measured instead.
+     */
+    @Test
+    fun `the host divisor is paired with the scene it was measured on`() {
+        assertEquals(
+            SolverBenchmark.HOST_REF_PARTICLES,
+            Simulation.buildBenchmarkScene().state.particleCount,
+            "the benchmark scene changed but SolverBenchmark.HOST_P50_MS / HOST_REF_PARTICLES did " +
+                "not; re-measure the host p50 on the new scene and update both",
+        )
+    }
+
     @Test
     fun `it uses the core's own benchmark scene rather than rebuilding one`() {
         // Shared construction is what stops the JVM benchmark and the device
