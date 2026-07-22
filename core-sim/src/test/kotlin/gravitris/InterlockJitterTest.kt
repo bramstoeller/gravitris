@@ -118,7 +118,12 @@ internal class InterlockJitterTest {
         val sim = Simulation(config)
         sim.addPiece(1, NEIGHBOUR_X, REST_Y)
         sim.clearActivePiece()
-        sim.addPositioningPiece(1, DRAGGED_X, REST_Y)
+        // Full-weight from spawn (ADR 0017): the steered piece settles on the
+        // floor alongside its neighbour, then is shoved into it under real
+        // gravity — the continuous full-weight push the ADR flags for feel-check,
+        // and a stricter reproduction of the client's "interlocked, trillend"
+        // than the old brief weightless slide.
+        sim.addPiece(1, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val meter = TremorMeter(sim.state)
@@ -153,11 +158,18 @@ internal class InterlockJitterTest {
      * When the drag was a per-tick teleport it did not: the manufactured
      * ejection speed was proportional to the substep count, so tremor grew with
      * a number that is supposed to only make the solve more accurate — 189
-     * reversals at 4 substeps, 745 at 8, 1290 at 16. After the fix the same
-     * sweep reads 38, 27, 31: no trend.
+     * reversals at 4 substeps, 745 at 8, 1290 at 16. After the drag fix the same
+     * sweep read 38, 27, 31: no trend.
      *
-     * This is the assertion to keep. It fails loudly for the right reason and
-     * cannot be satisfied by tuning a threshold.
+     * Under the full-weight shove of ADR 0017 (the steered piece now carries
+     * real gravity into the neighbour, where it used to slide weightless) the
+     * sweep reads 97, 92, 55: higher in absolute terms, because a full-weight
+     * piece pressed into the stack genuinely deforms more — but still *no upward
+     * trend*, which is the whole point. The ejection bug's signature was tremor
+     * growing with the substep count; that signature is absent. This is the
+     * assertion to keep: it fails loudly for the right reason (a return of the
+     * per-substep-resolved ejection) and cannot be satisfied by tuning a
+     * threshold, because a threshold cannot hide a trend.
      */
     @Test
     fun `drag response does not depend on the substep count`() {
@@ -180,12 +192,17 @@ internal class InterlockJitterTest {
      * drag. The per-substep split moves `substepPrev` with the position exactly
      * as the per-tick translation did, and this is the property that guarantees
      * it — without it the drag would fling the piece.
+     *
+     * Gravity is off so the piece hangs in open space and the steer is the only
+     * thing moving it (ADR 0017 removed the weightless positioning state that
+     * used to isolate this). With a lone piece touching nothing, a steer that
+     * injects no velocity leaves the whole scene quiet.
      */
     @Test
     fun `dragging through empty space injects no energy`() {
-        val config = config()
+        val config = config().copy(gravity = 0f)
         val sim = Simulation(config)
-        sim.addPositioningPiece(1, DRAGGED_X, REST_Y)
+        sim.addPiece(1, DRAGGED_X, REST_Y)
         TestScenes.run(sim, SETTLE_FRAMES)
 
         val input = InputFrame()
@@ -305,21 +322,32 @@ internal class InterlockJitterTest {
         const val TREMOR_FLOOR = 0.01f
 
         /**
-         * Reversals over [DRAG_FRAMES], measured before and after the fix:
+         * Reversals over [DRAG_FRAMES], across the drag fix and then ADR 0017's
+         * full-weight shove:
          *
-         * | substeps | teleported per tick | applied per substep |
-         * | -------- | ------------------- | ------------------- |
-         * | 4        | 189                 | 38                  |
-         * | **8**    | **745**             | **27**              |
-         * | 16       | 1290                | 31                  |
+         * | substeps | teleported per tick | applied per substep | full-weight (0017) |
+         * | -------- | ------------------- | ------------------- | ------------------ |
+         * | 4        | 189                 | 38                  | 97                 |
+         * | **8**    | **745**             | **27**              | **92**             |
+         * | 16       | 1290                | 31                  | 55                 |
          *
          * Set in the gap, not at zero. A piece being pushed into a neighbour
          * *should* deform, and deformation reverses direction as the material
          * finds its shape — that is the feel the client approved, not a defect.
-         * What the fix removes is the reversal count scaling with a dial that is
-         * only supposed to buy accuracy.
+         * The full-weight column is higher than the weightless slide it replaced
+         * because a piece now carries real gravity into the stack (ADR 0017), and
+         * that is a genuinely heavier interaction, not a return of the ejection
+         * bug — the reversal count does **not** grow with the substep count, which
+         * is what the sibling `drag response does not depend on the substep count`
+         * test pins. The budget is raised to clear the full-weight peak (97) with
+         * headroom while still catching the ejection regression, whose signature
+         * blows past this at every substep count (189 at 4, and 745/1290 at 8/16).
+         *
+         * The absolute number is a feel-check flag, not a proof: ADR 0017 calls
+         * out the continuous full-weight shove-into-stack as new and asks QA to
+         * confirm on-device that it reads as deformation, not as a buzz.
          */
-        const val TREMOR_BUDGET = 60
+        const val TREMOR_BUDGET = 130
 
         /**
          * Fraction of a particle diameter. Measured 0.000 after the fix across

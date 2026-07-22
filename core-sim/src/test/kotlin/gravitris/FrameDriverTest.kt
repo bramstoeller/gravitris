@@ -114,7 +114,7 @@ class FrameDriverTest {
         // for fixed input, but N x a live per-frame delta under a dropped frame.
         val simOld = Simulation(config())
         val fdOld = FrameDriver(simOld, config())
-        val bodyOld = simOld.addPositioningPiece(archetype = 0, centerX = 5f, centerY = 15f)
+        val bodyOld = simOld.addPiece(archetype = 0, centerX = 5f, centerY = 15f)
         val xOld = centroidX(simOld, bodyOld)
         fdOld.advance(3f * tick, InputFrame().apply { dragX = 0.3f })
         val movedOld = centroidX(simOld, bodyOld) - xOld
@@ -123,7 +123,7 @@ class FrameDriverTest {
         // nothing left, so ticks 2 and 3 get an empty frame.
         val simNew = Simulation(config())
         val fdNew = FrameDriver(simNew, config())
-        val bodyNew = simNew.addPositioningPiece(archetype = 0, centerX = 5f, centerY = 15f)
+        val bodyNew = simNew.addPiece(archetype = 0, centerX = 5f, centerY = 15f)
         val xNew = centroidX(simNew, bodyNew)
         var pending = 0.3f
         fdNew.advance(3f * tick) { frame -> frame.dragX = pending; pending = 0f }

@@ -2,25 +2,26 @@ package gravitris.game
 
 /**
  * One tick of player intent. `:app` translates gestures into this; the core
- * decides what they mean. The core never sees a touch event.
+ * applies them to the active piece. The core never sees a touch event.
  *
  * Reused (mutable) to avoid per-tick allocation.
  *
- * ### The intents are dumb; the core gates them by phase (ADR 0016)
+ * ### One controlled descent (ADR 0017)
  *
- * `:app`'s gesture recognizer stays phase-agnostic and emits raw intents:
- * a pointer-up sets [drop], a pointer-up that stayed within touch-slop (a tap)
- * *also* sets [rotate], and a horizontal drag accumulates [dragX]. The **core**
- * decides what each means from the active piece's phase — a tap while
- * positioning drops, a tap while falling rotates — so "the core decides what a
- * gesture means" (`docs/contracts.md` §2) holds and the recognizer needs no
- * phase signal. See `Simulation.applyInput` for the gate:
+ * A piece falls under real, accelerating gravity from the moment it spawns, and
+ * the player steers **and** rotates it for the *whole* descent, until it
+ * contacts other material (or the floor) and settles. There is no phase where
+ * control is taken away, so both intents mean exactly one thing and apply on
+ * every tick the piece is live — the core does not gate them by phase:
  *
- * - **POSITIONING**: [dragX] slides, [drop] releases the piece to fall,
- *   [rotate] is ignored.
- * - **FALLING**: [rotate] turns the piece, [dragX] and [drop] are ignored.
+ * - [dragX] steers the active piece horizontally, clamped to the well.
+ * - [rotate] turns it a quarter step, rejected if it would overlap settled
+ *   material.
  *
- * **`:app` owns clearing the one-shot flags.** [Simulation.step] reads this
+ * There is no release-to-drop and no hard drop (ADR 0017 supersedes ADR 0016);
+ * the fall is plain gravity, neither hastened nor committed by a gesture.
+ *
+ * **`:app` owns clearing the one-shot flag.** [Simulation.step] reads this
  * object and never writes to it. "Consumed on the tick it is read" describes
  * the semantics — a tap affects exactly one tick — not who does the clearing.
  *
@@ -33,23 +34,23 @@ package gravitris.game
  * piece every tick — loud and obvious, which is the failure mode to prefer.
  */
 class InputFrame {
-    /** Horizontal drag delta this tick, in well units. Applied only while positioning. */
+    /**
+     * Horizontal steering delta this tick, in well units. Applied to the active
+     * piece every tick it is live — the whole descent — clamped to the well by
+     * the core. Kinematic: it moves the piece without injecting velocity.
+     */
     var dragX: Float = 0f
 
-    /** Tap. Applies to the tick on which it is read; `:app` must clear it. Rotates only while falling. */
-    var rotate: Boolean = false
-
     /**
-     * Release: commit the positioning piece to its fall. Applies to the tick on
-     * which it is read; `:app` must clear it. Ignored while falling — the fall
-     * is real gravity (ADR 0016), so there is no hard-drop velocity boost.
+     * Tap → rotate a quarter turn. Applied to the active piece every tick it is
+     * live — the whole descent. Applies to the tick on which it is read; `:app`
+     * must clear it.
      */
-    var drop: Boolean = false
+    var rotate: Boolean = false
 
     /** Resets every field. Convenience for `:app`'s per-tick clear. */
     fun clear() {
         dragX = 0f
         rotate = false
-        drop = false
     }
 }

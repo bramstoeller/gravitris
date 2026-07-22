@@ -84,16 +84,6 @@ class Simulation(private val config: SimConfig) {
     /** Whether the game is dealing pieces. See [start]. */
     private var running: Boolean = false
 
-    /**
-     * Whether the active piece is in its positioning window (ADR 0016): parked
-     * at the spawn row, gravity suppressed (the body is weightless), sliding
-     * horizontally under the player's finger. Cleared the moment it drops.
-     */
-    private var positioning: Boolean = false
-
-    /** Ticks left in the positioning window; only meaningful while [positioning]. */
-    private var positioningRemaining: Int = 0
-
     /** Consecutive ticks the active piece has been still and touching something. */
     private var stillTicks: Int = 0
 
@@ -191,38 +181,7 @@ class Simulation(private val config: SimConfig) {
             spawnNext()
             return
         }
-        if (positioning) {
-            advancePositioning()
-            return
-        }
         if (hasSettled(stateImpl.activePieceBody)) lockActivePiece()
-    }
-
-    /**
-     * Runs one tick of the positioning window (ADR 0016). The piece is frozen at
-     * the spawn row and does not settle or lock — it only counts down. When the
-     * window expires it drops on its own, the same transition a player [drop]
-     * triggers early. Counted in ticks, so the window is the same duration on a
-     * device that drops frames (ADR 0013).
-     */
-    private fun advancePositioning() {
-        positioningRemaining--
-        if (positioningRemaining <= 0) releaseToFall()
-    }
-
-    /**
-     * Commits the positioning piece to its fall: thaw it so gravity takes over,
-     * and reset the lock counters so the debounce measures the fall, not the
-     * hover. Idempotent-safe against being reached from both the input path
-     * (an early [drop]) and the timer path.
-     */
-    private fun releaseToFall() {
-        if (!positioning) return
-        positioning = false
-        positioningRemaining = 0
-        world.setBodyWeightless(stateImpl.activePieceBody, weightless = false)
-        stillTicks = 0
-        touchedTicks = -1
     }
 
     /**
@@ -518,25 +477,26 @@ class Simulation(private val config: SimConfig) {
         bands.fill[stateImpl.spawnBandIndex] <= tuning.overflowThreshold &&
             world.canPlace(sequence.peek(), spawnX, spawnCenterY)
 
+    /**
+     * Brings in the next piece as the active piece (ADR 0017): placed at the
+     * spawn row and immediately live — falling under gravity and fully steerable.
+     *
+     * **This resets the lock counters itself.** With the positioning window gone
+     * there is no separate setup step to do it, so the reset lives here. `-1` for
+     * [touchedTicks] is the "has not touched anything yet" sentinel and is
+     * load-bearing: [hasSettled] does `touchedTicks++` on the first contact, so
+     * seeding `0` here would start the [SimConfig.lockTimeoutTicks] ceiling one
+     * tick early. The body is **not** made weightless — gravity applies from the
+     * first tick and the piece begins to fall and accelerate immediately; the
+     * contact requirement in [hasSettled] is what keeps it from locking in
+     * mid-air at its zero-velocity spawn.
+     */
     private fun doSpawn() {
         val body = world.addBody(sequence.next(), spawnX, spawnCenterY)
         stateImpl.activePieceBody = body
         overflowTicks = -1
-        enterPositioning(body)
-    }
-
-    /**
-     * Puts [body] into its positioning window (ADR 0016): parked where it is,
-     * gravity suppressed (weightless), sliding under the finger until the player
-     * drops it or the window expires. Shared by [doSpawn] and the
-     * [addPositioningPiece] harness so the two cannot drift.
-     */
-    private fun enterPositioning(body: Int) {
         stillTicks = 0
         touchedTicks = -1
-        positioning = true
-        positioningRemaining = tuning.positioningTicks.coerceAtLeast(1)
-        world.setBodyWeightless(body, weightless = true)
     }
 
     /**
@@ -593,47 +553,26 @@ class Simulation(private val config: SimConfig) {
         return body
     }
 
-    /**
-     * Harness affordance: places a piece with [addPiece] and enters its
-     * positioning window (ADR 0016), the exact state a real spawn produces —
-     * frozen, sliding under drag, rotate ignored — but at a caller-chosen
-     * position and without running the dealer. Sits alongside [addPiece] and
-     * [clearActivePiece] so a test can drive slide input against a controlled
-     * scene. Returns the new body index.
-     */
-    fun addPositioningPiece(archetype: Int, centerX: Float, centerY: Float): Int {
-        val body = addPiece(archetype, centerX, centerY)
-        enterPositioning(body)
-        return body
-    }
-
     /** Releases player control without removing the piece. */
     fun clearActivePiece() {
         stateImpl.activePieceBody = -1
-        positioning = false
-        positioningRemaining = 0
     }
 
     // --- input --------------------------------------------------------------
 
     /**
-     * Gates the tick's raw intents by the active piece's phase (ADR 0016). The
-     * recognizer in `:app` stays phase-agnostic; the meaning of a tap is decided
-     * here — it drops while positioning, rotates while falling.
+     * Applies the tick's intents to the active piece (ADR 0017). There is no
+     * phase to gate on: a piece is steerable and rotatable for the whole
+     * descent, so both intents apply on every tick a piece is live. `:app`'s
+     * recognizer emits each intent once and the core acts on it here —
+     * `dragX` steers (clamped to the well, kinematic), `rotate` snaps a quarter
+     * turn (rejected if it would overlap settled material).
      */
     private fun applyInput(input: InputFrame) {
         val body = stateImpl.activePieceBody
         if (body < 0 || body >= world.bodyCount) return
-        if (positioning) {
-            // Slide to aim, then release to drop. Rotate is ignored so a tap
-            // (which `:app` delivers as drop+rotate together) drops, not turns.
-            if (input.dragX != 0f) applyDrag(body, input.dragX)
-            if (input.drop) releaseToFall()
-        } else {
-            // Falling: rotate only. Drag and drop are ignored — the fall is real
-            // gravity and is neither steered nor hastened.
-            if (input.rotate) applyRotate(body)
-        }
+        if (input.dragX != 0f) applyDrag(body, input.dragX)
+        if (input.rotate) applyRotate(body)
     }
 
     /**
@@ -774,10 +713,11 @@ class Simulation(private val config: SimConfig) {
      * additively, clamped into a usable band up to the solver's terminal
      * velocity.
      *
-     * **Test/probe only — MUST NOT be called from game or production code.** The
-     * old hard-drop gesture is gone (ADR 0016): release is the drop and the fall
-     * is plain gravity, and reintroducing a velocity-injecting control here would
-     * quietly bring hard-drop back as a control path the design removed. This
+     * **Test/probe only — MUST NOT be called from game or production code.** There
+     * is no hard drop and no release-to-drop (ADR 0017): a piece falls under plain
+     * gravity from spawn and the player only steers and rotates it. Reintroducing a
+     * velocity-injecting control here would quietly bring hard-drop back as a
+     * control path the design removed. This
      * exists solely so the solver-probe tests (`:core-sim`) and `:app`'s
      * compression/haptic range tests can put a piece at [XpbdSolver] terminal
      * speed to exercise broadphase margin, rigidity and impact/compression — the
@@ -851,15 +791,6 @@ class Simulation(private val config: SimConfig) {
         override var tick: Int = 0
 
         override var activePieceBody: Int = -1
-
-        override val activePiecePhase: PiecePhase
-            get() = if (positioning && activePieceBody >= 0) PiecePhase.POSITIONING else PiecePhase.FALLING
-
-        override val positioningTicksRemaining: Int
-            get() = if (positioning) positioningRemaining else 0
-
-        override val positioningWindowTicks: Int
-            get() = tuning.positioningTicks
 
         override val landing: LandingEstimate = NoLandingEstimate
         override val impacts: ImpactList = Impacts()

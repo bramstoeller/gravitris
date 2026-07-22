@@ -72,7 +72,7 @@ class FrameDriver(private val sim: Simulation, private val config: SimConfig) {
      * *live* play: a per-frame drag delta ([InputFrame.dragX]) would move the
      * piece once per tick, so a hitch that runs three catch-up ticks moves it
      * three times (breaking the 1:1 mapping `docs/ux/gestures.md` promises), and
-     * a one-shot ([InputFrame.rotate]/[InputFrame.drop]) would fire on every
+     * a one-shot ([InputFrame.rotate]) would fire on every
      * one of those ticks — the exact "spins every tick" failure [InputFrame]
      * warns about, now triggered by a dropped frame. For live gestures use the
      * `drainTick` overload, which asks for fresh intent per tick.

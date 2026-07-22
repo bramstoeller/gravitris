@@ -240,12 +240,14 @@ class SolverBehaviourTest {
         // number of ticks *without* the drag. Comparing against the previous
         // tick of the same run would just measure gravity, which is a much
         // larger effect than the one under test.
-        // Drag now applies only while positioning (ADR 0016), where the piece is
-        // parked and frozen. Sliding must translate it and derive no velocity —
-        // the substep buffers move with the position — so the piece carries
-        // nothing sideways into the fall it is released to.
-        val dragged = Simulation(config())
-        dragged.addPositioningPiece(archetype = 0, centerX = 5f, centerY = 10f)
+        // Steer applies to the active piece for the whole descent (ADR 0017).
+        // Gravity is turned off here so the drag is the only thing moving
+        // anything — the same isolation the four-quarter-turns test uses for
+        // rotation. Steering must translate the piece and derive no velocity —
+        // the substep buffers move with the position — so it carries nothing
+        // sideways beyond the finger's own motion.
+        val dragged = Simulation(config().copy(gravity = 0f))
+        dragged.addPiece(archetype = 0, centerX = 5f, centerY = 10f)
 
         val input = InputFrame()
         input.dragX = 0.3f
@@ -253,12 +255,12 @@ class SolverBehaviourTest {
         dragged.step(input)
         val after = centroidX(dragged)
 
-        assertTrue(after > before + 0.2f, "drag should move the piece, moved ${after - before}")
+        assertTrue(after > before + 0.2f, "steer should move the piece, moved ${after - before}")
         assertTrue(
             dragged.state.kineticEnergy < VELOCITY_INJECTION_BUDGET,
-            "sliding a positioning piece injected kinetic energy " +
+            "steering a piece injected kinetic energy " +
                 "(${dragged.state.kineticEnergy}); position and previous-position " +
-                "buffers must move together so no velocity is derived from the slide",
+                "buffers must move together so no velocity is derived from the steer",
         )
     }
 
