@@ -35,3 +35,27 @@ export function makeWell(cols, rows) {
   }
   return { heightTop, placements, drop };
 }
+
+// Finds every grid edge shared by two cells that belong to *different*
+// pieces in a settled stack (an edge shared by two cells of the *same*
+// piece is an internal seam the material already fuses away -- not this).
+// This is exactly the adjacency a real soft-body renderer already has to
+// know (two separate deformable pieces touching), so a soft contact-AO
+// seam drawn along it is honest, not a mockup-only trick.
+// Returns [{ col, row, side }] where side is 'right' (edge between (col,row)
+// and (col+1,row)) or 'bottom' (edge between (col,row) and (col,row+1)).
+export function crossPieceSeams(placements) {
+  const ownerOf = new Map(); // "c,r" -> piece index
+  placements.forEach(({ cells }, i) => {
+    for (const [c, r] of cells) ownerOf.set(`${c},${r}`, i);
+  });
+  const seams = [];
+  for (const [key, owner] of ownerOf) {
+    const [c, r] = key.split(',').map(Number);
+    const rightOwner = ownerOf.get(`${c + 1},${r}`);
+    if (rightOwner !== undefined && rightOwner !== owner) seams.push({ col: c, row: r, side: 'right' });
+    const downOwner = ownerOf.get(`${c},${r + 1}`);
+    if (downOwner !== undefined && downOwner !== owner) seams.push({ col: c, row: r, side: 'bottom' });
+  }
+  return seams;
+}

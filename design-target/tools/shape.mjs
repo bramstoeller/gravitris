@@ -87,6 +87,14 @@ export function outlinePath(cells, cellSize, radius, marginCells = 0.6) {
     return !(Math.abs(cross) < 1e-6 && dot > 0); // keep unless perfectly straight
   });
   const n = pts.length;
+  // Centroid of the outline, used only to nudge each concave-crease AO spot
+  // a little into the piece's body so it reads as occlusion in the notch
+  // rather than sitting exactly on the boundary line.
+  const centroid = [
+    pts.reduce((s, p) => s + p[0], 0) / n,
+    pts.reduce((s, p) => s + p[1], 0) / n,
+  ];
+  const concave = [];
   let d = '';
   for (let i = 0; i < n; i++) {
     const prev = pts[(i - 1 + n) % n];
@@ -110,13 +118,26 @@ export function outlinePath(cells, cellSize, radius, marginCells = 0.6) {
     // concave corners fillet the reflex notch, sweeping the other way (0)
     const sweep = convex ? 1 : 0;
     d += `A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${sweep} ${p2[0].toFixed(2)} ${p2[1].toFixed(2)} `;
+    if (!convex) {
+      // This is a self-occlusion crease: two lobes of the same piece meet
+      // here (an S/T/L/J/Z notch), which is exactly where a real deformable
+      // mesh would self-shadow a little. Nudge toward the centroid so the
+      // soft AO blob sits inside the notch, not straddling the silhouette edge.
+      const toCentroid = [centroid[0] - cur[0], centroid[1] - cur[1]];
+      const tcLen = Math.hypot(...toCentroid) || 1;
+      const nudge = Math.max(radius, cellSize * 0.18);
+      concave.push([
+        cur[0] + (toCentroid[0] / tcLen) * nudge,
+        cur[1] + (toCentroid[1] / tcLen) * nudge,
+      ]);
+    }
   }
   d += 'Z';
 
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const minX = Math.min(...xs) - radius, maxX = Math.max(...xs) + radius;
   const minY = Math.min(...ys) - radius, maxY = Math.max(...ys) + radius;
-  return { d, minX, minY, maxX, maxY, width: maxX + marginPx, height: maxY + marginPx };
+  return { d, minX, minY, maxX, maxY, width: maxX + marginPx, height: maxY + marginPx, concave };
 }
 
 export const TETROMINOES = {

@@ -34,5 +34,16 @@ export function materialStops(baseHex) {
     rimLight: mix(baseHex, WHITE, 0.70),
     rimDeep: mix(baseHex, BLACK, 0.55),
     shadow: mix(mix(baseHex, '#8a5a3a', 0.5), BLACK, 0.25), // warm tray-coloured shadow, not black
+    // A deep, saturated pool tone for the warm inner-glow core: thicker gel
+    // reads warmer and denser at its own centre, not whiter. Still a
+    // mechanical mix of the one base hex -- no hand-tuned colour added.
+    core: mix(baseHex, BLACK, 0.15),
   };
 }
+
+// The thin iridescent sliver riding the edge of the specular gleam is a
+// shared "wet coating" effect (like a candy shell's clear glaze), not a
+// per-hue material property -- every piece gets the exact same coating
+// tint, the way a real glazed candy's clear coat doesn't change with
+// flavour. One constant, not seven tuned values.
+export const COATING_SHIMMER = '#D8F0FF';
