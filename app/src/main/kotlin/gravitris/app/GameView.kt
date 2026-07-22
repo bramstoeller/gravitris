@@ -122,7 +122,7 @@ class GameView(
                 // position. docs/contracts.md §2 requires this: Android
                 // batches touch samples taken above the refresh rate into one
                 // MotionEvent, and reading only getX()/getY() would throw away
-                // exactly the resolution the hard-drop velocity test needs.
+                // exactly the drag resolution the 1:1 steering mapping needs.
                 for (h in 0 until event.historySize) {
                     val t = historicalTimeNanos(event, h)
                     for (p in 0 until event.pointerCount) {

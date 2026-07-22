@@ -29,16 +29,15 @@ object Tunables {
      */
     const val TOUCH_SLOP_DP = 8f
 
-    /** 1:1 — 1dp of finger travel moves the piece 1dp in world space, while
-     *  the piece is being positioned. */
+    /** 1:1 — 1dp of finger travel moves the piece 1dp in world space. The piece
+     *  is steerable for the whole descent (ADR 0017). */
     const val DRAG_SENSITIVITY = 1.0f
 
-    // The hard-drop threshold family (min displacement, angle cone, min
-    // velocity, and the ~60ms velocity window) is gone with the control
-    // redesign of 2026-07-21: release IS the drop and the piece then falls
-    // under real gravity, so there is no swipe-down flick to recognise and no
-    // flick speed to measure. VelocityWindow was deleted with them. The tap
-    // debounce below stays — a tap still rotates.
+    // There is no swipe-down flick to recognise and no flick speed to measure:
+    // ADR 0017's single controlled descent has no hard drop and no
+    // release-to-drop — the piece falls under plain accelerating gravity while
+    // the player steers and rotates it. The tap debounce below stays — a tap
+    // still rotates.
 
     /** 60ms. Absorbs touch-controller bounce / double-report after a tap. */
     const val ROTATE_DEBOUNCE_NANOS = 60_000_000L
@@ -380,23 +379,6 @@ object Tunables {
      * visible and satisfying on first play. Product Lead's call, 2026-07-21.
      */
     const val CLEAR_THRESHOLD = 0.80f
-
-    // --- positioning-window urgency cue (ADR 0016) --------------------------
-
-    /**
-     * Thickness, in world units, of the draining countdown bar that shows how
-     * long the active piece may still be slid before it drops on its own
-     * (`SimState.positioningTicksRemaining`). Drawn across the top of the well,
-     * shrinking toward the centre as the window runs out — the client's *"much
-     * less long able to move"* made visible.
-     *
-     * A deliberately plain placeholder cue: legible enough to feel the pressure,
-     * left for the visual pass to refine (colour, easing, whether it lives at the
-     * top edge or under the piece). 0.6 units is twice the wall thickness
-     * ([gravitris.app.gl.WellFrame]), so it reads as a distinct band rather than
-     * a second wall, against a 20-unit-wide well.
-     */
-    const val POSITIONING_BAR_THICKNESS_WORLD = 0.6f
 
     // --- the Milestone 1 toy ------------------------------------------------
 
