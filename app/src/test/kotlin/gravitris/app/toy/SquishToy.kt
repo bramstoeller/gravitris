@@ -171,7 +171,7 @@ class SquishToy(
         val body = simulation.state.activePieceBody
         if (body < 0) return
 
-        if (input.dragX != 0f || input.rotate || input.drop) {
+        if (input.dragX != 0f || input.rotate) {
             settledTicks = 0
             return
         }

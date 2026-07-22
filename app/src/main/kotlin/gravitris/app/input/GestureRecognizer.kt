@@ -26,32 +26,32 @@ data class GestureConfig(
 )
 
 /**
- * The gesture state machine for the **slide → release → rotate** control model
- * (client redesign, 2026-07-21).
+ * The gesture state machine for the **single controlled descent** control model
+ * (ADR 0017, docs/contracts.md §2).
  *
- * The scheme: a piece is parked at the top (POSITIONING); the player slides it
- * left/right to aim; releasing the finger drops it; while it falls (FALLING) a
- * tap rotates it. The urgency comes from a short, tick-counted positioning
- * window owned by `:core-sim`, not from anything here.
+ * A piece falls under real, accelerating gravity from the moment it spawns, and
+ * the player steers it left/right **and** rotates it for the *whole* descent,
+ * until it contacts other material and settles. There is no positioning window,
+ * no release-to-drop and no hard drop — no phase in which control is taken away.
  *
- * ## This recogniser is deliberately phase-agnostic
+ * ## A pointer-up means exactly one thing
  *
- * The conflict at the heart of the scheme is that "release = drop" and "tap =
- * rotate" are **both a pointer-up**. Rather than teach this recogniser which
- * phase the piece is in — which would mean marshalling the simulation phase
- * onto the UI thread and binding it per gesture — the recogniser emits *both*
- * intents and lets the core decide which one applies this tick:
+ * ADR 0016's recogniser had to be phase-agnostic: "release = drop" and "tap =
+ * rotate" were both a pointer-up, so it emitted *both* intents and left the core
+ * to disambiguate by phase. Under ADR 0017 there is no release-to-drop and no
+ * phase, so the mapping collapses to one meaning per gesture:
  *
- * - every pointer-up emits **drop**;
- * - a pointer-up whose gesture never left the touch slop (a tap) *also* emits
- *   **rotate**;
- * - horizontal travel past the slop emits **dragX**.
+ * - horizontal travel past the touch slop → **dragX** — continuous steering,
+ *   the whole descent;
+ * - a pointer-up whose gesture never left the slop (a tap) → **rotate** — the
+ *   whole descent;
+ * - a pointer-up ending a drag → **nothing**. The steering already happened
+ *   continuously as `dragX`; the release commits nothing.
  *
- * `:core-sim` applies `dragX`/`drop` only in POSITIONING and `rotate` only in
- * FALLING (docs/contracts.md §2: "the core decides what they mean"). So a tap
- * while positioning drops the piece and a tap while falling rotates it, from
- * the identical intent stream — and this class stays pure Kotlin, tested on the
- * JVM with no device and no phase plumbing.
+ * The recogniser is therefore simpler than ADR 0016's: no always-emit `drop`,
+ * no phase to marshal onto the UI thread, and the core no longer gates input by
+ * phase (there is no phase). It stays pure Kotlin, tested on the JVM with no
+ * device.
  *
  * It takes coordinates and timestamps, not `MotionEvent`, for the same reason:
  * the failure modes that matter here (a tap read as a micro-drag, a decisive
@@ -94,10 +94,9 @@ class GestureRecognizer(
      *
      * Only a tap arms this, never a drag-release: the debounce exists to
      * absorb a touch-controller bounce double-reporting a tap as two rotates,
-     * which is the one duplicated intent that matters. A drag-release (aiming
-     * then dropping) does not arm it, so the common aim → drop → rotate flow
-     * has no debounce delay on its first rotate; only tap → drop → rotate does,
-     * and 60 ms there is imperceptible.
+     * which is the one duplicated intent that matters. A drag no longer emits
+     * anything on release, so a drag → tap flow has no debounce delay on its
+     * rotate; only tap → tap does, and 60 ms there is imperceptible.
      *
      * [NO_ROTATE_YET] rather than [Long.MIN_VALUE], and tested for explicitly
      * below. `tNanos - Long.MIN_VALUE` overflows for every realistic timestamp,
@@ -116,8 +115,7 @@ class GestureRecognizer(
         // rotateDebounce: absorb touch-controller bounce / double-report by
         // ignoring a touch-down that lands within the debounce window of a
         // committed tap. The whole gesture is dropped, not just the tap, so a
-        // bounced down/up pair cannot produce a stray drag or a stray drop
-        // either.
+        // bounced down/up pair cannot produce a stray drag either.
         if (lastRotateNanos != NO_ROTATE_YET &&
             tNanos - lastRotateNanos < Tunables.ROTATE_DEBOUNCE_NANOS
         ) {
@@ -192,7 +190,7 @@ class GestureRecognizer(
         if (pointerId != activePointerId) return
 
         // A cancel already ended the gesture and emitted nothing; the trailing
-        // up must stay silent, not resurrect it as a drop.
+        // up must stay silent.
         if (cancelled) {
             reset()
             return
@@ -208,15 +206,10 @@ class GestureRecognizer(
         val displacement = sqrt(dxFromDown * dxFromDown + dyFromDown * dyFromDown)
         if (displacement > maxDisplacementDp) maxDisplacementDp = displacement
 
-        // Release is the drop. Every pointer-up emits it; the core applies it
-        // only while POSITIONING and ignores it while FALLING, so a release
-        // that lands after the piece has already dropped (the window expired
-        // mid-hold) is harmlessly ignored rather than double-dropping.
-        intent.requestDrop()
-
-        // A tap — never left the slop — *also* rotates. In POSITIONING the core
-        // takes the drop and ignores this; in FALLING it takes this and ignores
-        // the drop. Same up-event, disambiguated by phase in the core.
+        // A pointer-up means exactly one thing (ADR 0017). A tap — the gesture
+        // never left the slop — latches a rotate. A pointer-up ending a drag
+        // commits nothing: the steering already happened continuously as dragX,
+        // and there is no release-to-drop under this model.
         if (maxDisplacementDp <= config.touchSlopDp) {
             intent.requestRotate()
             lastRotateNanos = tNanos
@@ -229,11 +222,10 @@ class GestureRecognizer(
      * The gesture was taken away from us — the window lost focus, a system
      * gesture won, the view was detached. Emit nothing: an interrupted gesture
      * expressed no intent, and inventing one here is how a phone call turns
-     * into a dropped piece.
+     * into a spurious rotation.
      *
      * The gesture is marked cancelled rather than fully reset so that the
-     * trailing up which usually follows a cancel cannot be read as a fresh
-     * release-drop.
+     * trailing up which usually follows a cancel cannot be read as a fresh tap.
      */
     fun onCancel() {
         cancelled = true

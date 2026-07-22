@@ -9,7 +9,6 @@ import gravitris.app.gl.EmberBurst
 import gravitris.app.gl.GlProgram
 import gravitris.app.gl.PieceShadow
 import gravitris.app.gl.Shaders
-import gravitris.app.gl.UrgencyBar
 import gravitris.app.gl.WellFrame
 import gravitris.app.haptics.ImpactHaptics
 import gravitris.app.input.PlayerIntent
@@ -153,7 +152,6 @@ class GameRenderer(
     private val maxParticles: Int = worstCaseState.particleCapacity
     private val mesh = BodyMesh(maxParticles = maxParticles, lattice = worstCaseState.bodyLattice)
     private val wellFrame = WellFrame()
-    private val urgencyBar = UrgencyBar()
 
     // --- the visual layer (docs/ux/visual-direction.md) ---------------------
     // The procedural environment (§3), and the two GPU-side halves of the
@@ -376,7 +374,6 @@ class GameRenderer(
 
         mesh.create()
         wellFrame.create()
-        urgencyBar.create()
         background.create()
         clearFlash.create()
         emberBurst.create()
@@ -648,15 +645,6 @@ class GameRenderer(
         GLES30.glEnable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
         mesh.draw()
         GLES30.glDisable(GLES30.GL_SAMPLE_ALPHA_TO_COVERAGE)
-
-        // The positioning-window countdown (ADR 0016), drawn last so it reads
-        // above the stack. Its own flat program — the next frame rebinds the gel
-        // program before anything else, so leaving it bound here is harmless.
-        // Zero fraction (the piece is falling, not positioning) is a no-op.
-        val urgency = PositioningUrgency.fraction(
-            state.positioningTicksRemaining, state.positioningWindowTicks,
-        )
-        urgencyBar.draw(urgency, layout.widthWorld, layout.heightWorld, scale, offset)
 
         // The band-clear juice, drawn last so it sits over the stack: the
         // screen-wide luminance beat (§7.1) and the ember burst (§7.2). Both

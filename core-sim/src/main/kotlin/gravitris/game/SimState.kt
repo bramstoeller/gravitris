@@ -423,38 +423,15 @@ interface SimState {
     /** **Stage 1: always 1.** The difficulty ramp is Stage 4. */
     val level: Int
 
-    /** The body currently under player control, or -1 when none. */
+    /**
+     * The body currently under player control, or -1 when none.
+     *
+     * A piece is active from the tick it spawns until it locks: it falls under
+     * gravity and is fully steerable (steer + rotate) that whole time (ADR
+     * 0017). There is no phase distinction — `activePieceBody >= 0` is the only
+     * signal `:app` needs about whether player intent has a piece to act on.
+     */
     val activePieceBody: Int
-
-    /**
-     * Which phase the active piece is in, for gating input (ADR 0016).
-     *
-     * **Defaults to [PiecePhase.FALLING] whenever [activePieceBody] < 0** — never
-     * POSITIONING — so a stray drag can never slide a piece that is not being
-     * positioned. The guarantee the shell relies on:
-     * `activePiecePhase == POSITIONING ⇒ activePieceBody >= 0`.
-     *
-     * - **POSITIONING**: parked at the spawn row, gravity suppressed; the player
-     *   slides it horizontally and releases it (or the window expires) to drop.
-     * - **FALLING**: falling under real gravity; the player rotates it. Deform,
-     *   settle and lock all happen here — there is no separate settling phase.
-     */
-    val activePiecePhase: PiecePhase
-
-    /**
-     * Ticks left in the positioning window, or **0** when not positioning
-     * (ADR 0016). Draw the urgency countdown as
-     * `positioningTicksRemaining / positioningWindowTicks`.
-     */
-    val positioningTicksRemaining: Int
-
-    /**
-     * Length of the current positioning window in ticks — the live
-     * `MechanicTuning.positioningTicks`. Published so the shell draws a 0..1
-     * countdown without re-deriving it (a re-derived copy drifts the first time
-     * the dial is turned).
-     */
-    val positioningWindowTicks: Int
 
     val landing: LandingEstimate
 
@@ -515,19 +492,6 @@ sealed interface Phase {
     }
 
     object GameOver : Phase
-}
-
-/**
- * The phase of the active piece, for input gating (ADR 0016). Orthogonal to the
- * game-level [Phase]: it only qualifies *how* the player's intents are read
- * while a piece is active, and is [FALLING] whenever no piece is active.
- */
-enum class PiecePhase {
-    /** Parked at the spawn row, gravity suppressed; the player slides and releases it. */
-    POSITIONING,
-
-    /** Falling under real gravity; the player rotates it. Deform/settle/lock happen here. */
-    FALLING,
 }
 
 /**

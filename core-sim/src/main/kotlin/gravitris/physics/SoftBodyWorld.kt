@@ -442,17 +442,6 @@ internal class SoftBodyWorld(val config: SimConfig) {
     val mass = FloatArray(particleCapacity)
     val invMass = FloatArray(particleCapacity)
 
-    /**
-     * Per-particle gravity multiplier, 1 normally and 0 while a piece is being
-     * positioned (ADR 0016). Suppressing gravity this way keeps the piece a
-     * normal *dynamic* soft body — it still deforms and its drag still resolves
-     * per substep — rather than pinning it rigid (`invMass = 0`), which would
-     * turn a piece slid into the stack into an immovable shover. The solver
-     * multiplies rather than branches, so a positioned piece costs no extra
-     * control flow in the integrate loop.
-     */
-    val gravityScale = FloatArray(particleCapacity) { 1f }
-
     val particleBody = IntArray(particleCapacity)
     val particleU = FloatArray(particleCapacity)
     val particleV = FloatArray(particleCapacity)
@@ -684,7 +673,6 @@ internal class SoftBodyWorld(val config: SimConfig) {
                     particleCorner[i] = corner[local]
                     particleCompression[i] = 1f
                     particleContact[i] = 0f
-                    gravityScale[i] = 1f
                     inContactThisTick[i] = false
                     inContactLastTick[i] = false
                 }
@@ -793,7 +781,6 @@ internal class SoftBodyWorld(val config: SimConfig) {
             velY.copyInto(velY, dst, src, src + n)
             mass.copyInto(mass, dst, src, src + n)
             invMass.copyInto(invMass, dst, src, src + n)
-            gravityScale.copyInto(gravityScale, dst, src, src + n)
             particleU.copyInto(particleU, dst, src, src + n)
             particleV.copyInto(particleV, dst, src, src + n)
             particleEdge.copyInto(particleEdge, dst, src, src + n)
@@ -819,24 +806,6 @@ internal class SoftBodyWorld(val config: SimConfig) {
         particleCount -= particlesPerBody
         distanceCount -= distancePerBody
         areaCount -= areaPerBody
-    }
-
-    /**
-     * Suppresses or restores gravity for a whole body (ADR 0016) by setting its
-     * particles' [gravityScale]. The positioning phase parks a piece weightless
-     * this way, then restores its weight on release so it falls under the normal
-     * solver.
-     *
-     * The body stays **dynamic** — it deforms and its drag resolves per substep
-     * as always — because only gravity is removed, not its mass. Restoring sets
-     * the scale back to exactly 1, so a suppress/restore round trip is
-     * bit-identical and leaves determinism intact.
-     */
-    fun setBodyWeightless(body: Int, weightless: Boolean) {
-        require(body in 0 until bodyCount) { "no such body: $body of $bodyCount" }
-        val base = body * particlesPerBody
-        val scale = if (weightless) 0f else 1f
-        for (k in 0 until particlesPerBody) gravityScale[base + k] = scale
     }
 
     private fun rebase(

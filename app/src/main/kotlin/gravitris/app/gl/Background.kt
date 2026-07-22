@@ -50,8 +50,8 @@ import kotlin.math.sin
  *
  * Opaque, blending off: it covers the whole surface, so it establishes the
  * frame's base colour directly and nothing behind it needs to show through.
- * Its own flat program, like [UrgencyBar] — pushing a full-screen quad through
- * the gel shader would mean carrying attributes to cancel every material term.
+ * Its own flat program — pushing a full-screen quad through the gel shader
+ * would mean carrying attributes to cancel every material term.
  */
 class Background {
 

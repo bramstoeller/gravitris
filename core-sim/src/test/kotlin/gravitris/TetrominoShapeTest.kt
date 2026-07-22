@@ -339,7 +339,6 @@ class TetrominoShapeTest {
         // and a clear must eventually fire, dropping the body count.
         val sim = Simulation(config().copy(seed = 99L))
         sim.tuning.clearThreshold = 0.6f
-        sim.tuning.positioningTicks = 1
         sim.start()
         val input = InputFrame()
 

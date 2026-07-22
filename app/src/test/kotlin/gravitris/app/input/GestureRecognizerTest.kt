@@ -8,19 +8,21 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Tests for the slide → release → rotate gesture state machine
- * (docs/ux/gestures.md, control redesign 2026-07-21).
+ * Tests for the single-controlled-descent gesture state machine
+ * (docs/ux/gestures.md, docs/contracts.md §2, ADR 0017).
  *
- * The recogniser is phase-agnostic on purpose (see [GestureRecognizer]): every
- * release emits **drop**, and a release that never left the slop *also* emits
- * **rotate**, and it is `:core-sim` that keeps only the one its phase allows.
- * So most of these assert the intent stream this class actually emits — both
- * signals on a tap — not the phase-resolved outcome, which is the core's test.
+ * Under ADR 0017 a pointer-up means exactly one thing (see [GestureRecognizer]):
+ * a tap — a gesture that never left the slop — latches **rotate**, and a
+ * pointer-up ending a drag commits **nothing** (the steering already happened
+ * continuously as `dragX`). There is no release-to-drop and no phase, so unlike
+ * ADR 0016's recogniser this one emits a single meaning per gesture.
  *
  * The document's stated purpose is protecting the boundary between a tap and a
  * drag "with real numbers rather than vibes", so the ambiguous cases either
  * side of that boundary carry the most weight: a tap misread as a micro-drag is
  * the kind of bug a human has to *feel* to notice.
+ *
+ * This is the recogniser's own coverage; a deeper adversarial pass is QA's.
  *
  * Coordinates are in pixels. Density is 1 px/dp throughout so that pixel
  * numbers in the tests read directly as the dp figures in the spec.
@@ -43,18 +45,16 @@ class GestureRecognizerTest {
 
     private fun ms(value: Long) = value * 1_000_000L
 
-    // --- tap: rotate AND drop ------------------------------------------------
+    // --- tap: rotate ---------------------------------------------------------
 
     @Test
-    fun `stationary press and release emits both rotate and drop`() {
+    fun `stationary press and release rotates`() {
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerUp(0, 100f, 500f, ms(50))
 
         val result = drain()
-        // Phase-agnostic: a stationary tap emits rotate (for FALLING) and drop
-        // (for POSITIONING). The core keeps exactly one.
-        assertTrue(result.rotate, "a stationary tap must offer a rotate")
-        assertTrue(result.drop, "every release is also a drop")
+        assertTrue(result.rotate, "a stationary tap rotates the piece")
+        assertEquals(0f, result.dragX, 0.001f, "a tap does not steer")
     }
 
     @Test
@@ -79,17 +79,15 @@ class GestureRecognizerTest {
         assertTrue(drain().rotate, "7dp is inside the 8dp slop")
     }
 
-    // --- drag: drop on release, never rotate ---------------------------------
+    // --- drag: never rotates -------------------------------------------------
 
     @Test
-    fun `movement past slop drops but does not rotate`() {
+    fun `movement past slop does not rotate`() {
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerMove(0, 120f, 500f, ms(30))
         recognizer.onPointerUp(0, 120f, 500f, ms(60))
 
-        val result = drain()
-        assertFalse(result.rotate, "20dp of travel is a drag, not a tap")
-        assertTrue(result.drop, "releasing an aimed slide drops the piece")
+        assertFalse(drain().rotate, "20dp of travel is a drag, not a tap")
     }
 
     @Test
@@ -101,22 +99,27 @@ class GestureRecognizerTest {
         recognizer.onPointerMove(0, 100f, 500f, ms(80))
         recognizer.onPointerUp(0, 100f, 500f, ms(120))
 
-        val result = drain()
-        assertFalse(result.rotate, "peak displacement, not final, decides tap")
-        assertTrue(result.drop, "it is still a release, so still a drop")
+        assertFalse(drain().rotate, "peak displacement, not final, decides tap")
     }
 
-    // --- drop on release -----------------------------------------------------
+    // --- a drag release commits nothing (ADR 0017) ---------------------------
 
     @Test
-    fun `a drop is only emitted on release, not mid-gesture`() {
+    fun `a drag release emits nothing`() {
+        // ADR 0017's load-bearing assertion: there is no phase where control is
+        // taken away. The steering happens continuously while the finger is
+        // down; lifting it commits nothing — no release-to-drop, no rotate.
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerMove(0, 130f, 500f, ms(20))
-        // No up yet: the piece is still being aimed.
-        assertFalse(drain().drop, "a held slide has not been released, so no drop")
+        // Drain the steering the move produced, so the next drain sees only
+        // whatever the release itself commits.
+        val duringDrag = drain()
+        assertEquals(22f, duringDrag.dragX, 0.001f, "the drag steered while held (30-8 slop)")
 
         recognizer.onPointerUp(0, 130f, 500f, ms(40))
-        assertTrue(drain().drop, "the release commits the drop")
+        val onRelease = drain()
+        assertEquals(0f, onRelease.dragX, 0.001f, "the release adds no steering")
+        assertFalse(onRelease.rotate, "the release commits no rotate — there is no release-to-drop")
     }
 
     // --- tap debounce --------------------------------------------------------
@@ -131,9 +134,7 @@ class GestureRecognizerTest {
         recognizer.onPointerDown(0, 100f, 500f, ms(30))
         recognizer.onPointerUp(0, 100f, 500f, ms(35))
 
-        val result = drain()
-        assertFalse(result.rotate, "bounced tap inside rotateDebounce must not rotate")
-        assertFalse(result.drop, "the whole bounced gesture is dropped, drop included")
+        assertFalse(drain().rotate, "bounced tap inside rotateDebounce must not rotate")
     }
 
     @Test
@@ -151,13 +152,13 @@ class GestureRecognizerTest {
 
     @Test
     fun `a drag release does not arm the tap debounce`() {
-        // The common flow is aim (drag) → release (drop) → tap (rotate) the
-        // instant the piece starts falling. Only a *tap* arms the debounce, so
-        // a rotate immediately after a drag-release must not be swallowed.
+        // The common flow is aim (drag) → release → tap (rotate) the instant
+        // the piece needs turning. Only a *tap* arms the debounce, so a rotate
+        // immediately after a drag-release must not be swallowed.
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerMove(0, 140f, 500f, ms(20)) // a slide, past slop
-        recognizer.onPointerUp(0, 140f, 500f, ms(40))   // release → drop
-        assertTrue(drain().drop)
+        recognizer.onPointerUp(0, 140f, 500f, ms(40))   // release → nothing
+        drain() // clear the steering the slide produced
 
         // 5ms later — well inside the 60ms window — a decisive tap to rotate.
         recognizer.onPointerDown(0, 140f, 500f, ms(45))
@@ -238,7 +239,9 @@ class GestureRecognizerTest {
     }
 
     @Test
-    fun `vertical movement alone does not drag but still drops on release`() {
+    fun `vertical movement alone neither steers nor rotates`() {
+        // dragX is horizontal only (docs/contracts.md §2): a downward drag does
+        // nothing to the fall, and 80dp of travel is not a tap either.
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerMove(0, 100f, 540f, ms(200)) // straight down, 40dp
         recognizer.onPointerMove(0, 100f, 580f, ms(400))
@@ -247,7 +250,6 @@ class GestureRecognizerTest {
         val result = drain()
         assertEquals(0f, result.dragX, 0.001f, "no horizontal travel, no drag")
         assertFalse(result.rotate, "80dp of travel is not a tap")
-        assertTrue(result.drop, "release drops regardless of the path taken to it")
     }
 
     // --- multi-touch ---------------------------------------------------------
@@ -271,7 +273,7 @@ class GestureRecognizerTest {
     }
 
     @Test
-    fun `releasing a second pointer does not end the gesture or drop`() {
+    fun `releasing a second pointer does not end the gesture or rotate`() {
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onPointerMove(0, 120f, 500f, ms(20))
         recognizer.onPointerDown(1, 600f, 200f, ms(30))
@@ -282,23 +284,21 @@ class GestureRecognizerTest {
         val result = drain()
         // (120-108) + (150-120).
         assertEquals(42f, result.dragX, 0.001f)
-        assertFalse(result.drop, "the ignored second pointer's release is not a drop")
+        assertFalse(result.rotate, "the ignored second pointer's release is not a tap")
     }
 
     // --- cancellation --------------------------------------------------------
 
     @Test
-    fun `a cancelled gesture emits neither rotate nor drop`() {
+    fun `a cancelled gesture does not rotate`() {
         // A phone call, a system gesture, the window losing focus. An
         // interrupted gesture expressed no intent — and crucially the trailing
-        // up that follows a cancel must not be read as a fresh release-drop.
+        // up that follows a cancel must not be read as a fresh tap.
         recognizer.onPointerDown(0, 100f, 500f, ms(0))
         recognizer.onCancel()
         recognizer.onPointerUp(0, 100f, 500f, ms(20))
 
-        val result = drain()
-        assertFalse(result.rotate)
-        assertFalse(result.drop, "a cancel must not turn into a drop on the trailing up")
+        assertFalse(drain().rotate, "a cancel must not turn into a rotate on the trailing up")
     }
 
     @Test
