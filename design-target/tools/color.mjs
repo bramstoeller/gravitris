@@ -38,6 +38,28 @@ export function materialStops(baseHex) {
     // reads warmer and denser at its own centre, not whiter. Still a
     // mechanical mix of the one base hex -- no hand-tuned colour added.
     core: mix(baseHex, BLACK, 0.15),
+    // Winegum pass (v3): three more mechanical mixes of the same one base
+    // hex, each with exactly one job in the material recipe below.
+    //
+    // A real translucent gummy doesn't glow neutral-white where light
+    // passes through it -- the light picks up the medium's own colour. The
+    // subsurface glow ellipse used to be flat white; `bright` replaces that
+    // white with a still-luminous but hue-tinted stop, so the "light from
+    // within" reads as candy-coloured, not a white bulb under the surface.
+    bright: mix(baseHex, WHITE, 0.68),
+    // A thin thing glows brighter than a thick thing under the same light --
+    // basic subsurface behaviour, and the reason a real gummy's own edge
+    // (its thinnest cross-section) rims brighter than its middle. `edgeGlow`
+    // is that fresnel/edge-translucency band, one step less washed-out than
+    // `bright` so it stays legible as a thin line rather than blowing out.
+    edgeGlow: mix(baseHex, WHITE, 0.55),
+    // The "chunky 3D volume" ask needs an edge that reads as thickness on
+    // *every* side, not just the bottom (the existing bottom-anchored `ao`
+    // gradient already covers "grounded," this covers "solid"). `edgeShade`
+    // is deliberately darker than `deep` -- the bevel it shades needs to
+    // read as a distinct structural crease turning the corner of a thick
+    // mass, not a continuation of the same top-light/bottom-deep gradient.
+    edgeShade: mix(baseHex, BLACK, 0.50),
   };
 }
 
